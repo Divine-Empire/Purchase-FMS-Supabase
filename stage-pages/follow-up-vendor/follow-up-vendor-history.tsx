@@ -1,0 +1,118 @@
+"use client";
+
+import React from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { FileText } from "lucide-react";
+import { parseSheetDate } from "@/lib/utils";
+
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+};
+
+interface FollowUpVendorHistoryProps {
+  filteredHistoryData: any[];
+  sheetRecords: any[];
+}
+
+export default function FollowUpVendorHistory({
+  filteredHistoryData,
+  sheetRecords,
+}: FollowUpVendorHistoryProps) {
+  return (
+    <div className="border rounded-lg overflow-auto flex-1 flex flex-col min-h-[350px] md:min-h-0 bg-white">
+      <Table>
+        <TableHeader className="bg-slate-200 sticky top-0 z-10">
+          <TableRow className="border-b-2">
+            <TableHead>Indent No.</TableHead>
+            <TableHead>Planned</TableHead>
+            <TableHead>Actual</TableHead>
+            <TableHead>Lift No.</TableHead>
+            <TableHead>Vendor</TableHead>
+            <TableHead>PO No.</TableHead>
+            <TableHead>Follow-Up Date</TableHead>
+            <TableHead>Remarks</TableHead>
+            <TableHead>Item</TableHead>
+            <TableHead>Qty Lifted</TableHead>
+            <TableHead>Transporter</TableHead>
+            <TableHead>Vehicle</TableHead>
+            <TableHead>Contact</TableHead>
+            <TableHead>LR No</TableHead>
+            <TableHead>Dispatch Date</TableHead>
+            <TableHead>Freight</TableHead>
+            <TableHead>Advance</TableHead>
+            <TableHead>Payment Date</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Bilty</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredHistoryData.map((row) => {
+            const formatDisplayDate = (d: any) => {
+              if (!d || d === "" || d === "-") return "-";
+              const date = new Date(d);
+              if (isNaN(date.getTime())) return d;
+              return date.toLocaleDateString("en-IN");
+            };
+
+            const indentRecord = sheetRecords.find((r) =>
+              String(r.data.indentNumber).trim().toLowerCase() ===
+              String(row.indentNumber).trim().toLowerCase()
+            );
+
+            return (
+              <TableRow key={row.id} className="bg-green-50/50 hover:bg-green-100/50">
+                <TableCell className="font-medium">{row.indentNumber || "-"}</TableCell>
+                <TableCell>{indentRecord ? formatDateDash(indentRecord.data.planned5) : "-"}</TableCell>
+                <TableCell>{indentRecord ? formatDateDash(indentRecord.data.actual5) : "-"}</TableCell>
+                <TableCell>{row.liftNo || "-"}</TableCell>
+                <TableCell>{row.vendorName || "-"}</TableCell>
+                <TableCell className="font-mono">{row.poNumber || "-"}</TableCell>
+                <TableCell>{formatDisplayDate(row.nextFollowUpDate)}</TableCell>
+                <TableCell>{row.remarks || "-"}</TableCell>
+                <TableCell>{row.itemName || "-"}</TableCell>
+                <TableCell>{row.liftingQty || "-"}</TableCell>
+                <TableCell>{row.transporterName || "-"}</TableCell>
+                <TableCell>{row.vehicleNo || "-"}</TableCell>
+                <TableCell>{row.contactNo || "-"}</TableCell>
+                <TableCell>{row.lrNo || "-"}</TableCell>
+                <TableCell>{formatDisplayDate(row.dispatchDate)}</TableCell>
+                <TableCell>{row.freightAmount ? `₹${row.freightAmount}` : "-"}</TableCell>
+                <TableCell>{row.advanceAmount ? `₹${row.advanceAmount}` : "-"}</TableCell>
+                <TableCell>{formatDisplayDate(row.paymentDate)}</TableCell>
+                <TableCell>{row.paymentStatus || "-"}</TableCell>
+                <TableCell>
+                  {row.biltyCopy ? (
+                    <a
+                      href={row.biltyCopy}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-green-600 hover:underline text-xs"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>View Bilty</span>
+                    </a>
+                  ) : (
+                    "-"
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}

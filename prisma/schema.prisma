@@ -1,0 +1,719 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+//-------------------------------------------
+//* USER MODEL 
+//-------------------------------------------
+
+model User {
+  id          String   @id @default(uuid())
+
+  username    String   @unique
+  fullName    String
+  password    String
+  role        String
+
+  pageAccess  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("pfms_User")
+}
+
+//-------------------------------------------
+//* STAGE 1: INDENT GENERATION
+//-------------------------------------------
+model IndentGeneration {
+  id                    String    @id @default(uuid())
+  timestamp             DateTime  @default(now())
+
+  indentNo              String    @unique
+  createdBy             String
+  category              String
+  itemName              String
+  quantity              Float
+  warehouseLocation     String
+  itemCode              String?
+  leadTime              Int?
+  uom                   String?
+  attachment            String?
+  status                String    @default("pending")
+  remarks               String?
+
+  plannedIndentApproval DateTime?
+
+  // Relation fields
+  approval              IndentApproval?
+  update3Vendors        Update3Vendors?
+  negotiation           Negotiation?
+  poEntry               POEntry?
+  lifts                 Lift[]
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("pfms_indent-generation")
+}
+
+//-------------------------------------------
+//* STAGE 2: INDENT APPROVAL
+//-------------------------------------------
+model IndentApproval {
+  id                   String            @id @default(uuid())
+  timestamp            DateTime          @default(now())
+
+  indentNo             String            @unique
+  indent               IndentGeneration  @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
+
+  status               String            @default("pending")
+  approvedQty          Float?
+  vendorType           String?
+  remarks              String?
+  imgOptional          String?           
+  approvedBy           String?           
+
+  plannedUpdateVendors DateTime?
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@map("pfms_indent-approval")
+}
+
+//-------------------------------------------
+//* STAGE 3: UPDATE 3 VENDORS
+//-------------------------------------------
+model Update3Vendors {
+  id                  String            @id @default(uuid())
+  timestamp           DateTime          @default(now())
+
+  indentNo            String            @unique
+  indent              IndentGeneration  @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
+
+  // Vendor 1
+  vendor1Name         String?
+  vendor1Rate         Float?
+  vendor1Terms        String?
+  vendor1DeliveryDate DateTime?
+  vendor1WarrantyType String?
+  vendor1WarrantyFrom DateTime?
+  vendor1WarrantyTo   DateTime?
+  vendor1Attachment   String?
+
+  // Vendor 2
+  vendor2Name         String?
+  vendor2Rate         Float?
+  vendor2Terms        String?
+  vendor2DeliveryDate DateTime?
+  vendor2WarrantyType String?
+  vendor2WarrantyFrom DateTime?
+  vendor2WarrantyTo   DateTime?
+  vendor2Attachment   String?
+
+  // Vendor 3
+  vendor3Name         String?
+  vendor3Rate         Float?
+  vendor3Terms        String?
+  vendor3DeliveryDate DateTime?
+  vendor3WarrantyType String?
+  vendor3WarrantyFrom DateTime?
+  vendor3WarrantyTo   DateTime?
+  vendor3Attachment   String?
+
+  plannedNegotiation  DateTime?
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@map("pfms_update-3-vendors")
+}
+
+//-------------------------------------------
+//* STAGE 4: NEGOTIATION
+//-------------------------------------------
+model Negotiation {
+  id                 String            @id @default(uuid())
+  timestamp          DateTime          @default(now())
+
+  indentNo           String            @unique
+  indent             IndentGeneration  @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
+
+  selectedVendorName String
+  finalApprovedBy    String
+  negotiationRemarks String?
+
+  plannedPOEntry     DateTime?
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@map("pfms_negotiation")
+}
+
+//-------------------------------------------
+//* STAGE 5: PO ENTRY
+//-------------------------------------------
+model POEntry {
+  id                    String            @id @default(uuid())
+  timestamp             DateTime          @default(now())
+
+  indentNo              String            @unique
+  indent                IndentGeneration  @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
+
+  poNumber              String
+  basicValue            Float
+  totalWithTax          Float
+  hsn                   String?
+  poCopy                String?           
+  gst                   String?           
+  pkgAmount             Float?            
+  pkgGST                String?           
+
+  plannedFollowUpVendor   DateTime?
+  estimatedFollowUpVendor DateTime?
+  remarksFollowUpVendor   String?
+
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@map("pfms_po-entry")
+}
+
+//-------------------------------------------
+//* STAGE 6: FOLLOW-UP VENDOR
+//-------------------------------------------
+model Lift {
+  id                      String            @id @default(uuid())
+  timestamp               DateTime          @default(now())
+  liftNo                  String            @unique
+
+  indentNo                String
+  indent                  IndentGeneration  @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
+
+  liftingQty              Float             
+  transporterName         String?
+  vehicleNo               String?
+  contactNo               String?
+  lrNo                    String?
+  dispatchDate            DateTime?
+  freightAmount           Float?
+  advanceAmount           Float?
+  paymentDate             DateTime?
+  paymentStatus           String?
+  biltyCopy               String?           
+  followUpDate            DateTime?         
+  remarks                 String?
+
+  // Vendor follow-up merged fields
+  estimatedDate           DateTime?         
+  remarksFollowUp         String?           
+
+  // Stage outputs (next stages planned dates)
+  plannedSerialGen        DateTime?
+  plannedTallyEntry       DateTime?
+  plannedMaterialRcd      DateTime?
+  plannedTransporterFlwUp DateTime?
+
+  // Relation fields
+  transporterFollowUp     TransporterFollowUp?
+  materialReceived        MaterialReceived?
+  materialTestings        MaterialTesting[]
+  purchaseReturns         PurchaseReturn[]
+  returnApprovals         ReturnApproval[]
+  serials                 SerialNumber[]
+  tallyEntry              TallyEntry?
+  submitInvoiceHO         SubmitInvoiceHO?
+  submitInvoice           SubmitInvoice?
+  accountsVerification    AccountsVerification?
+  vendorPaymentDetails    VendorPaymentDetails?
+  freightPaymentDetails   FreightPaymentDetails?
+  damagedRecord           DamagedRecord?
+
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@map("pfms_lift")
+}
+
+//-------------------------------------------
+//* STAGE 6.1: TRANSPORTER FOLLOW-UP
+//-------------------------------------------
+model TransporterFollowUp {
+  id                   String    @id @default(uuid())
+  timestamp            DateTime  @default(now())
+
+  liftNo               String    @unique
+  lift                 Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  status               String    
+  expectedDeliveryDate DateTime? 
+  nextFollowUpDate     DateTime? 
+  remarks              String?   
+  lastFollowUpDate     DateTime?
+  totalFollowUps       Int       @default(0)
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@map("pfms_transporter-follow-up")
+}
+
+//-------------------------------------------
+//* STAGE 7: MATERIAL RECEIVED
+//-------------------------------------------
+model MaterialReceived {
+  id                String            @id @default(uuid())
+  timestamp         DateTime          @default(now())
+
+  liftNo            String            @unique
+  lift              Lift              @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  // Invoice & Receipt Data
+  invoiceType       String
+  invoiceNumber     String
+  invoiceDate       DateTime
+  receivedQty       Float
+  receivedItemImage String?           
+  billAttachment    String?           
+  qcRequired        String            
+
+  // Destination Handling Charges
+  extraFreight      Float?
+  hydraAmt          Float?
+  labourAmt         Float?
+  hamaliAmt         Float?
+
+  // Damage Logs (if any)
+  damagedQty        Float?
+  damageReason      String?
+  damageImage       String?           
+
+  plannedMaterialTesting DateTime?
+
+  // Warranty & Product Expiry
+  productExpiry      String?
+  productExpiryDate  DateTime?
+  warranty           String?
+  warrantyDuration   Int?
+  warrantyExpiry     DateTime?
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@map("pfms_material-received")
+}
+
+//-------------------------------------------
+//* STAGE 7.1: DAMAGED RECORDS
+//-------------------------------------------
+model DamagedRecord {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+
+  liftNo    String   @unique
+  lift      Lift     @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("pfms_damaged-record")
+}
+
+//-------------------------------------------
+//* STAGE 7.5: SERIAL GENERATION
+//-------------------------------------------
+model SerialNumber {
+  id             String    @id @default(uuid())
+  timestamp      DateTime  @default(now())
+
+  liftNo         String    
+  lift           Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  serialNo       String    @unique
+  qrLink         String?   
+  warrantyExpiry DateTime? 
+  productExpiry  DateTime? 
+
+  // Relation fields
+  warrantyClaim  WarrantyClaim?
+
+  plannedWarrantyClaim DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("pfms_serial-number")
+}
+
+//-------------------------------------------
+//* STAGE 7.6: WARRANTY CLAIM
+//-------------------------------------------
+model WarrantyClaim {
+  id               String       @id @default(uuid())
+  timestamp        DateTime     @default(now())
+
+  serialNo         String       @unique
+  serialNumber     SerialNumber @relation(fields: [serialNo], references: [serialNo], onDelete: Cascade)
+
+  // Claim Details
+  invoiceNo        String?
+  invoiceCopy      String?      
+  issueDescription String
+  photoVideo       String?      
+  claimType        String       
+  status           String       @default("Pending") 
+  claimedBy        String?
+
+  // Closure Details
+  plannedClosure   DateTime?
+  closureDate      DateTime?
+  remarks          String?
+
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@map("pfms_warranty-claim")
+}
+
+//-------------------------------------------
+//* STAGE 8: RECEIPT IN TALLY
+//-------------------------------------------
+model TallyEntry {
+  id                String    @id @default(uuid())
+  timestamp         DateTime  @default(now())
+
+  liftNo            String    @unique
+  lift              Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  doneBy            String    
+  doneDate          DateTime? 
+  remarks           String?   
+  checkedStatus     String    
+  checkedByAcc      String?   
+
+  plannedInvoiceHO  DateTime?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("pfms_tally-entry")
+}
+
+//-------------------------------------------
+//* STAGE 8.5: SUBMIT INVOICE TO HO
+//-------------------------------------------
+model SubmitInvoiceHO {
+  id                String    @id @default(uuid())
+  timestamp         DateTime  @default(now())
+
+  liftNo            String    @unique
+  lift              Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  hardcopySubmitted String    
+  submissionDate    DateTime  
+
+  plannedInvoice    DateTime?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("pfms_submit-invoice-ho")
+}
+
+//-------------------------------------------
+//* STAGE 9: SUBMIT INVOICE
+//-------------------------------------------
+model SubmitInvoice {
+  id                    String    @id @default(uuid())
+  timestamp             DateTime  @default(now())
+
+  liftNo                String    @unique
+  lift                  Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  handoverBy            String    
+  invoiceSubmissionDate DateTime  
+
+  plannedVerification   DateTime?
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("pfms_submit-invoice")
+}
+
+//-------------------------------------------
+//* STAGE 10: VERIFICATION BY ACCOUNTS
+//-------------------------------------------
+model AccountsVerification {
+  id                String    @id @default(uuid())
+  timestamp         DateTime  @default(now())
+
+  liftNo            String    @unique
+  lift              Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  verifiedCheckedBy String    
+  verificationDate  DateTime  
+  remarks           String?   
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("pfms_accounts-verification")
+}
+
+//-------------------------------------------
+//* STAGE 11: MATERIAL TESTING
+//-------------------------------------------
+model MaterialTesting {
+  id               String    @id @default(uuid())
+  timestamp        DateTime  @default(now())
+
+  liftNo           String    
+  lift             Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  qcBy             String?
+  qcDate           DateTime?
+  workingCondition String?
+  remarks          String?
+
+  pendingQty       Float?
+  approvedQty      Float?
+  checklist        String[]  
+  serialNumbers    String[]  
+  images           String[]  
+
+  rejectType       String?
+  partName         String?
+  rejectedQty      Float?
+
+  plannedPurchaseReturns DateTime?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("pfms_material-testing")
+}
+
+//-------------------------------------------
+//* STAGE 11.5: PURCHASE RETURN
+//-------------------------------------------
+model PurchaseReturn {
+  id              String    @id @default(uuid())
+  timestamp       DateTime  @default(now())
+
+  liftNo          String    
+  lift            Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  returnedQty     Float     
+  returnRate      Float?    
+  returnAmount    Float?    
+  returnReason    String?   
+  returnStatus    String    
+  returnItemImage String?   
+  creditNoteImage String?   
+
+  plannedReturnApproval DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("pfms_purchase-return")
+}
+
+//-------------------------------------------
+//* STAGE 12: RETURN APPROVAL
+//-------------------------------------------
+model ReturnApproval {
+  id              String    @id @default(uuid())
+  timestamp       DateTime  @default(now())
+
+  liftNo          String    
+  lift            Lift      @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  dnNumber        String    
+  remarks         String?   
+  returnImage     String    
+  approvalDate    DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("pfms_return-approval")
+}
+
+//-------------------------------------------
+//* STAGE 13: VENDOR PAYMENT DETAILS (1-to-1 with Lift)
+//-------------------------------------------
+model VendorPaymentDetails {
+  id            String             @id @default(uuid())
+  timestamp     DateTime           @default(now())
+
+  liftNo        String             @unique
+  lift          Lift               @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  totalAmount   Float
+  paidAmount    Float              @default(0)
+  dueDate       DateTime?
+  plannedDate   DateTime?
+
+  // Relation to individual payments history
+  paymentLogs   PaidData[]
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@map("pfms_vendor-payment-details")
+}
+
+//-------------------------------------------
+//* PAID DATA (Many-to-1 with Invoice)
+//-------------------------------------------
+model PaidData {
+  id            String               @id @default(uuid())
+  timestamp     DateTime             @default(now())
+
+  invoiceId     String        
+  vendorInvoice VendorPaymentDetails @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  // Payment Transaction Details
+  amountPaid    Float
+  paymentStatus String        
+  paymentDate   DateTime
+  paymentMode   String        
+  proof         String?       
+
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@map("pfms_paid-data")
+}
+
+//-------------------------------------------
+//* STAGE 14: FREIGHT PAYMENT DETAILS (1-to-1 with Lift)
+//-------------------------------------------
+model FreightPaymentDetails {
+  id            String            @id @default(uuid())
+  timestamp     DateTime          @default(now())
+
+  liftNo        String            @unique
+  lift          Lift              @relation(fields: [liftNo], references: [liftNo], onDelete: Cascade)
+
+  totalAmount   Float
+  paidAmount    Float             @default(0)
+  plannedDate   DateTime?
+
+  // Relation to individual payments history
+  paymentLogs   PaidFreightData[]
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@map("pfms_freight-payment-details")
+}
+
+//-------------------------------------------
+//* PAID FREIGHT DATA (Many-to-1 with Freight Details)
+//-------------------------------------------
+model PaidFreightData {
+  id              String                @id @default(uuid())
+  timestamp       DateTime              @default(now())
+
+  freightDetailId String                
+  freightDetail   FreightPaymentDetails @relation(fields: [freightDetailId], references: [id], onDelete: Cascade)
+
+  amountPaid      Float
+  paymentStatus   String        
+  paymentDate     DateTime
+  paymentMode     String        
+  proof           String?       
+
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@map("pfms_paid-freight-data")
+}
+
+model OrderCancellation {
+  id           String    @id @default(uuid())
+  timestamp    DateTime  @default(now())
+
+  indentNo     String
+  poNumber     String?
+  itemName     String
+  cancelStage  String
+  cancelReason String
+  qty          Float
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("pfms_order-cancellation")
+}
+
+//-------------------------------------------
+//* TAT (TURN AROUND TIME) CONFIGURATION
+//-------------------------------------------
+model TAT {
+  id         String   @id @default(uuid())
+  stageName  String   @unique
+  actionTime Int      // Stored in hours
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("pfms_tat")
+}
+
+//-------------------------------------------
+//* ITEM MASTER
+//-------------------------------------------
+model ItemMaster {
+  id           String   @id @default(uuid())
+
+  itemCode     String?  @map("ITEM CODE")
+  itemCategory String?  @map("ITEM CATEGORY")
+  itemName     String?  @map("ITEM NAME")
+
+  @@map("pfms_item-master")
+}
+
+//-------------------------------------------
+//* VENDOR MASTER
+//-------------------------------------------
+model VendorMaster {
+  id         String   @id @default(uuid())
+
+  vendorCode String?  @map("Vendor Code")
+  vendorList String?  @map("Vendor List")
+
+  @@map("pfms_vendor-master")
+}
+
+//-------------------------------------------
+//* DROPDOWN OPTIONS
+//-------------------------------------------
+model Dropdown {
+  id                     String   @id @default(uuid())
+
+  createdBy              String?  @map("Created By")
+  warehouse              String?  @map("Wharehouse")
+  paymentTerms           String?  @map("Payment Terms (Stage3)")
+  approvedBy             String?  @map("Approved By")
+  checkers               String?  @map("Checkers (Verification)")
+  transporter            String?  @map("Transporter")
+  checkedBy              String?  @map("Checked By")
+  tallyDoneBy            String?  @map("Tally Done By")
+  uom                    String?  @map("UOM")
+  locationUpdate         String?  @map("Location-Update")
+  qcChecklist            String?  @map("QC-Checklist")
+  rejectType             String?  @map("Reject Type (QC)")
+
+  @@map("pfms_dropdown")
+}

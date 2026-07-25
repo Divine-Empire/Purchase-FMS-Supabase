@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, Search, ClipboardCheck, RefreshCw } from "lucide-react";
+import { Loader2, FileText, Search, ClipboardCheck, RefreshCw, ClipboardList, History } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -499,18 +501,42 @@ export default function Verification() {
             </div>
           </div>
 
-          <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
             <TabsTrigger
               value="pending"
-              className="rounded-md data-[state=active]:bg-white transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              Pending ({pending.length})
+              <ClipboardList className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
+                <span className="font-bold">Pending</span>
+                <span className="text-[10px] opacity-70 font-medium">Awaiting verification</span>
+              </div>
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "pending"
+                  ? "bg-white text-red-600 shadow-xs"
+                  : "bg-red-100 text-red-700"
+              )}>
+                {pending.length}
+              </Badge>
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="rounded-md data-[state=active]:bg-white transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              History ({completed.length})
+              <History className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
+                <span className="font-bold">History</span>
+                <span className="text-[10px] opacity-70 font-medium">Verified invoices</span>
+              </div>
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "history"
+                  ? "bg-white text-emerald-600 shadow-xs"
+                  : "bg-green-100 text-green-800"
+              )}>
+                {completed.length}
+              </Badge>
             </TabsTrigger>
           </TabsList>
         </div>

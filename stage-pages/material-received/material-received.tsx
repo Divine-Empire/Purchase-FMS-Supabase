@@ -28,9 +28,11 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Upload, X, Loader2, Search } from "lucide-react";
+import { FileText, Upload, X, Loader2, Search, Package } from "lucide-react";
 import { toast } from "sonner";
-import { parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { ClipboardList, History as HistoryIcon } from "lucide-react";
+import { parseSheetDate, getFmsTimestamp, cn } from "@/lib/utils";
 import MaterialReceivedPending from "./material-received-pending";
 import MaterialReceivedHistory from "./material-received-history";
 
@@ -690,32 +692,37 @@ export default function MaterialReceived() {
     );
 
     return (
-        <div className="p-4 md:p-6 min-h-screen bg-[#f8fafc]">
+        <div className="p-4 md:p-6 min-h-screen bg-slate-50/30">
             <Tabs
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as any)}
                 className="w-full"
             >
-                <div className="md:sticky md:top-0 z-30 bg-[#f8fafc] -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
-                    <div className="p-4 md:p-6 bg-white border rounded-lg shadow-sm mb-4 md:mb-6">
+                <div className="md:sticky md:top-0 z-30 bg-slate-50/30 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+                    <div className="p-4 md:p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs mb-4 md:mb-6">
                         <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-2xl font-bold text-slate-900">Stage 8: Material Receipt</h2>
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg shadow-indigo-100 shadow-xl text-white">
+                                    <Package className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Stage 7: Material Receipt</h2>
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-4">
                                 {activeTab === "pending" && selectedRecordIds.length > 1 && (
                                     <Button 
                                         onClick={handleBulkOpen}
-                                        className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+                                        className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-md text-white font-bold"
                                     >
                                         Bulk Record ({selectedRecordIds.length})
                                     </Button>
                                 )}
 
-                                <Label className="text-sm font-medium text-slate-600 hidden md:inline-block">Show Columns:</Label>
+                                <Label className="text-sm font-semibold text-indigo-900 whitespace-nowrap hidden md:inline-block">Show Columns:</Label>
                                 <Select value="" onValueChange={() => { }}>
-                                    <SelectTrigger className="w-40 bg-white border-slate-200">
+                                    <SelectTrigger className="w-40 border-indigo-150 text-indigo-700 bg-white hover:bg-indigo-50/50 hover:text-indigo-800 shadow-xs">
                                         <SelectValue
                                             placeholder={
                                                 activeTab === "pending"
@@ -788,17 +795,17 @@ export default function MaterialReceived() {
 
                         <div className="mt-4 flex flex-wrap items-center gap-4">
                             <div className="relative flex-1 max-w-sm">
-                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-indigo-500" />
                                 <Input
                                     placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 bg-white border-slate-200 focus:ring-amber-500 focus:border-amber-500"
+                                    className="pl-9 bg-white border-indigo-100 focus-visible:ring-indigo-500"
                                 />
                             </div>
 
                             <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-                                <SelectTrigger className="w-[150px] bg-white border-slate-200">
+                                <SelectTrigger className="w-[150px] bg-white border-indigo-100 focus:ring-indigo-500">
                                     <SelectValue placeholder="Select warehouse" />
                                 </SelectTrigger>
                                 <SelectContent className="bg-white">
@@ -810,18 +817,42 @@ export default function MaterialReceived() {
                         </div>
                     </div>
 
-                    <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+                    <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
                         <TabsTrigger 
                             value="pending"
-                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700 font-medium"
                         >
-                            Pending ({pending.length})
+                            <ClipboardList className="w-5 h-5 opacity-80" />
+                            <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                <span className="font-bold">Pending</span>
+                                <span className="text-[10px] opacity-70">Awaiting processing</span>
+                            </div>
+                            <Badge variant="secondary" className={cn(
+                                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                activeTab === "pending"
+                                    ? "bg-white text-red-600 shadow-xs"
+                                    : "bg-red-100 text-red-700"
+                            )}>
+                                {pending.length}
+                            </Badge>
                         </TabsTrigger>
                         <TabsTrigger 
                             value="history"
-                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700 font-medium"
                         >
-                            History ({completed.length})
+                            <HistoryIcon className="w-5 h-5 opacity-80" />
+                            <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                <span className="font-bold">History</span>
+                                <span className="text-[10px] opacity-70 font-medium">Completed records</span>
+                            </div>
+                            <Badge variant="secondary" className={cn(
+                                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                activeTab === "history"
+                                    ? "bg-white text-emerald-600 shadow-xs"
+                                    : "bg-green-100 text-green-800"
+                            )}>
+                                {completed.length}
+                            </Badge>
                         </TabsTrigger>
                     </TabsList>
                 </div>

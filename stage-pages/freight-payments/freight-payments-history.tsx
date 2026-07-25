@@ -18,7 +18,7 @@ export default function FreightPaymentsHistory({
 }: FreightPaymentsHistoryProps) {
   if (filteredHistory.length === 0) {
     return (
-      <div className="py-24 flex flex-col items-center justify-center text-center">
+      <div className="py-24 flex flex-col items-center justify-center text-center bg-white border rounded-2xl shadow-sm">
         <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6">
           <span className="text-4xl text-slate-200">🔍</span>
         </div>
@@ -31,17 +31,17 @@ export default function FreightPaymentsHistory({
   }
 
   return (
-    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar bg-white border rounded-2xl shadow-xs">
       <table className="w-full text-sm text-left border-separate border-spacing-0 min-w-[1800px]">
-        <thead className="sticky top-0 z-30">
-          <tr className="bg-slate-200">
+        <thead className="sticky top-0 z-30 bg-slate-900 border-none text-white text-center">
+          <tr className="bg-slate-900 text-white hover:bg-transparent">
             {visibleHistoryColumns.map((c) => (
               <th
                 key={c.key}
                 className={cn(
-                  "px-5 py-4 font-bold text-slate-900 whitespace-nowrap tracking-tight bg-slate-200 sticky top-0 z-30 border-b border-slate-300",
+                  "bg-slate-900 px-5 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center",
                   c.key === "lrNo"
-                    ? "!z-40 left-0 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
+                    ? "sticky left-0 z-40 bg-slate-900"
                     : ""
                 )}
               >
@@ -54,23 +54,23 @@ export default function FreightPaymentsHistory({
           {filteredHistory.map((rec) => (
             <tr
               key={rec.id}
-              className="hover:bg-slate-50/80 transition-all duration-150 group"
+              className="even:bg-slate-50/30 hover:bg-indigo-50/20 transition-colors border-b border-slate-100 last:border-0 text-center"
             >
               {visibleHistoryColumns.map((c) => (
                 <td
                   key={c.key}
                   className={cn(
-                    "px-5 py-4 whitespace-nowrap font-medium transition-colors border-b border-slate-100",
+                    "px-5 py-2.5 whitespace-nowrap transition-colors border-b border-slate-100",
                     c.key === "lrNo"
-                      ? "text-slate-900 font-bold sticky left-0 z-20 bg-white border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
-                      : "text-slate-600 group-hover:bg-slate-50 transition-colors"
+                      ? "text-slate-900 font-bold sticky left-0 z-20 bg-white group-hover:bg-indigo-50/10"
+                      : "text-slate-600"
                   )}
                 >
                   {c.key === "planned" || c.key === "actual"
                     ? safeValue((rec as any)[c.key])
                     : c.key === "amountPaid"
-                    ? `₹ ${parseNum((rec as any)[c.key]).toLocaleString()}`
-                    : safeValue((rec as any)[c.key])}
+                      ? `₹ ${parseNum((rec as any)[c.key]).toLocaleString()}`
+                      : safeValue((rec as any)[c.key])}
                 </td>
               ))}
             </tr>

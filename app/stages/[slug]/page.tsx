@@ -26,6 +26,7 @@ import ImsPage from "@/stage-pages/ims/ims";
 import DamagedRecords from "@/stage-pages/damaged-records/damaged-records";
 import OrderCancelPage from "@/stage-pages/order-cancel/order-cancel";
 import SettingsPage from "@/stage-pages/settings/SettingsPage";
+import DropdownsMaster from "@/stage-pages/master/dropdownsMaster";
 
 const stageComponents: Record<string, React.ComponentType> = {
     "create-indent": CreateIndent,
@@ -52,6 +53,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "damaged-records": DamagedRecords,
     "order-cancel": OrderCancelPage,
     "settings": SettingsPage,
+    "master": DropdownsMaster,
 };
 
 export default function StagePage() {

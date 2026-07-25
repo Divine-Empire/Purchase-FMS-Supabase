@@ -34,8 +34,8 @@ export default function FollowUpVendorHistory({
   return (
     <div className="border rounded-lg overflow-auto flex-1 flex flex-col min-h-[350px] md:min-h-0 bg-white">
       <Table>
-        <TableHeader className="bg-slate-200 sticky top-0 z-10">
-          <TableRow className="border-b-2">
+        <TableHeader className="bg-slate-900 sticky top-0 z-10 shadow-sm [&_th]:text-white [&_th]:font-semibold [&_th]:h-12 border-b-0">
+          <TableRow className="border-b-0 hover:bg-slate-900">
             <TableHead>Indent No.</TableHead>
             <TableHead>Planned</TableHead>
             <TableHead>Actual</TableHead>
@@ -73,7 +73,7 @@ export default function FollowUpVendorHistory({
             );
 
             return (
-              <TableRow key={row.id} className="bg-green-50/50 hover:bg-green-100/50">
+              <TableRow key={row.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
                 <TableCell className="font-medium">{row.indentNumber || "-"}</TableCell>
                 <TableCell>{indentRecord ? formatDateDash(indentRecord.data.planned5) : "-"}</TableCell>
                 <TableCell>{indentRecord ? formatDateDash(indentRecord.data.actual5) : "-"}</TableCell>

@@ -71,9 +71,9 @@ export function StageTable({
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
             <div
-              className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${record.status === "completed"
+              className={`inline-flex px-2.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide ${record.status === "completed"
                 ? "bg-green-100 text-green-800"
-                : "bg-yellow-100 text-yellow-800"
+                : "bg-amber-100 text-amber-800"
                 }`}
             >
               {record.status}
@@ -83,7 +83,9 @@ export function StageTable({
             variant="outline"
             size="sm"
             onClick={onAction}
-            className="ml-2 flex-shrink-0"
+            className={`ml-2 flex-shrink-0 transition-all font-semibold ${isPending 
+              ? "border-red-200 text-red-700 bg-red-50/30 hover:bg-red-600 hover:text-white hover:border-red-600" 
+              : "border-indigo-200 text-indigo-700 bg-indigo-50/30 hover:bg-indigo-600 hover:text-white hover:border-indigo-600"}`}
           >
             {actionLabel}
           </Button>
@@ -133,16 +135,16 @@ export function StageTable({
       <div className={hideTableTitle ? "flex-1 overflow-hidden" : "space-y-4 flex-1 overflow-hidden"}>
         {/* Pending Section */}
         {showPending && (
-          <div className={hideTableTitle ? "h-full flex flex-col" : "border border-slate-200/60 rounded-xl overflow-hidden bg-white mb-4 h-full flex flex-col"}>
+          <div className={hideTableTitle ? "h-full flex flex-col" : "border border-indigo-100/70 rounded-xl overflow-hidden bg-white mb-4 h-full flex flex-col shadow-xs"}>
             {!hideTableTitle && (
-              <div className="p-4 bg-transparent border-b border-slate-100 shrink-0">
+              <div className="p-4 bg-transparent border-b border-indigo-50 shrink-0">
                 <div className="text-lg font-bold flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-900">
-                    <ClipboardList className="w-5 h-5 text-slate-900" />
+                  <div className="flex items-center gap-2 text-indigo-950">
+                    <ClipboardList className="w-5 h-5 text-indigo-600" />
                     Pending ({pending.length})
                   </div>
                   {pending.length > 5 && (
-                    <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                    <span className="text-xs font-semibold text-red-700 bg-red-50 px-2.5 py-1 rounded-md">
                       Urgent tasks awaiting action
                     </span>
                   )}
@@ -152,7 +154,7 @@ export function StageTable({
 
             <div className="flex-1 overflow-hidden">
               {pending.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8 bg-white border border-slate-100 rounded-b-xl">
+                <div className="text-center text-muted-foreground py-8 bg-white border border-indigo-50 rounded-b-xl">
                   No pending records
                 </div>
               ) : (
@@ -171,20 +173,20 @@ export function StageTable({
                   </div>
 
                   {/* Desktop */}
-                  <div className="hidden md:block overflow-auto max-h-full scrollbar-thin scrollbar-thumb-slate-200 relative border rounded-lg">
+                  <div className="hidden md:block overflow-auto max-h-full scrollbar-thin scrollbar-thumb-indigo-100 relative border border-indigo-100 rounded-lg">
                     <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
-                      <TableHeader className="bg-slate-200 sticky top-0 z-30 shadow-sm">
-                        <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
-                          <TableHead className="w-[100px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">Actions</TableHead>
+                      <TableHeader className="bg-slate-900 sticky top-0 z-30 shadow-xs">
+                        <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+                          <TableHead className="w-[100px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">Actions</TableHead>
                           {/* Render first column (Indent #) */}
-                          <TableHead className="min-w-[120px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">
+                          <TableHead className="min-w-[120px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">
                             {columns[0]?.label}
                           </TableHead>
-                          <TableHead className="min-w-[120px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">
+                          <TableHead className="min-w-[120px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">
                             Date
                           </TableHead>
                           {columns.slice(1).map((col) => (
-                            <TableHead key={col.key} className="min-w-[120px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">
+                            <TableHead key={col.key} className="min-w-[120px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">
                               {col.label}
                             </TableHead>
                           ))}
@@ -194,30 +196,30 @@ export function StageTable({
                         {pending.map((record) => (
                           <TableRow
                             key={record.id}
-                            className="odd:bg-white even:bg-slate-50/30 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0"
+                            className="odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/30 transition-colors border-b border-indigo-50/80 last:border-0"
                           >
-                            <TableCell className="border-b border-slate-100 px-4">
+                            <TableCell className="border-b border-indigo-50/80 px-4">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => onSelectRecord(record)}
-                                className="h-8 border-slate-200 hover:bg-slate-900 hover:text-white transition-all"
+                                className="h-8 border-red-200 text-red-700 bg-red-50/30 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all font-semibold shadow-xs"
                               >
                                 Edit
                               </Button>
                             </TableCell>
-                            <TableCell className="text-sm font-medium text-slate-900 border-b border-slate-100 px-4">
+                            <TableCell className="text-sm font-bold text-indigo-950 border-b border-indigo-50/80 px-4">
                               {String(record.data[columns[0]?.key] || "-")}
                             </TableCell>
-                            <TableCell className="text-sm text-slate-600 border-b border-slate-100 px-4">
+                            <TableCell className="text-sm text-slate-600 border-b border-indigo-50/80 px-4 font-medium">
                               {getStageTimestamp(record)}
                             </TableCell>
                             {columns.slice(1).map((col) => (
-                              <TableCell key={col.key} className="text-sm text-slate-600 border-b border-slate-100 px-4">
+                              <TableCell key={col.key} className="text-sm text-slate-600 border-b border-indigo-50/80 px-4 font-medium">
                                 {col.key === "leadTime"
                                   ? `${record.data[col.key] || "-"} days`
                                   : col.key === "attachment" && record.data[col.key]
-                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium underline-offset-4 hover:underline">View</a>
+                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 font-bold underline-offset-4 hover:underline">View</a>
                                     : String(record.data[col.key] || "-")}
                               </TableCell>
                             ))}
@@ -234,11 +236,11 @@ export function StageTable({
 
         {/* History Section */}
         {!showPending && (
-          <div className={hideTableTitle ? "h-full flex flex-col" : "border border-slate-200/60 rounded-xl overflow-hidden bg-white h-full flex flex-col"}>
+          <div className={hideTableTitle ? "h-full flex flex-col" : "border border-indigo-100/70 rounded-xl overflow-hidden bg-white h-full flex flex-col shadow-xs"}>
             {!hideTableTitle && (
-              <div className="p-4 bg-transparent border-b border-slate-100 shrink-0">
-                <div className="text-lg font-bold flex items-center gap-2 text-slate-900">
-                  <Clock className="w-5 h-5 text-slate-900" />
+              <div className="p-4 bg-transparent border-b border-indigo-50 shrink-0">
+                <div className="text-lg font-bold flex items-center gap-2 text-indigo-950">
+                  <Clock className="w-5 h-5 text-indigo-600" />
                   History ({history.length})
                 </div>
               </div>
@@ -246,7 +248,7 @@ export function StageTable({
 
             <div className="flex-1 overflow-hidden">
               {history.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8 bg-white border border-slate-100 rounded-b-xl">
+                <div className="text-center text-muted-foreground py-8 bg-white border border-indigo-50 rounded-b-xl">
                   No completed records
                 </div>
               ) : (
@@ -265,19 +267,19 @@ export function StageTable({
                   </div>
 
                   {/* Desktop Table */}
-                  <div className="hidden md:block overflow-auto max-h-full scrollbar-thin scrollbar-thumb-slate-200 relative border rounded-lg">
+                  <div className="hidden md:block overflow-auto max-h-full scrollbar-thin scrollbar-thumb-indigo-100 relative border border-indigo-100 rounded-lg">
                     <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
-                      <TableHeader className="bg-slate-200 sticky top-0 z-30 shadow-sm">
-                        <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
-                          <TableHead className="min-w-[180px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">
+                      <TableHeader className="bg-slate-900 sticky top-0 z-30 shadow-xs">
+                        <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+                          <TableHead className="min-w-[180px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">
                             Timestamp
                           </TableHead>
                           {columns.map((col) => (
-                            <TableHead key={col.key} className="min-w-[120px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">
+                            <TableHead key={col.key} className="min-w-[120px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">
                               {col.label}
                             </TableHead>
                           ))}
-                          <TableHead className="w-[100px] font-bold text-slate-900 border-b border-slate-300 sticky top-0 z-30 bg-slate-200 px-4 py-3 whitespace-nowrap">Status</TableHead>
+                          <TableHead className="w-[100px] font-bold text-white border-b border-slate-800 sticky top-0 z-30 bg-slate-900 px-4 py-3 whitespace-nowrap">Status</TableHead>
                         </TableRow>
                       </TableHeader>
 
@@ -285,21 +287,21 @@ export function StageTable({
                         {history.map((record) => (
                           <TableRow
                             key={record.id}
-                            className="odd:bg-white even:bg-slate-50/30 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0"
+                            className="odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/30 transition-colors border-b border-indigo-50/80 last:border-0"
                           >
-                            <TableCell className="font-medium text-slate-900 whitespace-nowrap border-b border-slate-100 px-4">
+                            <TableCell className="font-bold text-indigo-950 whitespace-nowrap border-b border-indigo-50/80 px-4 font-mono">
                               {getStageTimestamp(record)}
                             </TableCell>
                             {columns.map((col) => (
-                              <TableCell key={col.key} className="text-sm text-slate-600 border-b border-slate-100 px-4">
+                              <TableCell key={col.key} className="text-sm text-slate-600 border-b border-indigo-50/80 px-4 font-medium">
                                 {col.key === "leadTime"
                                   ? `${record.data[col.key] || "-"} days`
                                   : col.key === "attachment" && record.data[col.key]
-                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium underline-offset-4 hover:underline">View</a>
+                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 font-bold underline-offset-4 hover:underline">View</a>
                                     : String(record.data[col.key] || "-")}
                               </TableCell>
                             ))}
-                            <TableCell className="font-medium text-green-600 border-b border-slate-100 px-4">
+                            <TableCell className="font-extrabold text-green-700 border-b border-indigo-50/80 px-4 uppercase tracking-wide text-xs">
                               Completed
                             </TableCell>
                           </TableRow>

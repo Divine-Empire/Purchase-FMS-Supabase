@@ -21,8 +21,11 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, RefreshCw, Upload, FileText, X, Search } from "lucide-react";
+import { Loader2, RefreshCw, Upload, FileText, X, Search, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getFmsTimestamp } from "@/lib/utils";
 import ReturnApprovalPending from "./return-approval-pending";
 import ReturnApprovalHistory from "./return-approval-history";
@@ -299,75 +302,96 @@ export default function ReturnApproval() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/30">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full flex flex-col h-full">
-        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b shadow-sm">
-          <div className="max-w-[1600px] mx-auto">
-            <div className="p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                  <span className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-blue-200 shadow-lg">
-                    <RefreshCw className="w-6 h-6 text-white" />
-                  </span>
-                  Stage 13: Return Approval
-                </h1>
-                <p className="text-slate-500 text-sm mt-1 ml-12">Review and finalize rejected item returns</p>
+    <div className="flex flex-col h-full bg-slate-50/30 p-6 overflow-hidden">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full flex-1 flex flex-col overflow-hidden">
+        {/* Header Card */}
+        <div className="mb-6 p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs shrink-0">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg shadow-indigo-100 shadow-xl text-white">
+                <RefreshCw className="w-6 h-6" />
               </div>
-
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                {selectedRows.size > 1 && (
-                  <div className="flex items-center gap-3 px-4 py-1.5 bg-blue-50 border border-blue-100 rounded-xl animate-in fade-in slide-in-from-right-4 duration-300">
-                    <div className="flex flex-col items-start leading-tight">
-                      <span className="text-sm font-semibold text-blue-700">{selectedRows.size} selected</span>
-                    </div>
-                    <Button 
-                      size="sm" 
-                      onClick={handleOpenBulkForm}
-                      className="h-8 bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-4 rounded-lg text-xs"
-                    >
-                      Bulk Approval
-                    </Button>
-                  </div>
-                )}
-
-                <div className="relative flex-1 md:w-80 group">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-                  <Input
-                    placeholder="Search indent, item, vendor, invoice..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all h-10 rounded-xl"
-                  />
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="icon"
-                  onClick={fetchData} 
-                  disabled={isLoading}
-                  className="h-10 w-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border-slate-200"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-                </Button>
+              <div>
+                <h2 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Stage 13: Return Approval</h2>
+                <p className="text-xs text-slate-500 mt-1">Review and finalize rejected item returns</p>
               </div>
             </div>
-
-            <div className="px-6 pb-2">
-              <TabsList className="bg-slate-200/50 p-1 rounded-xl h-11 inline-flex w-auto mb-2">
-                <TabsTrigger 
-                  value="pending" 
-                  className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 transition-all font-medium"
-                >
-                  Pending ({pending.length})
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="history"
-                  className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 transition-all font-medium"
-                >
-                  History ({completed.length})
-                </TabsTrigger>
-              </TabsList>
+            <div className="flex items-center gap-4">
+              {selectedRows.size > 1 && (
+                <div className="flex items-center gap-3 px-4 py-1.5 bg-indigo-50 border border-indigo-100 rounded-xl animate-in fade-in slide-in-from-right-4 duration-300 shadow-sm">
+                  <div className="flex flex-col items-start leading-tight">
+                    <span className="text-sm font-semibold text-indigo-700">{selectedRows.size} selected</span>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    onClick={handleOpenBulkForm}
+                    className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm px-4 rounded-lg text-xs font-semibold"
+                  >
+                    Bulk Approval
+                  </Button>
+                </div>
+              )}
+              <div className="relative w-full max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-indigo-500" />
+                <Input
+                  placeholder="Search records..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 bg-white border-indigo-100 focus-visible:ring-indigo-500"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={fetchData}
+                disabled={isLoading}
+                className="bg-white hover:bg-slate-50 shrink-0 border-indigo-100/80 text-indigo-700"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              </Button>
             </div>
           </div>
+        </div>
+
+        <div className="mb-4">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
+            <TabsTrigger
+              value="pending"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
+            >
+              <ClipboardList className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
+                <span className="font-bold">Pending</span>
+                <span className="text-[10px] opacity-70 font-medium">Awaiting return approval</span>
+              </div>
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "pending"
+                  ? "bg-white text-red-600 shadow-xs"
+                  : "bg-red-100 text-red-700"
+              )}>
+                {pending.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
+            >
+              <History className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
+                <span className="font-bold">History</span>
+                <span className="text-[10px] opacity-70 font-medium">Approval history</span>
+              </div>
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "history"
+                  ? "bg-white text-emerald-600 shadow-xs"
+                  : "bg-green-100 text-green-800"
+              )}>
+                {completed.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
         </div>
 
         <div className="p-4 md:p-6 max-w-[1600px] mx-auto w-full flex-1">

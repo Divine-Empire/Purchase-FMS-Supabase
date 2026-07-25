@@ -10,7 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CheckCircle2 } from "lucide-react";
-import { parseSheetDate } from "@/lib/utils";
+import { parseSheetDate, cn } from "@/lib/utils";
 
 const formatDateDash = (dateStr: string) => {
   if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
@@ -38,34 +38,22 @@ export default function NegotiationHistory({
   baseColumns,
 }: NegotiationHistoryProps) {
   return (
-    <div className="flex-1 overflow-auto border rounded-xl bg-white shadow-sm scrollbar-thin scrollbar-thumb-slate-200">
-      <table className="w-full caption-bottom text-sm border-collapse">
-        <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
-          <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+    <div className="border border-indigo-100 rounded-xl overflow-auto flex-1 shadow-xs relative h-full bg-white">
+      <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
+        <TableHeader className="sticky top-0 z-30 bg-slate-900 shadow-xs border-none text-white">
+          <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
             {baseColumns
               .filter((c) => selectedColumns.includes(c.key))
               .map((col) => (
-                <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
-                  <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-white font-bold whitespace-nowrap text-[11px] tracking-wider uppercase">
+                  <div className="flex items-center gap-2 text-white">
                     {col.label}
                   </div>
                 </TableHead>
               ))}
-            <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
-              <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
-                Vendor
-              </div>
-            </TableHead>
-            <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
-              <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
-                Rate
-              </div>
-            </TableHead>
-            <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
-              <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
-                Approved By
-              </div>
-            </TableHead>
+            <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-white font-bold whitespace-nowrap text-[11px] tracking-wider uppercase">Vendor</TableHead>
+            <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-white font-bold whitespace-nowrap text-[11px] tracking-wider uppercase">Rate</TableHead>
+            <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-white font-bold whitespace-nowrap text-[11px] tracking-wider uppercase">Approved By</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -88,27 +76,33 @@ export default function NegotiationHistory({
             };
 
             return (
-              <TableRow key={record.id} className="hover:bg-muted/50 odd:bg-white even:bg-slate-50/80 group">
+              <TableRow key={record.id} className="odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/30 transition-colors border-b border-indigo-50/80 last:border-0">
                 {baseColumns
                   .filter((c) => selectedColumns.includes(c.key))
                   .map((col) => (
-                    <TableCell key={col.key} className="text-sm text-slate-700 px-4">
+                    <TableCell key={col.key} className={cn(
+                      "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
+                      col.key === "indentNumber" && "font-bold text-indigo-950",
+                      col.key !== "indentNumber" && "text-slate-600"
+                    )}>
                       {col.key === "planned3" || col.key === "actual3"
                         ? formatDateDash(record.data[col.key])
                         : String(record.data[col.key] ?? "-")}
                     </TableCell>
                   ))}
-                <TableCell className="px-4 py-3">
+                <TableCell className="px-4 py-3 border-b border-indigo-50/80">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
                       <CheckCircle2 className="w-4 h-4" />
                     </div>
-                    <span className="text-sm font-medium text-slate-900">{v.name}</span>
+                    <span className="text-sm font-bold text-indigo-950">{v.name}</span>
                   </div>
                 </TableCell>
-                <TableCell className="text-sm text-slate-700 px-4 font-medium">₹{v.rate || "-"}</TableCell>
-                <TableCell className="px-4">
-                  <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 font-medium">
+                <TableCell className="text-sm font-semibold text-slate-700 border-b border-indigo-50/80 px-4 py-3">
+                  {v.rate ? `₹${v.rate}` : "-"}
+                </TableCell>
+                <TableCell className="px-4 border-b border-indigo-50/80">
+                  <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-semibold">
                     {v.approvedBy}
                   </Badge>
                 </TableCell>

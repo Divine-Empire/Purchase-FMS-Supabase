@@ -36,7 +36,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, cn } from "@/lib/utils";
 import NegotiationPending from "./negotiation-pending";
 import NegotiationHistory from "./negotiation-history";
 
@@ -307,7 +307,7 @@ export default function Stage4() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-40 justify-start">
+        <Button variant="outline" className="w-40 justify-start border-indigo-150 text-indigo-700 bg-white hover:bg-indigo-50/50 hover:text-indigo-800 shadow-xs">
           {selectedColumns.length === baseColumns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length > 1 ? "s" : ""} selected`}
@@ -315,7 +315,7 @@ export default function Stage4() {
       </PopoverTrigger>
       <PopoverContent className="w-40 p-2">
         <div className="space-y-2">
-          <div className="flex items-center space-x-2 pb-2 border-b">
+          <div className="flex items-center space-x-2 pb-2 border-b border-indigo-100">
             <Checkbox
               checked={selectedColumns.length === baseColumns.length}
               onCheckedChange={(c) => {
@@ -350,30 +350,30 @@ export default function Stage4() {
   return (
     <div className="h-[calc(100vh-2rem)] flex flex-col overflow-hidden p-6 bg-slate-50/30">
       {/* Header */}
-      <div className="shrink-0 mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="shrink-0 mb-6 p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
+            <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg shadow-indigo-100 shadow-xl text-white">
               <Users className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 4: Vendor Negotiation</h2>
+              <h2 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Stage 4: Vendor Negotiation</h2>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-indigo-500" />
               <Input
                 placeholder="Search by Indent, Item, Vendor..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-white"
+                className="pl-9 bg-white border-indigo-100 focus-visible:ring-indigo-500"
               />
             </div>
-            <div className="h-8 w-px bg-slate-200 mx-2" />
+            <div className="h-8 w-px bg-indigo-100/60 mx-2" />
             <div className="flex items-center gap-4">
-              {isLoading && <Loader2 className="w-5 h-5 animate-spin text-black" />}
-              <Label className="text-sm font-medium whitespace-nowrap hidden md:inline-block">Show Columns:</Label>
+              {isLoading && <Loader2 className="w-5 h-5 animate-spin text-indigo-650" />}
+              <Label className="text-sm font-semibold text-indigo-900 whitespace-nowrap hidden md:inline-block">Show Columns:</Label>
               <ColumnSelector />
             </div>
           </div>
@@ -388,30 +388,40 @@ export default function Stage4() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
         <div className="shrink-0 mb-6 flex items-center justify-between">
-          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-[400px]">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
             <TabsTrigger
               value="pending"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <ClipboardList className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <ClipboardList className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">Pending</span>
                 <span className="text-[10px] opacity-70">Awaiting processing</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "pending"
+                  ? "bg-white text-red-600 shadow-xs"
+                  : "bg-red-100 text-red-700"
+              )}>
                 {pending.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <HistoryIcon className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <HistoryIcon className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">History</span>
-                <span className="text-[10px] opacity-70">Completed</span>
+                <span className="text-[10px] opacity-70 font-medium">Completed records</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "history"
+                  ? "bg-white text-emerald-600 shadow-xs"
+                  : "bg-green-100 text-green-800"
+              )}>
                 {completed.length}
               </Badge>
             </TabsTrigger>
@@ -420,7 +430,7 @@ export default function Stage4() {
           {selectedIndents.length >= 2 && activeTab === "pending" && (
             <Button
               onClick={handleOpenBulkModal}
-              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-green-100 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
             >
               Bulk Negotiate ({selectedIndents.length})
             </Button>
@@ -478,15 +488,15 @@ export default function Stage4() {
 
       {/* MODAL */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>Vendor Negotiation & Final Selection</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex flex-col gap-1 flex-shrink-0">
+            <DialogTitle className="text-white text-lg font-bold">Vendor Negotiation & Final Selection</DialogTitle>
+          </div>
 
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 p-6">
             {/* 1. SELECT VENDOR FIRST */}
-            <div className="space-y-3 border-b pb-4">
-              <Label className="text-lg font-semibold">
+            <div className="space-y-3 border-b border-indigo-100 pb-4">
+              <Label className="text-sm font-bold text-indigo-900 uppercase tracking-wider">
                 Select Vendor <span className="text-red-500">*</span>
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -495,9 +505,9 @@ export default function Stage4() {
                   return (
                     <label
                       key={v.id}
-                      className={`flex items-center p-3 border rounded-lg cursor-pointer transition-all ${formData.selectedVendor === v.id
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-300 hover:border-gray-400"
+                      className={`flex items-center p-3 border rounded-xl cursor-pointer transition-all ${formData.selectedVendor === v.id
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-950 shadow-xs font-bold"
+                        : "border-indigo-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/10 text-slate-700"
                         }`}
                     >
                       <input
@@ -506,9 +516,9 @@ export default function Stage4() {
                         value={v.id}
                         checked={formData.selectedVendor === v.id}
                         onChange={(e) => setFormData({ ...formData, selectedVendor: e.target.value })}
-                        className="mr-3"
+                        className="mr-3 text-indigo-650 focus:ring-indigo-500"
                       />
-                      <span className="font-medium">{v.name}</span>
+                      <span className="text-sm">{v.name}</span>
                     </label>
                   );
                 })}
@@ -517,7 +527,7 @@ export default function Stage4() {
 
             {/* 2. APPROVED BY */}
             <div className="space-y-2">
-              <Label htmlFor="approvedBy">
+              <Label htmlFor="approvedBy" className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider ml-1">
                 Approved By <span className="text-red-500">*</span>
               </Label>
               <Select
@@ -525,7 +535,7 @@ export default function Stage4() {
                 onValueChange={(v) => setFormData({ ...formData, approvedBy: v })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-indigo-150 focus:ring-indigo-500">
                   <SelectValue placeholder="Select approver..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -537,68 +547,72 @@ export default function Stage4() {
             </div>
 
             {/* 3. ITEM DETAILS */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="font-medium mb-3">Item Details</h3>
+            <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/15 max-h-60 overflow-y-auto shadow-2xs">
+              <h3 className="font-bold text-indigo-950 mb-3 uppercase tracking-wider text-xs">Item Details</h3>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="font-medium">Indent #:</span>
-                  <p>{currentRecord?.data?.indentNumber || "—"}</p>
+                  <span className="font-semibold text-indigo-950/70 text-xs">Indent #:</span>
+                  <p className="font-bold text-indigo-950 text-sm">{currentRecord?.data?.indentNumber || "—"}</p>
                 </div>
                 <div>
-                  <span className="font-medium">Item:</span>
-                  <p>{currentRecord?.data?.itemName || "—"}</p>
+                  <span className="font-semibold text-indigo-950/70 text-xs">Item:</span>
+                  <p className="font-bold text-indigo-950 text-sm">{currentRecord?.data?.itemName || "—"}</p>
                 </div>
                 <div>
-                  <span className="font-medium">Quantity:</span>
-                  <p>{currentRecord?.data?.quantity || "—"}</p>
+                  <span className="font-semibold text-indigo-950/70 text-xs">Quantity:</span>
+                  <p className="font-bold text-indigo-950 text-sm">{currentRecord?.data?.quantity || "—"}</p>
                 </div>
               </div>
             </div>
 
             {/* 4. COMPARISON SHEET */}
-            <div className="border rounded-lg">
-              <div className="p-4 border-b bg-muted/50">
-                <h3 className="font-medium">Vendor Comparison Sheet</h3>
+            <div className="border border-indigo-100 rounded-xl overflow-hidden shadow-xs bg-white">
+              <div className="p-4 border-b border-indigo-100 bg-indigo-50/50">
+                <h3 className="font-bold text-indigo-950 text-sm uppercase tracking-wider">Vendor Comparison Sheet</h3>
               </div>
               <div className="p-4">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Vendor Name</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Payment Terms</TableHead>
-                      <TableHead>Exp. Delivery</TableHead>
-                      <TableHead>Warranty</TableHead>
-                      <TableHead>Attachment</TableHead>
+                  <TableHeader className="bg-indigo-50/20 sticky top-0 z-10 border-b border-indigo-100">
+                    <TableRow className="hover:bg-transparent border-b border-indigo-100">
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Vendor Name</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Rate</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Payment Terms</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Exp. Delivery</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Warranty</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Attachment</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {vendors.map((v) => {
                       if (!v) return null;
+                      const isSelectedVendor = formData.selectedVendor === v.id;
                       return (
                         <TableRow
                           key={v.id}
-                          className={formData.selectedVendor === v.id ? "bg-blue-50" : ""}
+                          className={cn(
+                            "transition-all border-b border-indigo-50 last:border-0 odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20",
+                            isSelectedVendor ? "bg-emerald-50/45 text-emerald-950 font-bold border-l-2 border-l-emerald-500" : ""
+                          )}
                         >
-                          <TableCell className="font-medium">{v.name}</TableCell>
-                          <TableCell>₹{v.rate || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell className="font-semibold text-indigo-950">{v.name}</TableCell>
+                          <TableCell className="font-semibold text-slate-700">₹{v.rate || "-"}</TableCell>
+                          <TableCell className="text-slate-600 font-medium">
                             {paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-"}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-slate-650 font-medium">
                             {v.delivery ? new Date(v.delivery).toLocaleDateString("en-IN") : "-"}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-slate-650 font-medium">
                             {v.warrantyType ? (
                               <div className="flex items-center gap-1 text-xs">
                                 {v.warrantyType === "warranty" ? (
-                                  <Shield className="w-3.5 h-3.5 text-blue-600" />
+                                  <Shield className="w-3.5 h-3.5 text-indigo-650" />
                                 ) : (
-                                  <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
+                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                                 )}
-                                <span className="capitalize">{v.warrantyType}</span>
+                                <span className="capitalize font-semibold text-indigo-950">{v.warrantyType}</span>
                                 {v.warrantyFrom && v.warrantyTo && (
-                                  <span className="text-gray-500 ml-1">
+                                  <span className="text-slate-500 font-medium ml-1">
                                     ({new Date(v.warrantyFrom).toLocaleDateString("en-IN")} -{" "}
                                     {new Date(v.warrantyTo).toLocaleDateString("en-IN")})
                                   </span>
@@ -614,9 +628,9 @@ export default function Stage4() {
                                 href={typeof v.attachment === 'string' ? v.attachment : undefined}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                                className="flex items-center gap-1 text-indigo-600 hover:underline text-xs font-semibold"
                               >
-                                <FileText className="w-3.5 h-3.5" />
+                                <FileText className="w-3.5 h-3.5 text-indigo-600" />
                                 <span className="truncate max-w-20">
                                   {typeof v.attachment === 'string' ? "View File" : (v.attachment as any).name}
                                 </span>
@@ -635,23 +649,24 @@ export default function Stage4() {
 
             {/* 5. REMARKS */}
             <div className="space-y-2">
-              <Label htmlFor="remarks">Negotiation Remarks</Label>
+              <Label htmlFor="remarks" className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider ml-1">Negotiation Remarks</Label>
               <Textarea
                 id="remarks"
                 value={formData.remarks}
                 onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
                 placeholder="Any special terms, discounts, or notes..."
-                className="min-h-24"
+                className="min-h-24 border-indigo-150 focus-visible:ring-indigo-500"
               />
             </div>
 
-            <DialogFooter className="flex-shrink-0 border-t pt-4">
-              <Button type="button" variant="outline" onClick={resetForm} disabled={isSubmitting}>
+            <DialogFooter className="flex-shrink-0 border-t border-indigo-100 pt-4 gap-2">
+              <Button type="button" variant="outline" onClick={resetForm} disabled={isSubmitting} className="border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600">
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || !formData.selectedVendor || !formData.approvedBy}
+                className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold shadow-md shadow-indigo-200 px-6 py-2.5 h-auto rounded-lg"
               >
                 {isSubmitting ? (
                   <>
@@ -669,25 +684,25 @@ export default function Stage4() {
 
       {/* BULK NEGOTIATE MODAL */}
       <Dialog open={bulkModalOpen} onOpenChange={setBulkModalOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>Bulk Vendor Negotiation & Final Selection</DialogTitle>
-            <p className="text-sm text-gray-500">
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex flex-col gap-1 flex-shrink-0">
+            <DialogTitle className="text-white text-lg font-bold">Bulk Vendor Negotiation & Final Selection</DialogTitle>
+            <p className="text-slate-400 text-xs">
               Applying negotiation to {bulkRecords.length} items
             </p>
-          </DialogHeader>
+          </div>
 
-          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 p-6">
             {/* 1. SELECT VENDOR (Common Vendors Only) */}
-            <div className="space-y-3 border-b pb-4">
-              <Label className="text-lg font-semibold">
+            <div className="space-y-3 border-b border-indigo-100 pb-4">
+              <Label className="text-sm font-bold text-indigo-900 uppercase tracking-wider">
                 Select Vendor <span className="text-red-500">*</span>
               </Label>
               {(() => {
                 const commonVendors = getCommonVendors(bulkRecords);
                 if (commonVendors.length === 0 && bulkRecords.length > 0) {
                   return (
-                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm">
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm font-semibold">
                       ⚠️ No common vendors found across selected items. Please select items with at least one common vendor.
                     </div>
                   );
@@ -699,9 +714,9 @@ export default function Stage4() {
                       return (
                         <label
                           key={v.id}
-                          className={`flex items-center p-3 border rounded-lg cursor-pointer transition-all ${formData.selectedVendor === v.id
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-300 hover:border-gray-400"
+                          className={`flex items-center p-3 border rounded-xl cursor-pointer transition-all ${formData.selectedVendor === v.id
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-950 shadow-xs font-bold"
+                            : "border-indigo-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/10 text-slate-700"
                             }`}
                         >
                           <input
@@ -710,9 +725,9 @@ export default function Stage4() {
                             value={v.id}
                             checked={formData.selectedVendor === v.id}
                             onChange={(e) => setFormData({ ...formData, selectedVendor: e.target.value })}
-                            className="mr-3"
+                            className="mr-3 text-indigo-650 focus:ring-indigo-500"
                           />
-                          <span className="font-medium">{v.name}</span>
+                          <span className="text-sm">{v.name}</span>
                         </label>
                       );
                     })}
@@ -723,7 +738,7 @@ export default function Stage4() {
 
             {/* 2. APPROVED BY */}
             <div className="space-y-2">
-              <Label htmlFor="bulkApprovedBy">
+              <Label htmlFor="bulkApprovedBy" className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider ml-1">
                 Approved By <span className="text-red-500">*</span>
               </Label>
               <Select
@@ -731,7 +746,7 @@ export default function Stage4() {
                 onValueChange={(v) => setFormData({ ...formData, approvedBy: v })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-indigo-150 focus:ring-indigo-500">
                   <SelectValue placeholder="Select approver..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -743,22 +758,22 @@ export default function Stage4() {
             </div>
 
             {/* 3. ITEM DETAILS */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="font-medium mb-3">Item Details ({bulkRecords.length} items selected)</h3>
+            <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/15 max-h-60 overflow-y-auto shadow-2xs">
+              <h3 className="font-bold text-indigo-950 mb-3 uppercase tracking-wider text-xs">Item Details ({bulkRecords.length} items selected)</h3>
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Indent #</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Quantity</TableHead>
+                <TableHeader className="bg-indigo-50/20 sticky top-0 z-10 border-b border-indigo-100">
+                  <TableRow className="hover:bg-transparent border-b border-indigo-100">
+                    <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Indent #</TableHead>
+                    <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Item</TableHead>
+                    <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Quantity</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {bulkRecords.map((record) => (
-                    <TableRow key={record.id}>
-                      <TableCell className="font-medium">{record.data?.indentNumber || "—"}</TableCell>
-                      <TableCell>{record.data?.itemName || "—"}</TableCell>
-                      <TableCell>{record.data?.quantity || "—"}</TableCell>
+                    <TableRow key={record.id} className="transition-all border-b border-indigo-50 last:border-0 hover:bg-indigo-50/10">
+                      <TableCell className="font-semibold text-indigo-950">{record.data?.indentNumber || "—"}</TableCell>
+                      <TableCell className="text-slate-600 font-semibold">{record.data?.itemName || "—"}</TableCell>
+                      <TableCell className="text-slate-650 font-medium">{record.data?.quantity || "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -766,37 +781,41 @@ export default function Stage4() {
             </div>
 
             {/* 4. VENDOR COMPARISON */}
-            <div className="border rounded-lg">
-              <div className="p-4 border-b bg-muted/50">
-                <h3 className="font-medium">Vendor Comparison Sheet (Common Vendors)</h3>
+            <div className="border border-indigo-100 rounded-xl overflow-hidden bg-white shadow-xs">
+              <div className="p-4 border-b border-indigo-100 bg-indigo-50/50">
+                <h3 className="font-bold text-indigo-950 text-sm uppercase tracking-wider">Vendor Comparison Sheet (Common Vendors)</h3>
               </div>
               <div className="p-4">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Indent #</TableHead>
-                      <TableHead>Vendor Name</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Payment Terms</TableHead>
-                      <TableHead>Exp. Delivery</TableHead>
-                      <TableHead>Attachment</TableHead>
+                  <TableHeader className="bg-indigo-50/20 sticky top-0 z-10 border-b border-indigo-100">
+                    <TableRow className="hover:bg-transparent border-b border-indigo-100">
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Indent #</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Vendor Name</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Rate</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Payment Terms</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Exp. Delivery</TableHead>
+                      <TableHead className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Attachment</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {getAllVendorsForComparison(bulkRecords).map((v: any, index: number) => {
                       if (!v) return null;
+                      const isSelectedVendor = formData.selectedVendor === v.id;
                       return (
                         <TableRow
                           key={`${v.indentNumber}-${v.id}-${index}`}
-                          className={formData.selectedVendor === v.id ? "bg-blue-50" : ""}
+                          className={cn(
+                            "transition-all border-b border-indigo-50 last:border-0 odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20",
+                            isSelectedVendor ? "bg-emerald-50/45 text-emerald-950 font-bold border-l-2 border-l-emerald-500" : ""
+                          )}
                         >
-                          <TableCell className="font-medium">{v.indentNumber}</TableCell>
-                          <TableCell>{v.name}</TableCell>
-                          <TableCell>₹{v.rate || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell className="font-semibold text-indigo-950">{v.indentNumber}</TableCell>
+                          <TableCell className="font-semibold text-indigo-950">{v.name}</TableCell>
+                          <TableCell className="font-semibold text-slate-700">₹{v.rate || "-"}</TableCell>
+                          <TableCell className="text-slate-600 font-medium">
                             {paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-"}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-slate-650 font-medium">
                             {v.delivery ? new Date(v.delivery).toLocaleDateString("en-IN") : "-"}
                           </TableCell>
                           <TableCell>
@@ -805,9 +824,9 @@ export default function Stage4() {
                                 href={typeof v.attachment === 'string' ? v.attachment : undefined}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                                className="flex items-center gap-1 text-indigo-600 hover:underline text-xs font-semibold"
                               >
-                                <FileText className="w-3.5 h-3.5" />
+                                <FileText className="w-3.5 h-3.5 text-indigo-600" />
                                 <span>View</span>
                               </a>
                             ) : (
@@ -824,23 +843,23 @@ export default function Stage4() {
 
             {/* 5. REMARKS */}
             <div className="space-y-2">
-              <Label htmlFor="bulkRemarks">Negotiation Remarks</Label>
+              <Label htmlFor="bulkRemarks" className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider ml-1">Negotiation Remarks</Label>
               <Textarea
                 id="bulkRemarks"
                 value={formData.remarks}
                 onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
                 placeholder="Any special terms, discounts, or notes..."
-                className="min-h-24"
+                className="min-h-24 border-indigo-150 focus-visible:ring-indigo-500"
               />
             </div>
 
             {submitError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-semibold">
                 ⚠️ {submitError}
               </div>
             )}
 
-            <DialogFooter className="flex-shrink-0 border-t pt-4">
+            <DialogFooter className="flex-shrink-0 border-t border-indigo-100 pt-4 gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -849,12 +868,14 @@ export default function Stage4() {
                   setFormData({ selectedVendor: "", approvedBy: "", remarks: "" });
                 }}
                 disabled={isSubmitting}
+                className="border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || !formData.selectedVendor || !formData.approvedBy || getCommonVendors(bulkRecords).length === 0}
+                className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold shadow-md shadow-indigo-200 px-6 py-2.5 h-auto rounded-lg"
               >
                 {isSubmitting ? (
                   <>

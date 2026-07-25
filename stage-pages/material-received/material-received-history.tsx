@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileText } from "lucide-react";
-import { parseSheetDate } from "@/lib/utils";
+import { parseSheetDate, cn } from "@/lib/utils";
 
 const formatDateDash = (date: any) => {
   if (!date || date === "-" || date === "—") return "-";
@@ -35,14 +35,14 @@ export default function MaterialReceivedHistory({
   return (
     <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
       <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-        <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
-          <TableRow className="hover:bg-transparent border-none">
+        <TableHeader className="sticky top-0 z-30 bg-slate-900 shadow-sm border-none [&_th]:h-12 border-b-0">
+          <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
             {HISTORY_COLUMNS.filter((c) =>
               selectedHistoryColumns.includes(c.key)
             ).map((c) => (
               <TableHead
                 key={c.key}
-                className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                className="bg-slate-900 border-b text-center px-4 py-3 font-semibold text-white whitespace-nowrap uppercase"
               >
                 {c.label}
               </TableHead>
@@ -54,7 +54,7 @@ export default function MaterialReceivedHistory({
             const historyData = record.data;
 
             return (
-              <TableRow key={record.id} className="bg-green-50 hover:bg-green-100 transition-colors">
+              <TableRow key={record.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
                 {HISTORY_COLUMNS.filter((c) =>
                   selectedHistoryColumns.includes(c.key)
                 ).map((col) => {

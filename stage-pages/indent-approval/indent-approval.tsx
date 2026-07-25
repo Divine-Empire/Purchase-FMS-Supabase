@@ -281,7 +281,7 @@ export default function Stage2() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-40 justify-start">
+        <Button variant="outline" className="w-40 justify-start border-indigo-150 text-indigo-700 bg-white hover:bg-indigo-50/50 hover:text-indigo-800 shadow-xs">
           {selectedColumns.length === columns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length !== 1 ? "s" : ""
@@ -329,30 +329,30 @@ export default function Stage2() {
   return (
     <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header Card */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
+      <div className="mb-6 p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs shrink-0">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
+            <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg shadow-indigo-100 shadow-xl text-white">
               <UserCheck className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 2: Approval</h2>
+              <h2 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Stage 2: Approval</h2>
             </div>
           </div>
 
           <div className="flex-1 flex items-center justify-end gap-4">
             <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-indigo-500" />
               <Input
                 placeholder="Search by Indent No, Item Name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-white"
+                className="pl-9 bg-white border-indigo-100 focus-visible:ring-indigo-500"
               />
             </div>
 
             <div className="flex items-center gap-3">
-              <Label className="text-sm font-semibold text-slate-600 hidden md:inline-block">Show Columns:</Label>
+              <Label className="text-sm font-semibold text-indigo-900 hidden md:inline-block">Show Columns:</Label>
               <ColumnSelector />
             </div>
           </div>
@@ -365,30 +365,40 @@ export default function Stage2() {
         className="w-full flex-1 flex flex-col overflow-hidden"
       >
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-4 shrink-0">
-          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-full md:max-w-md">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-full md:max-w-md shadow-2xs">
             <TabsTrigger
               value="pending"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <ClipboardList className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <ClipboardList className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">Pending</span>
                 <span className="text-[10px] opacity-70">Awaiting processing</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "pending"
+                  ? "bg-white text-red-600 shadow-xs"
+                  : "bg-red-100 text-red-700"
+              )}>
                 {pending.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <History className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <History className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">History</span>
                 <span className="text-[10px] opacity-70">Completed</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "history"
+                  ? "bg-white text-emerald-600 shadow-xs"
+                  : "bg-green-100 text-green-800"
+              )}>
                 {history.length}
               </Badge>
             </TabsTrigger>
@@ -397,10 +407,10 @@ export default function Stage2() {
           {selectedRecords.length > 0 && activeTab === "pending" && (
             <Button
               onClick={() => setIsModalOpen(true)}
-              className="bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-3 px-6 h-[60px] rounded-xl shadow-md transition-all hover:scale-[1.01] active:scale-[0.99]"
+              className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white flex items-center gap-3 px-6 h-[50px] rounded-xl shadow-md shadow-green-100 transition-all hover:scale-[1.01] active:scale-[0.99] font-bold"
             >
               <Send className="w-4 h-4" />
-              <span className="text-base font-semibold">Submit Approval ({selectedRecords.length})</span>
+              <span className="text-base">Submit Approval ({selectedRecords.length})</span>
             </Button>
           )}
         </div>
@@ -452,8 +462,8 @@ export default function Stage2() {
 
       {/* ------------------- APPROVAL MODAL ------------------- */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-[90vw] w-full p-0 overflow-hidden border-none shadow-2xl border-2 border-green-500">
-          <div className="bg-slate-900 px-6 py-4 flex items-center justify-between ">
+        <DialogContent className="max-w-[90vw] w-full p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex items-center justify-between ">
             <div className="flex items-center gap-3 ">
               <div className="p-2 bg-white/10 rounded-lg">
                 <UserCheck className="w-5 h-5 text-white" />
@@ -480,36 +490,36 @@ export default function Stage2() {
                   <ClipboardList className="w-4 h-4 text-slate-500" />
                   <span className="text-sm font-bold text-slate-700 uppercase tracking-tight">Active Items</span>
                 </div>
-                <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
                   {selectedItems.length} records to update
                 </span>
               </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm ring-1 ring-slate-900/5">
-                <div className="max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200">
+              <div className="border border-indigo-100 rounded-xl overflow-hidden bg-white shadow-xs">
+                <div className="max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-indigo-100">
                   <Table>
-                    <TableHeader className="bg-slate-50 sticky top-0 z-10">
-                      <TableRow className="hover:bg-transparent border-b border-slate-200">
-                        <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Indent ID</TableHead>
-                        <TableHead className="min-w-[200px] h-10 px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Item Description</TableHead>
-                        <TableHead className="w-[80px] h-10 px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest text-center">Req. Qty</TableHead>
-                        <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest text-center">Status</TableHead>
-                        <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest text-center">Vendor Type</TableHead>
+                    <TableHeader className="bg-indigo-50/50 sticky top-0 z-10 border-b border-indigo-100">
+                      <TableRow className="hover:bg-transparent border-b border-indigo-100">
+                        <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Indent ID</TableHead>
+                        <TableHead className="min-w-[200px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Item Description</TableHead>
+                        <TableHead className="w-[80px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest text-center">Req. Qty</TableHead>
+                        <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest text-center">Status</TableHead>
+                        <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest text-center">Vendor Type</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {selectedItems.map((item) => (
                         <TableRow
                           key={item.id}
-                          className="transition-all border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/80 hover:bg-slate-100/30"
+                          className="transition-all border-b border-indigo-50 last:border-0 odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20"
                         >
-                          <TableCell className="py-3 px-4 font-mono text-xs font-bold text-slate-900">{item.data.indentNumber}</TableCell>
-                          <TableCell className="py-3 px-4 text-slate-600 text-xs font-medium">{item.data.itemName}</TableCell>
+                          <TableCell className="py-3 px-4 font-mono text-xs font-bold text-indigo-950">{item.data.indentNumber}</TableCell>
+                          <TableCell className="py-3 px-4 text-slate-600 text-xs font-semibold">{item.data.itemName}</TableCell>
                           <TableCell className="py-2 px-4 text-center">
                             <div className="flex flex-col items-center gap-1">
                               <Input
                                 type="number"
-                                className="h-8 w-20 text-center text-xs font-bold border-slate-200 focus:ring-slate-900"
+                                className="h-8 w-20 text-center text-xs font-bold border-indigo-200 focus-visible:ring-indigo-500 focus-visible:border-indigo-500"
                                 value={lineItemsData[item.id]?.approvedQty || ""}
                                 onChange={(e) => setLineItemsData(prev => ({
                                   ...prev,
@@ -519,15 +529,15 @@ export default function Stage2() {
                             </div>
                           </TableCell>
                           <TableCell className="p-2">
-                            <div className="flex bg-slate-50 rounded-lg p-0.5 border border-slate-200">
+                            <div className="flex bg-indigo-50/40 rounded-lg p-0.5 border border-indigo-100">
                               <button
                                 type="button"
                                 onClick={() => updateLineItem(item.id, "status", "approved")}
                                 className={cn(
-                                  "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                                  "flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
                                   lineItemsData[item.id]?.status === "approved"
-                                    ? "bg-white text-emerald-600 shadow-sm"
-                                    : "text-slate-500 hover:text-slate-700"
+                                    ? "bg-white text-emerald-700 shadow-xs border border-emerald-100"
+                                    : "text-slate-500 hover:text-indigo-600"
                                 )}
                               >
                                 Approve
@@ -536,10 +546,10 @@ export default function Stage2() {
                                 type="button"
                                 onClick={() => updateLineItem(item.id, "status", "rejected")}
                                 className={cn(
-                                  "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                                  "flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
                                   lineItemsData[item.id]?.status === "rejected"
-                                    ? "bg-white text-rose-600 shadow-sm"
-                                    : "text-slate-500 hover:text-slate-700"
+                                    ? "bg-white text-rose-700 shadow-xs border border-rose-100"
+                                    : "text-slate-500 hover:text-rose-600"
                                 )}
                               >
                                 Reject
@@ -554,7 +564,7 @@ export default function Stage2() {
                                 [item.id]: { ...prev[item.id], vendorType: v }
                               }))}
                             >
-                              <SelectTrigger className="h-8 w-28 text-[10px] font-bold border-slate-200 shadow-sm capitalize bg-white text-slate-700">
+                              <SelectTrigger className="h-8 w-28 text-[10px] font-bold border-indigo-150 shadow-xs capitalize bg-white text-slate-700 focus:ring-indigo-500">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -581,12 +591,12 @@ export default function Stage2() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2 space-y-6">
                   <div className="space-y-1.5">
-                    <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">
+                    <Label className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider ml-1">
                       Final Remarks {approvalForm.status === "rejected" && <span className="text-rose-500">*</span>}
                     </Label>
                     <Textarea
                       placeholder="Enter detailed approval/rejection notes..."
-                      className="bg-white border-slate-200 shadow-sm resize-none min-h-[90px] focus:ring-slate-900"
+                      className="bg-white border-indigo-150 shadow-xs resize-none min-h-[90px] focus-visible:ring-indigo-500"
                       value={approvalForm.remarks}
                       onChange={(e) => setApprovalForm((p) => ({ ...p, remarks: e.target.value }))}
                       required={approvalForm.status === "rejected"}
@@ -595,11 +605,11 @@ export default function Stage2() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+              <div className="flex items-center justify-between pt-4 border-t border-indigo-100">
                 <Button
                   type="button"
                   variant="ghost"
-                  className="px-6 h-11 font-bold text-slate-400 hover:text-slate-900 border border-transparent hover:border-slate-100 hover:bg-white transition-all rounded-lg"
+                  className="px-6 h-11 font-bold text-slate-400 hover:text-indigo-700 border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 transition-all rounded-lg"
                   onClick={() => {
                     setIsModalOpen(false);
                     setSelectedRecords([]);
@@ -610,9 +620,9 @@ export default function Stage2() {
 
                 <Button
                   type="submit"
-                  className={`px-10 h-11 rounded-lg font-bold shadow-xl transition-all active:scale-[0.98] ${approvalForm.status === "rejected"
+                  className={`px-10 h-11 rounded-lg font-bold shadow-md transition-all active:scale-[0.98] ${approvalForm.status === "rejected"
                     ? "bg-rose-600 hover:bg-rose-700 shadow-rose-200/50"
-                    : "bg-slate-900 hover:bg-slate-800 shadow-slate-200/50"
+                    : "bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white shadow-md shadow-indigo-200"
                     }`}
                   disabled={!isFormValid || isSubmitting}
                 >

@@ -4,6 +4,7 @@ import React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SubmitInvoiceHOPendingProps {
   pending: any[];
@@ -46,9 +47,9 @@ export default function SubmitInvoiceHOPending({
       ) : (
         <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm bg-white">
           <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-            <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
-              <tr className="hover:bg-transparent border-none">
-                <th className="sticky left-0 z-40 bg-slate-200 w-12 border-b text-center px-4 py-3">
+            <thead className="sticky top-0 z-30 bg-slate-900 shadow-xs border-none text-white text-center">
+              <tr className="hover:bg-transparent border-none bg-slate-900 text-white">
+                <th className="sticky left-0 z-40 bg-slate-900 w-12 border-b border-slate-800 text-center px-4 py-3">
                   <Checkbox
                     checked={
                       selectedRows.size === pending.length &&
@@ -57,7 +58,7 @@ export default function SubmitInvoiceHOPending({
                     onCheckedChange={toggleAll}
                   />
                 </th>
-                <th className="sticky left-[50px] z-40 bg-slate-200 w-[100px] border-b text-center px-4 py-3 font-semibold text-slate-900">
+                <th className="sticky left-[50px] z-40 bg-slate-900 w-[100px] border-b border-slate-800 text-center px-4 py-3 font-bold text-white uppercase text-[11px] tracking-wider">
                   Actions
                 </th>
                 {pendingColumns
@@ -65,7 +66,7 @@ export default function SubmitInvoiceHOPending({
                   .map((c) => (
                     <th
                       key={c.key}
-                      className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                      className="bg-slate-900 border-b border-slate-800 text-center px-4 py-3 font-bold text-white whitespace-nowrap uppercase text-[11px] tracking-wider"
                     >
                       {c.label}
                     </th>
@@ -73,39 +74,61 @@ export default function SubmitInvoiceHOPending({
               </tr>
             </thead>
             <tbody>
-              {pending.map((rec) => (
-                <tr
-                  key={rec.id}
-                  className="hover:bg-blue-50/30 transition-colors group"
-                >
-                  <td className="sticky left-0 z-20 bg-white group-hover:bg-blue-50/50 border-b text-center py-2">
-                    <Checkbox
-                      checked={selectedRows.has(rec.id)}
-                      onCheckedChange={() => toggleRow(rec.id)}
-                    />
-                  </td>
-                  <td className="sticky left-[50px] z-20 bg-white group-hover:bg-blue-50/50 border-b text-center px-4 py-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenForm(rec.id)}
-                      className="h-8 px-3 text-xs border-slate-200 hover:bg-white hover:text-blue-600 transition-colors"
+              {pending.map((rec) => {
+                const isChecked = selectedRows.has(rec.id);
+                return (
+                  <tr
+                    key={rec.id}
+                    className={cn(
+                      "group transition-colors border-b border-indigo-50/80 last:border-0",
+                      isChecked
+                        ? "bg-indigo-50/40 text-indigo-950 font-medium"
+                        : "odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20 text-slate-700"
+                    )}
+                  >
+                    <td
+                      className={cn(
+                        "sticky left-0 z-20 border-b text-center py-2 transition-colors",
+                        isChecked
+                          ? "bg-indigo-50/40 group-hover:bg-indigo-100/30"
+                          : "bg-white group-hover:bg-indigo-50/10"
+                      )}
                     >
-                      Submit
-                    </Button>
-                  </td>
-                  {pendingColumns
-                    .filter((c) => selectedPendingColumns.includes(c.key))
-                    .map((col) => (
-                      <td
-                        key={col.key}
-                        className="border-b px-4 py-2 text-center text-slate-700"
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleRow(rec.id)}
+                      />
+                    </td>
+                    <td
+                      className={cn(
+                        "sticky left-[50px] z-20 border-b text-center px-4 py-2 transition-colors",
+                        isChecked
+                          ? "bg-indigo-50/40 group-hover:bg-indigo-100/30"
+                          : "bg-white group-hover:bg-indigo-50/10"
+                      )}
+                    >
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenForm(rec.id)}
+                        className="h-8 px-3 text-xs border-slate-200 hover:bg-white hover:text-blue-600 transition-colors"
                       >
-                        {safeValue(rec, col.key)}
-                      </td>
-                    ))}
-                </tr>
-              ))}
+                        Submit
+                      </Button>
+                    </td>
+                    {pendingColumns
+                      .filter((c) => selectedPendingColumns.includes(c.key))
+                      .map((col) => (
+                        <td
+                          key={col.key}
+                          className="border-b border-slate-100 px-4 py-2 text-center text-slate-700 whitespace-nowrap"
+                        >
+                          {safeValue(rec, col.key)}
+                        </td>
+                      ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

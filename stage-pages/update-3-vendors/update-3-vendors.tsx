@@ -49,7 +49,8 @@ import { toast } from "sonner";
 import {
   formatDate,
   parseSheetDate,
-  getFmsTimestamp
+  getFmsTimestamp,
+  cn
 } from "@/lib/utils";
 import Update3VendorsPending from "./update-3-vendors-pending";
 import Update3VendorsHistory from "./update-3-vendors-history";
@@ -404,7 +405,7 @@ export default function Stage3() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-40 justify-start">
+        <Button variant="outline" className="w-40 justify-start border-indigo-150 text-indigo-700 bg-white hover:bg-indigo-50/50 hover:text-indigo-800 shadow-xs">
           {selectedColumns.length === baseColumns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length > 1 ? "s" : ""} selected`}
@@ -445,29 +446,29 @@ export default function Stage3() {
   return (
     <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
+      <div className="mb-6 p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs shrink-0">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
+            <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg shadow-indigo-100 shadow-xl text-white">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 3: Vendor Quotation</h2>
+              <h2 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Stage 3: Vendor Quotation</h2>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-indigo-500" />
               <Input
                 placeholder="Search by Indent No, Item Name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-white"
+                className="pl-9 bg-white border-indigo-100 focus-visible:ring-indigo-500"
               />
             </div>
-            <div className="h-8 w-px bg-slate-200 hidden md:block" />
+            <div className="h-8 w-px bg-indigo-100/60 hidden md:block" />
             <div className="flex items-center gap-2">
-              <Label className="text-sm font-medium hidden md:inline-block">Show Columns:</Label>
+              <Label className="text-sm font-semibold text-indigo-900 hidden md:inline-block">Show Columns:</Label>
               <ColumnSelector />
             </div>
           </div>
@@ -476,30 +477,40 @@ export default function Stage3() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
         <div className="shrink-0 mb-6 flex items-center justify-between">
-          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-[400px]">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
             <TabsTrigger
               value="pending"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <ClipboardList className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <ClipboardList className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">Pending</span>
                 <span className="text-[10px] opacity-70">Awaiting processing</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "pending"
+                  ? "bg-white text-red-600 shadow-xs"
+                  : "bg-red-100 text-red-700"
+              )}>
                 {pending.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <History className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <History className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">History</span>
-                <span className="text-[10px] opacity-70">Completed</span>
+                <span className="text-[10px] opacity-70 font-medium">Completed records</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "history"
+                  ? "bg-white text-emerald-600 shadow-xs"
+                  : "bg-green-100 text-green-800"
+              )}>
                 {completed.length}
               </Badge>
             </TabsTrigger>
@@ -510,7 +521,7 @@ export default function Stage3() {
               <Button
                 onClick={handleBulkUpdate}
                 disabled={isSavingQuantities}
-                className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+                className="animate-in fade-in zoom-in duration-200 shadow-md shadow-green-100 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
               >
                 Update Vendor ({selectedIds.size})
               </Button>
@@ -567,25 +578,26 @@ export default function Stage3() {
 
       {/* MODAL */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>Update {numVendors} Vendor{numVendors > 1 ? "s" : ""}</DialogTitle>
-            <p className="text-sm text-gray-600">
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex flex-col gap-1 flex-shrink-0">
+            <DialogTitle className="text-white text-lg font-bold">Update {numVendors} Vendor{numVendors > 1 ? "s" : ""}</DialogTitle>
+            <p className="text-slate-400 text-xs">
               {isThirdParty
                 ? "Enter details for 3 different vendors"
                 : "Enter details for the selected vendor"}
             </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 p-6">
             {selectedIds.size > 1 && (
-              <div className="mt-2 text-sm font-medium text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
-                Updating {selectedIds.size} records. The same vendor details will be applied to all selected items.
+              <div className="text-xs font-semibold text-amber-700 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                ⚠️ Updating {selectedIds.size} records. The same vendor details will be applied to all selected items.
               </div>
             )}
-          </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
             {/* Item Summary */}
-            <div className="border rounded-lg p-4 bg-gray-50 max-h-60 overflow-y-auto">
-              <h3 className="font-medium mb-3">Item Details</h3>
+            <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/15 max-h-60 overflow-y-auto shadow-2xs">
+              <h3 className="font-bold text-indigo-950 mb-3 uppercase tracking-wider text-xs">Item Details</h3>
               <div className="space-y-4">
                 {(selectedIds.size > 0
                   ? Array.from(selectedIds)
@@ -595,38 +607,38 @@ export default function Stage3() {
                     ? [currentRecord]
                     : []
                 ).map((record: any, idx) => (
-                  <div key={record.id || idx} className="grid grid-cols-4 gap-4 text-sm pb-4 border-b border-gray-200 last:border-0 last:pb-0">
+                  <div key={record.id || idx} className="grid grid-cols-4 gap-4 text-sm pb-4 border-b border-indigo-50/80 last:border-0 last:pb-0">
                     <div>
-                      <span className="font-medium text-gray-500">Indent #:</span>
-                      <p className="font-medium">{record?.data?.indentNumber || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Indent #:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.indentNumber || "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Item:</span>
-                      <p className="font-medium">{record?.data?.itemName || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Item:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.itemName || "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Quantity:</span>
-                      <p className="font-medium">{record?.data?.quantity || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Quantity:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.quantity || "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Warehouse:</span>
-                      <p className="font-medium">{record?.data?.warehouseLocation || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Warehouse:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.warehouseLocation || "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Created By:</span>
-                      <p className="font-medium">{record?.data?.createdBy || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Created By:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.createdBy || "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Category:</span>
-                      <p className="font-medium">{record?.data?.category || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Category:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.category || "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Lead Time:</span>
-                      <p className="font-medium">{record?.data?.leadTime ? `${record.data.leadTime} days` : "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Lead Time:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.leadTime ? `${record.data.leadTime} days` : "—"}</p>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-500">Item Code:</span>
-                      <p className="font-medium">{record?.data?.itemCode || "—"}</p>
+                      <span className="font-semibold text-indigo-950/70 text-xs">Item Code:</span>
+                      <p className="font-bold text-indigo-950 text-sm">{record?.data?.itemCode || "—"}</p>
                     </div>
                   </div>
                 ))}
@@ -636,9 +648,9 @@ export default function Stage3() {
             {/* Vendor Forms */}
             {Array.from({ length: numVendors }, (_, i) => i + 1).map((num) => {
               return (
-                <div key={num} className="border rounded-lg p-4">
-                  <h3 className="font-medium mb-4 flex items-center gap-2">
-                    <Building2 className="w-5 h-5" />
+                <div key={num} className="border border-indigo-100 rounded-xl p-4 bg-white shadow-2xs">
+                  <h3 className="font-bold text-indigo-950 mb-4 flex items-center gap-2 uppercase tracking-wider text-xs">
+                    <Building2 className="w-5 h-5 text-indigo-650" />
                     Vendor {num}
                   </h3>
 
@@ -850,24 +862,24 @@ export default function Stage3() {
                       />
                       <label
                         htmlFor={`file-${num}`}
-                        className="flex items-center justify-center w-full p-4 border-2 border-dashed rounded-lg cursor-pointer hover:border-gray-400"
+                        className="flex items-center justify-center w-full p-4 border-2 border-dashed border-indigo-200 bg-indigo-50/10 hover:bg-indigo-50/20 hover:border-indigo-400 transition-all rounded-xl cursor-pointer"
                       >
-                        <Upload className="w-5 h-5 mr-2 text-gray-500" />
-                        <span className="text-sm">Click to upload</span>
+                        <Upload className="w-5 h-5 mr-2 text-indigo-600" />
+                        <span className="text-sm font-semibold text-indigo-900">Click to upload</span>
                       </label>
 
                       {formData[`vendor${num}Attachment` as keyof typeof formData] && (
-                        <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4" />
-                            <span>
+                        <div className="mt-2 p-2 bg-indigo-50/30 border border-indigo-100 rounded-xl flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2 text-indigo-950">
+                            <FileText className="w-4 h-4 text-indigo-600" />
+                            <span className="font-medium">
                               {(formData[`vendor${num}Attachment` as keyof typeof formData] as File).name}
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleFileRemove(num)}
-                            className="text-red-600 hover:text-red-800"
+                            className="text-slate-400 hover:text-red-600 transition-colors"
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -880,7 +892,7 @@ export default function Stage3() {
             })}
 
             <div className="flex items-center justify-center gap-3 py-4">
-              <span className="font-medium">Vendors Filled:</span>
+              <span className="font-medium text-slate-700">Vendors Filled:</span>
               <div className="flex gap-1">
                 {Array.from({ length: 3 }, (_, i) => (
                   <div
@@ -890,7 +902,7 @@ export default function Stage3() {
                   />
                 ))}
               </div>
-              <span className="font-medium">{vendorCount} / {numVendors}</span>
+              <span className="font-bold text-slate-900">{vendorCount} / {numVendors}</span>
             </div>
 
             {submitError && (
@@ -899,15 +911,15 @@ export default function Stage3() {
               </div>
             )}
 
-            <div className="flex justify-end pt-4 border-t">
-              <Button type="submit">
+            <div className="flex justify-end pt-4 border-t border-indigo-100">
+              <Button type="submit" className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold px-6 py-2.5 h-auto rounded-lg shadow-md shadow-indigo-200">
                 Submit {numVendors} Vendor{numVendors > 1 ? "s" : ""}
               </Button>
             </div>
           </form>
 
-          <DialogFooter className="flex-shrink-0 border-t pt-4">
-            <Button type="button" variant="outline" onClick={resetForm}>
+          <DialogFooter className="flex-shrink-0 border-t border-indigo-100 p-4">
+            <Button type="button" variant="outline" onClick={resetForm} className="border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600">
               Cancel
             </Button>
           </DialogFooter>

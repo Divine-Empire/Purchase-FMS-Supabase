@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, cn } from "@/lib/utils";
 import PoEntryPending from "./po-entry-pending";
 import PoEntryHistory from "./po-entry-history";
 
@@ -337,7 +337,7 @@ export default function Stage5() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-40 justify-start">
+        <Button variant="outline" className="w-40 justify-start border-indigo-150 text-indigo-700 bg-white hover:bg-indigo-50/50 hover:text-indigo-800 shadow-xs">
           {selectedColumns.length === baseColumns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length > 1 ? "s" : ""} selected`}
@@ -345,7 +345,7 @@ export default function Stage5() {
       </PopoverTrigger>
       <PopoverContent className="w-40 p-2">
         <div className="space-y-2">
-          <div className="flex items-center space-x-2 pb-2 border-b">
+          <div className="flex items-center space-x-2 pb-2 border-b border-indigo-100">
             <Checkbox
               checked={selectedColumns.length === baseColumns.length}
               onCheckedChange={(c) => {
@@ -378,18 +378,18 @@ export default function Stage5() {
   return (
     <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
+      <div className="mb-6 p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs shrink-0">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
+            <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg shadow-indigo-100 shadow-xl text-white">
               <FileText className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 5: PO Creation</h2>
+                <h2 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Stage 5: PO Creation</h2>
               </div>
               {submitError && (
-                <p className="text-red-600 text-sm mt-2 font-medium bg-red-50 p-2 rounded border border-red-100 flex items-center gap-2">
+                <p className="text-red-650 text-sm mt-2 font-semibold bg-red-50 p-2 rounded border border-red-100 flex items-center gap-2">
                   <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
                   {submitError}
                 </p>
@@ -398,17 +398,17 @@ export default function Stage5() {
           </div>
           <div className="flex items-center gap-4">
             <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-indigo-500" />
               <Input
                 placeholder="Search by Indent, Item, Vendor..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-white"
+                className="pl-9 bg-white border-indigo-100 focus-visible:ring-indigo-500"
               />
             </div>
-            <div className="h-8 w-px bg-slate-200 mx-2" />
+            <div className="h-8 w-px bg-indigo-100/60 mx-2" />
             <div className="flex items-center gap-4">
-              <Label className="text-sm font-medium hidden md:inline-block">Show Columns:</Label>
+              <Label className="text-sm font-semibold text-indigo-900 hidden md:inline-block">Show Columns:</Label>
               <ColumnSelector />
             </div>
           </div>
@@ -417,30 +417,40 @@ export default function Stage5() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
         <div className="shrink-0 mb-6 flex items-center justify-between">
-          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-[400px]">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
             <TabsTrigger
               value="pending"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <ClipboardList className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <ClipboardList className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">Pending</span>
                 <span className="text-[10px] opacity-70">Awaiting processing</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "pending"
+                  ? "bg-white text-red-600 shadow-xs"
+                  : "bg-red-100 text-red-700"
+              )}>
                 {pending.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
             >
-              <History className="w-5 h-5" />
-              <div className="flex flex-col items-start leading-none gap-1">
+              <History className="w-5 h-5 opacity-80" />
+              <div className="flex flex-col items-start leading-none gap-1 text-left">
                 <span className="font-bold">History</span>
-                <span className="text-[10px] opacity-70">Completed</span>
+                <span className="text-[10px] opacity-70 font-medium">Completed records</span>
               </div>
-              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+              <Badge variant="secondary" className={cn(
+                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                activeTab === "history"
+                  ? "bg-white text-emerald-600 shadow-xs"
+                  : "bg-green-100 text-green-800"
+              )}>
                 {completed.length}
               </Badge>
             </TabsTrigger>
@@ -449,7 +459,7 @@ export default function Stage5() {
           {selectedRecordIds.length > 0 && activeTab === "pending" && (
             <Button
               onClick={handleOpenBulkForm}
-              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-green-100 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
             >
               Create PO ({selectedRecordIds.length})
             </Button>
@@ -507,17 +517,20 @@ export default function Stage5() {
 
       {/* BULK PO MODAL */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>Bulk PO Creation ({selectedRecordIds.length} items)</DialogTitle>
-            <p className="text-sm text-gray-600">Fill PO details for all selected items</p>
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex flex-col gap-1 flex-shrink-0">
+            <DialogTitle className="text-white text-lg font-bold">Bulk PO Creation ({selectedRecordIds.length} items)</DialogTitle>
+            <p className="text-slate-400 text-xs">Fill PO details for all selected items</p>
+          </div>
+
+          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 p-6">
             {selectedRecordIds.length > 1 && (
-              <div className="mt-3 flex items-center gap-2 max-w-xs">
-                <Label htmlFor="grand-total-display" className="text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
+              <div className="flex items-center gap-2 max-w-sm bg-indigo-50/40 p-3 rounded-xl border border-indigo-100 shadow-2xs">
+                <Label htmlFor="grand-total-display" className="text-xs font-bold uppercase tracking-wider text-indigo-950 whitespace-nowrap">
                   Grand Total (w/ Tax):
                 </Label>
                 <div className="relative flex-1">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-medium">₹</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-indigo-950 font-bold">₹</span>
                   <Input
                     id="grand-total-display"
                     type="text"
@@ -529,20 +542,17 @@ export default function Stage5() {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2
                     })}
-                    className="pl-7 bg-slate-100 cursor-not-allowed font-bold text-green-700 h-9"
+                    className="pl-7 bg-white border-indigo-150 cursor-not-allowed font-extrabold text-emerald-700 h-9 focus:ring-indigo-500"
                   />
                 </div>
               </div>
             )}
-          </DialogHeader>
-
-          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
             {/* SHARED PO NUMBER - AT TOP */}
-            <div className="border rounded-lg p-4 bg-blue-50">
+            <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/15 shadow-2xs">
               <div className="space-y-2">
-                <Label htmlFor="common-poNumber" className="text-base font-semibold">
+                <Label htmlFor="common-poNumber" className="text-sm font-bold text-indigo-950 uppercase tracking-wider">
                   PO Number <span className="text-red-500">*</span>
-                  <span className="text-xs font-normal text-gray-500 ml-2">(applies to all items)</span>
+                  <span className="text-xs font-normal text-slate-500 ml-2">(applies to all items)</span>
                 </Label>
                 <Input
                   id="common-poNumber"
@@ -550,21 +560,21 @@ export default function Stage5() {
                   onChange={(e) => setCommonPONumber(e.target.value)}
                   required
                   placeholder="PO-2025-001"
-                  className="bg-white"
+                  className="bg-white border-indigo-150 focus-visible:ring-indigo-500"
                 />
               </div>
             </div>
 
             {/* SHARED PACKAGING/FORWARDING SECTION */}
-            <div className="border rounded-lg p-4 bg-amber-50">
+            <div className="border border-indigo-100 rounded-xl p-4 bg-amber-50/15 shadow-2xs">
               <div className="space-y-3">
-                <Label className="text-base font-semibold">
+                <Label className="text-sm font-bold text-indigo-950 uppercase tracking-wider">
                   Packaging / Forwarding
-                  <span className="text-xs font-normal text-gray-500 ml-2">(applies to all items, divided equally)</span>
+                  <span className="text-xs font-normal text-slate-500 ml-2">(applies to all items, divided equally)</span>
                 </Label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="common-pkgAmount">Amount</Label>
+                    <Label htmlFor="common-pkgAmount" className="text-xs font-semibold text-slate-700">Amount</Label>
                     <Input
                       id="common-pkgAmount"
                       type="number"
@@ -572,13 +582,13 @@ export default function Stage5() {
                       value={commonPkgAmount}
                       onChange={(e) => setCommonPkgAmount(e.target.value)}
                       placeholder="0.00"
-                      className="bg-white"
+                      className="bg-white border-indigo-150 focus-visible:ring-indigo-500"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="common-pkgGST">GST on Packaging</Label>
+                    <Label htmlFor="common-pkgGST" className="text-xs font-semibold text-slate-700">GST on Packaging</Label>
                     <Select value={commonPkgGST} onValueChange={setCommonPkgGST}>
-                      <SelectTrigger id="common-pkgGST" className="bg-white">
+                      <SelectTrigger id="common-pkgGST" className="bg-white border-indigo-150 focus-visible:ring-indigo-500">
                         <SelectValue placeholder="Select GST" />
                       </SelectTrigger>
                       <SelectContent>
@@ -591,13 +601,13 @@ export default function Stage5() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Total Packaging / Forwarding</Label>
+                    <Label className="text-xs font-semibold text-slate-700">Total Packaging / Forwarding</Label>
                     <Input
                       type="number"
                       step="0.01"
                       value={getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).totalPkg.toFixed(2)}
                       readOnly
-                      className="bg-gray-100 cursor-not-allowed font-semibold"
+                      className="bg-indigo-50/30 border-indigo-100 text-indigo-950 font-bold cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -612,21 +622,21 @@ export default function Stage5() {
               const data = bulkFormData[recordId] || {};
 
               return (
-                <div key={recordId} className="border rounded-lg p-4 bg-gray-50">
-                  <div className="mb-4 pb-3 border-b">
+                <div key={recordId} className="border border-indigo-100 rounded-xl p-4 bg-white shadow-2xs">
+                  <div className="mb-4 pb-3 border-b border-indigo-50/80">
                     <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div><strong>Indent-No:</strong> {record.data.indentNumber}</div>
-                      <div><strong>Item:</strong> {record.data.itemName}</div>
-                      <div><strong>Qty:</strong> {record.data.quantity}</div>
+                      <div><strong className="text-indigo-950">Indent-No:</strong> <span className="font-bold text-indigo-950">{record.data.indentNumber}</span></div>
+                      <div><strong className="text-indigo-950">Item:</strong> <span className="font-bold text-indigo-950">{record.data.itemName}</span></div>
+                      <div><strong className="text-indigo-950">Qty:</strong> <span className="font-bold text-indigo-950">{record.data.quantity}</span></div>
                     </div>
-                    <div className="mt-1 text-xs text-gray-600">
-                      Vendor: <span className="font-medium">{v.name}</span> | Rate: ₹{v.rate}
+                    <div className="mt-1 text-xs text-slate-550">
+                      Vendor: <span className="font-bold text-indigo-950">{v.name}</span> | Rate: <span className="font-bold text-slate-700">₹{v.rate}</span>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor={`${recordId}-basicValue`}>
+                      <Label htmlFor={`${recordId}-basicValue`} className="text-xs font-semibold text-slate-700">
                         Basic Value <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -635,7 +645,7 @@ export default function Stage5() {
                         step="0.01"
                         value={data.basicValue || ""}
                         readOnly
-                        className="bg-gray-100 cursor-not-allowed"
+                        className="bg-indigo-50/20 border-indigo-100 text-indigo-950 font-semibold cursor-not-allowed"
                       />
                     </div>
 
@@ -665,7 +675,7 @@ export default function Stage5() {
                           }))
                         }}
                       >
-                        <SelectTrigger id={`${recordId}-gst`}>
+                        <SelectTrigger id={`${recordId}-gst`} className="border-indigo-150 focus:ring-indigo-500">
                           <SelectValue placeholder="Select GST" />
                         </SelectTrigger>
                         <SelectContent>
@@ -678,18 +688,18 @@ export default function Stage5() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Pkg/Fwd Share</Label>
+                      <Label className="text-xs font-semibold text-slate-700">Pkg/Fwd Share</Label>
                       <Input
                         type="number"
                         step="0.01"
                         value={getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).perItemPkgTotal.toFixed(2)}
                         readOnly
-                        className="bg-gray-100 cursor-not-allowed text-amber-700"
+                        className="bg-indigo-50/20 border-indigo-100 text-indigo-950 font-bold cursor-not-allowed"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor={`${recordId}-totalWithTax`}>
+                      <Label htmlFor={`${recordId}-totalWithTax`} className="text-xs font-semibold text-slate-700">
                         Total With Tax <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -701,12 +711,12 @@ export default function Stage5() {
                           getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).perItemPkgTotal
                         ).toFixed(2)}
                         readOnly
-                        className="bg-gray-100 cursor-not-allowed font-semibold"
+                        className="bg-indigo-50/30 border-indigo-100 text-indigo-950 font-bold cursor-not-allowed"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor={`${recordId}-hsn`}>
+                      <Label htmlFor={`${recordId}-hsn`} className="text-xs font-semibold text-slate-700">
                         HSN <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -720,6 +730,7 @@ export default function Stage5() {
                         }
                         required
                         placeholder="HSN Code"
+                        className="border-indigo-150 focus-visible:ring-indigo-500"
                       />
                     </div>
                   </div>
@@ -728,9 +739,9 @@ export default function Stage5() {
             })}
 
             {/* SHARED PO COPY - AT BOTTOM */}
-            <div className="border rounded-lg p-4 bg-blue-50">
+            <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/15 shadow-2xs">
               <div className="space-y-2">
-                <Label className="text-base font-semibold text-slate-900">
+                <Label className="text-sm font-bold text-indigo-950 uppercase tracking-wider">
                   PO Copy <span className="text-red-500">*</span>
                   <span className="text-xs font-normal text-slate-500 ml-2">(applies to all items)</span>
                 </Label>
@@ -744,24 +755,24 @@ export default function Stage5() {
                   />
                   <label
                     htmlFor="common-file"
-                    className="flex items-center justify-center w-full p-3 border-2 border-dashed border-gray-300 bg-white rounded-lg cursor-pointer hover:border-gray-400 text-sm"
+                    className="flex items-center justify-center w-full p-4 border-2 border-dashed border-indigo-200 bg-white hover:border-indigo-400 hover:bg-indigo-50/10 transition-all rounded-xl cursor-pointer text-indigo-900 font-bold text-sm"
                   >
-                    <Upload className="w-4 h-4 mr-2" />
+                    <Upload className="w-4 h-4 mr-2 text-indigo-600" />
                     Upload PO copy
                   </label>
                   {commonPOCopy && (
-                    <div className="mt-2 p-2 bg-white border rounded flex items-center justify-between text-sm">
+                    <div className="mt-2 p-2 bg-white border border-indigo-100 rounded-xl flex items-center justify-between text-sm text-indigo-950 font-medium shadow-2xs">
                       <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
+                        <FileText className="w-4 h-4 text-indigo-650" />
                         <span>{commonPOCopy?.name}</span>
-                        <span className="text-gray-500">
+                        <span className="text-slate-500 font-medium">
                           ({commonPOCopy ? (commonPOCopy.size / 1024).toFixed(1) : 0} KB)
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={handleCommonFileRemove}
-                        className="text-red-600"
+                        className="text-slate-400 hover:text-red-600 transition-colors"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -772,12 +783,13 @@ export default function Stage5() {
             </div>
           </form>
 
-          <DialogFooter className="flex-shrink-0 border-t pt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+          <DialogFooter className="flex-shrink-0 border-t border-indigo-100 p-4 gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600">
               Cancel
             </Button>
             <Button
               onClick={handleBulkSubmit}
+              className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold shadow-md shadow-indigo-200 px-6 py-2.5 h-auto rounded-lg"
               disabled={
                 isSubmitting ||
                 selectedRecordIds.length === 0 ||

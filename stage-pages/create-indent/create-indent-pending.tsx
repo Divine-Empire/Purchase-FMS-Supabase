@@ -476,7 +476,7 @@ export default function CreateIndentPending({
             <CommandList>
               <CommandEmpty>
                 <div
-                  className="py-2 px-4 text-sm text-blue-600 cursor-pointer hover:bg-slate-100 flex items-center gap-2"
+                  className="py-2 px-4 text-sm text-indigo-600 cursor-pointer hover:bg-indigo-50 flex items-center gap-2 font-semibold"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -619,24 +619,24 @@ export default function CreateIndentPending({
                   />
                   <label
                     htmlFor="indent-attachment"
-                    className="flex items-center justify-center w-full p-6 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-slate-400 hover:bg-slate-50 transition-all group"
+                    className="flex items-center justify-center w-full p-6 border-2 border-dashed border-indigo-200 bg-indigo-50/10 hover:bg-indigo-50/20 hover:border-indigo-400 transition-all rounded-xl cursor-pointer group"
                   >
                     <div className="flex flex-col items-center gap-2">
-                      <div className="p-2 bg-slate-100 rounded-full group-hover:bg-slate-200 transition-colors">
-                        <Upload className="w-5 h-5 text-slate-600" />
+                      <div className="p-2.5 bg-indigo-100/60 rounded-full group-hover:bg-indigo-100 text-indigo-600 transition-colors">
+                        <Upload className="w-5 h-5" />
                       </div>
                       <div className="text-center">
-                        <p className="text-sm font-semibold text-slate-700">Click to upload document</p>
+                        <p className="text-sm font-semibold text-indigo-900">Click to upload document</p>
                         <p className="text-xs text-slate-500">PDF, JPG, PNG or DOC (max 10MB)</p>
                       </div>
                     </div>
                   </label>
 
                   {formData.attachment && (
-                    <div className="flex items-center justify-between p-3 bg-blue-50/50 border border-blue-100 rounded-lg animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-center justify-between p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl animate-in fade-in slide-in-from-top-1">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                          <FileText className="w-4 h-4 text-blue-600" />
+                        <div className="p-2 bg-indigo-100 rounded-lg">
+                          <FileText className="w-4 h-4 text-indigo-600" />
                         </div>
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-slate-900 truncate max-w-[250px]">
@@ -668,6 +668,7 @@ export default function CreateIndentPending({
                     type="button"
                     onClick={() => setAddItemOpen(true)}
                     size="sm"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
                   >
                     Add Item
                   </Button>
@@ -682,28 +683,29 @@ export default function CreateIndentPending({
                 ) : (
                   <div className="space-y-2">
                     {formData.items.map((item, index) => (
-                      <div key={index} className="p-3 border rounded-lg">
+                      <div key={index} className="p-3.5 border border-indigo-100 bg-indigo-50/15 rounded-xl shadow-2xs hover:bg-indigo-50/30 transition-all">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                             <div>
-                              <span className="font-medium">{item.itemName}</span>
+                              <span className="font-bold text-indigo-950">{item.itemName}</span>
                             </div>
                             <div>
-                              <Badge variant="secondary" className="text-xs">
+                              <Badge variant="secondary" className="text-xs bg-indigo-100 text-indigo-800 border-indigo-200">
                                 {item.category}
                               </Badge>
                             </div>
                             <div>
-                              <span>Qty: {item.quantity} {item.uom}</span>
+                              <span className="font-semibold text-slate-600">Qty: {item.quantity} {item.uom}</span>
                             </div>
                             <div className="col-span-2">
-                              <span>Item Code: {item.itemCode}</span>
+                              <span className="text-xs font-mono text-slate-500">Item Code: {item.itemCode}</span>
                             </div>
                           </div>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
+                            className="text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                             onClick={() => {
                               setFormData({
                                 ...formData,
@@ -727,7 +729,7 @@ export default function CreateIndentPending({
               type="button"
               variant="outline"
               onClick={() => setOpenCreateModal(false)}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600"
             >
               Cancel
             </Button>
@@ -741,7 +743,7 @@ export default function CreateIndentPending({
                 isSubmitting
               }
               onClick={handleSubmit}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold"
             >
               {isSubmitting ? (
                 <>
@@ -859,7 +861,7 @@ export default function CreateIndentPending({
                   type="button"
                   variant="outline"
                   onClick={addNewItem}
-                  className="w-full"
+                  className="w-full border-indigo-200 text-indigo-700 bg-indigo-50/30 hover:bg-indigo-100 font-bold"
                   size="sm"
                 >
                   + Add Another Item
@@ -871,11 +873,11 @@ export default function CreateIndentPending({
                   type="button"
                   variant="outline"
                   onClick={() => setAddItemOpen(false)}
-                  className="w-full sm:w-auto"
+                  className="w-full sm:w-auto border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600"
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="w-full sm:w-auto">
+                <Button type="submit" className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold">
                   Add {itemForm.items.length} Item{itemForm.items.length > 1 ? "s" : ""} to Indent
                 </Button>
               </DialogFooter>
@@ -1104,14 +1106,14 @@ export default function CreateIndentPending({
                   />
                   <label
                     htmlFor="edit-indent-attachment"
-                    className="flex items-center justify-center w-full py-4 px-4 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-slate-400 hover:bg-slate-50 transition-all group"
+                    className="flex items-center justify-center w-full py-4 px-4 border-2 border-dashed border-indigo-200 bg-indigo-50/10 hover:bg-indigo-50/20 hover:border-indigo-400 transition-all rounded-xl cursor-pointer group"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-slate-200 transition-colors">
-                        <Upload className="w-4 h-4 text-slate-600" />
+                      <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors text-indigo-600">
+                        <Upload className="w-4 h-4" />
                       </div>
                       <div className="text-left leading-tight">
-                        <p className="text-sm font-semibold text-slate-700">
+                        <p className="text-sm font-semibold text-indigo-900">
                           {editFormData.attachment ? "Change Document" : "Update Document"}
                         </p>
                         <p className="text-[10px] text-slate-500">PDF, JPG, PNG or DOC (max 10MB)</p>
@@ -1154,13 +1156,13 @@ export default function CreateIndentPending({
                     setEditOpen(false);
                     setEditingRecord(null);
                   }}
-                  className="w-full sm:w-auto"
+                  className="w-full sm:w-auto border-indigo-100 hover:bg-indigo-50/50 hover:text-indigo-600"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  className="w-full sm:w-auto"
+                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold"
                   disabled={isEditSubmitting}
                 >
                   {isEditSubmitting ? (

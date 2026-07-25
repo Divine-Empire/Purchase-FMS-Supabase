@@ -1,17 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, LayoutGrid, RefreshCw, AlertCircle, Download } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, RefreshCw, AlertCircle, Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -23,19 +14,14 @@ export default function ImsPage() {
   const [filters, setFilters] = useState({
     group: "All",
     category: "All",
-    name: "All"
+    itemSearch: ""
   });
 
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_IMS_API_URI;
-      const SHEET_ID = process.env.NEXT_PUBLIC_IMS_SHEET_ID;
-      
-      if (!API_URL) throw new Error("IMS API URI not configured");
-
-      const response = await fetch(`${API_URL}?spreadsheetId=${SHEET_ID}&sheet=IMS`);
+      const response = await fetch(`/api/ims?_t=${Date.now()}`);
       const result = await response.json();
 
       if (result.success && Array.isArray(result.data)) {
@@ -67,24 +53,34 @@ export default function ImsPage() {
       "Category",
       "Item Code",
       "Name of Item",
-      "CG Reorder Qty",
-      "NE Reorder Qty",
-      "Maniquip Reorder Qty",
-      "Head Office Reorder Qty"
+      "CG",
+      "NE",
+      "Maniquip",
+      "Head Office"
     ];
 
     const csvContent = [
       headers.join(","),
       ...filteredData.map((row) => {
-        const group = row[0] !== undefined ? `"${String(row[0]).replace(/"/g, '""')}"` : "";
-        const category = row[1] !== undefined ? `"${String(row[1]).replace(/"/g, '""')}"` : "";
-        const itemCode = row[2] !== undefined ? `"${String(row[2]).replace(/"/g, '""')}"` : "";
-        const itemName = row[3] !== undefined ? `"${String(row[3]).replace(/"/g, '""')}"` : "";
-        const cg = row[94] !== undefined ? `"${String(row[94]).replace(/"/g, '""')}"` : "0";
-        const ne = row[95] !== undefined ? `"${String(row[95]).replace(/"/g, '""')}"` : "0";
-        const mq = row[96] !== undefined ? `"${String(row[96]).replace(/"/g, '""')}"` : "0";
-        const ho = row[97] !== undefined ? `"${String(row[97]).replace(/"/g, '""')}"` : "0";
-        return [group, category, itemCode, itemName, cg, ne, mq, ho].join(",");
+        const group = row.group !== undefined ? `"${String(row.group).replace(/"/g, '""')}"` : "";
+        const category = row.category !== undefined ? `"${String(row.category).replace(/"/g, '""')}"` : "";
+        const itemCode = row.itemCode !== undefined ? `"${String(row.itemCode).replace(/"/g, '""')}"` : "";
+        const itemName = row.itemName !== undefined ? `"${String(row.itemName).replace(/"/g, '""')}"` : "";
+        const cg = row.cg !== null ? String(row.cg) : "0";
+        const ne = row.ne !== null ? String(row.ne) : "0";
+        const maniquip = row.maniquip !== null ? String(row.maniquip) : "0";
+        const headOffice = row.headOffice !== null ? String(row.headOffice) : "0";
+        
+        return [
+          group,
+          category,
+          itemCode,
+          itemName,
+          cg,
+          ne,
+          maniquip,
+          headOffice
+        ].join(",");
       })
     ].join("\n");
 
@@ -92,7 +88,7 @@ export default function ImsPage() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `IMS_Reorder_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `IMS_Stock_Report_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
@@ -100,22 +96,42 @@ export default function ImsPage() {
     toast.success("Excel report exported successfully");
   };
 
-  const uniqueGroups = Array.from(new Set(data.slice(2).map(row => row[0]).filter(Boolean))).sort();
-  const uniqueCategories = Array.from(new Set(data.slice(2).map(row => row[1]).filter(Boolean))).sort();
-  const uniqueNames = Array.from(new Set(data.slice(2).map(row => row[3]).filter(Boolean))).sort();
+  // Extract unique filters from data dynamically
+  const uniqueGroups = useMemo(() => {
+    const list = data.map((row) => row.group?.trim()).filter(Boolean);
+    return Array.from(new Set(list)).sort();
+  }, [data]);
 
-  const filteredData = data.slice(2).filter(row => {
-    const matchGroup = filters.group === "All" || row[0] === filters.group;
-    const matchCategory = filters.category === "All" || row[1] === filters.category;
-    const matchName = filters.name === "All" || row[3] === filters.name;
-    return matchGroup && matchCategory && matchName;
-  });
+  const uniqueCategories = useMemo(() => {
+    const list = data.map((row) => row.category?.trim()).filter(Boolean);
+    return Array.from(new Set(list)).sort();
+  }, [data]);
+
+  // Filtering Logic
+  const filteredData = useMemo(() => {
+    return data.filter((row) => {
+      const matchGroup =
+        filters.group === "All" ||
+        (row.group || "").trim() === filters.group;
+      const matchCategory =
+        filters.category === "All" ||
+        (row.category || "").trim() === filters.category;
+      
+      const searchLower = filters.itemSearch.toLowerCase().trim();
+      const matchSearch =
+        !searchLower ||
+        (row.itemCode || "").toLowerCase().includes(searchLower) ||
+        (row.itemName || "").toLowerCase().includes(searchLower);
+        
+      return matchGroup && matchCategory && matchSearch;
+    });
+  }, [data, filters]);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-        <p className="text-muted-foreground animate-pulse font-medium">Fetching Inventory Data...</p>
+        <Loader2 className="w-10 h-10 animate-spin text-slate-800" />
+        <p className="text-slate-900 font-semibold animate-pulse">Fetching Stock Analysis Data...</p>
       </div>
     );
   }
@@ -123,14 +139,14 @@ export default function ImsPage() {
   if (error) {
     return (
       <div className="p-6">
-        <Card className="border-destructive/20 bg-destructive/5">
+        <Card className="border-red-300 bg-red-50/50">
           <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
-            <AlertCircle className="w-12 h-12 text-destructive" />
+            <AlertCircle className="w-12 h-12 text-red-650" />
             <div className="text-center">
-              <h3 className="text-lg font-semibold text-destructive">Error Loading Data</h3>
-              <p className="text-sm text-muted-foreground mt-1">{error}</p>
+              <h3 className="text-lg font-bold text-red-950">Error Loading Data</h3>
+              <p className="text-sm text-slate-700 mt-1 font-semibold">{error}</p>
             </div>
-            <Button variant="outline" onClick={fetchData} className="mt-2">
+            <Button variant="outline" onClick={fetchData} className="mt-2 border-slate-350 hover:bg-slate-100 font-bold">
               <RefreshCw className="w-4 h-4 mr-2" />
               Try Again
             </Button>
@@ -141,177 +157,194 @@ export default function ImsPage() {
   }
 
   return (
-    <div className="p-6 flex flex-col gap-4 animate-in fade-in duration-500">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
-        <div className="flex items-center gap-4">
-          <div className="p-2.5 bg-slate-900 rounded-xl shadow-lg text-white">
-            <LayoutGrid className="w-5 h-5" />
+    <div className="p-6 flex flex-col gap-5 animate-in fade-in duration-500 max-w-7xl mx-auto h-[calc(100vh-2rem)] overflow-hidden">
+      {/* Header & Filter Controls Section */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-1.5 h-8 bg-blue-600 rounded-full" />
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-wider uppercase font-sans">
+            Stock Analysis
+          </h2>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 flex-grow md:flex-grow-0 justify-end">
+          {/* Group Filter */}
+          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Group</span>
+            <select
+              className="bg-transparent border-none text-xs font-extrabold text-slate-800 focus:ring-0 outline-none cursor-pointer min-w-[125px]"
+              value={filters.group}
+              onChange={(e) => setFilters((prev) => ({ ...prev, group: e.target.value }))}
+            >
+              <option value="All">All Groups</option>
+              {uniqueGroups.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Inventory Management System (IMS)</h2>
-            <p className="text-[13px] text-muted-foreground mt-0">Live stock levels and reorder status across branches</p>
+
+          {/* Category Filter */}
+          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Category</span>
+            <select
+              className="bg-transparent border-none text-xs font-extrabold text-slate-800 focus:ring-0 outline-none cursor-pointer max-w-[200px]"
+              value={filters.category}
+              onChange={(e) => setFilters((prev) => ({ ...prev, category: e.target.value }))}
+            >
+              <option value="All">All Categories</option>
+              {uniqueCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
+
+          {/* Item Filter (Search Input) */}
+          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Item</span>
+            <input
+              type="text"
+              placeholder="Search Code or Name..."
+              className="bg-transparent border-none text-xs font-extrabold text-slate-800 focus:ring-0 outline-none w-44 placeholder-slate-400"
+              value={filters.itemSearch}
+              onChange={(e) => setFilters((prev) => ({ ...prev, itemSearch: e.target.value }))}
+            />
+          </div>
+
+          {/* Items Found Badge */}
+          <div className="bg-[#E6F4EA] text-[#137333] border border-emerald-250/20 font-extrabold rounded-full px-4 py-1.5 text-[11px] tracking-wider uppercase shadow-xs">
+            {filteredData.length} Items Found
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar / Actions */}
+      <div className="flex items-center justify-between shrink-0 bg-slate-50 border border-slate-350 rounded-lg p-2.5">
+        <div className="flex items-center gap-2">
+          <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+          <span className="text-xs font-bold text-slate-700">Stock Inventory Database</span>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             onClick={exportToExcel}
             size="sm"
-            className="bg-white shadow-sm hover:bg-slate-50 border-slate-200 flex items-center justify-center gap-1"
+            className="bg-white hover:bg-slate-100 border-slate-350 text-slate-900 font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
           >
-            <Download className="w-4 h-4 mr-1" />
-            <span>Export Excel</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
           </Button>
-          <Button variant="outline" onClick={fetchData} size="sm" className="bg-white shadow-sm hover:bg-slate-50 border-slate-200">
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh Data
+          <Button
+            variant="outline"
+            onClick={fetchData}
+            size="sm"
+            className="bg-white hover:bg-slate-100 border-slate-350 text-slate-900 font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Refresh</span>
           </Button>
         </div>
       </div>
 
-      <Card className="border-0 shadow-2xl bg-white overflow-hidden ring-1 ring-slate-200">
-        <CardHeader className="bg-slate-50/80 border-b border-slate-100 py-3 px-6">
-          <div className="flex flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-1.5 h-8 bg-blue-600 rounded-full" />
-              <CardTitle className="text-sm font-bold text-slate-800 uppercase tracking-widest whitespace-nowrap">
-                Stock Analysis
-              </CardTitle>
-            </div>
-            
-            <div className="flex-1 flex items-center justify-end gap-4 max-w-4xl">
-              {/* Group Filter */}
-              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm transition-all hover:border-blue-300 group">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Group</span>
-                <select 
-                  className="bg-transparent border-none text-xs font-medium text-slate-700 focus:ring-0 outline-none cursor-pointer min-w-[100px]"
-                  value={filters.group}
-                  onChange={(e) => setFilters(prev => ({ ...prev, group: e.target.value }))}
-                >
-                  <option value="All">All Groups</option>
-                  {uniqueGroups.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-
-              {/* Category Filter */}
-              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm transition-all hover:border-blue-300 group">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Category</span>
-                <select 
-                  className="bg-transparent border-none text-xs font-medium text-slate-700 focus:ring-0 outline-none cursor-pointer min-w-[120px]"
-                  value={filters.category}
-                  onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
-                >
-                  <option value="All">All Categories</option>
-                  {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              {/* Item Filter */}
-              <div className="flex-1 flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm transition-all hover:border-blue-300 group max-w-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Item</span>
-                <select 
-                  className="bg-transparent border-none text-xs font-medium text-slate-700 focus:ring-0 outline-none cursor-pointer w-full truncate"
-                  value={filters.name}
-                  onChange={(e) => setFilters(prev => ({ ...prev, name: e.target.value }))}
-                >
-                  <option value="All">All Items</option>
-                  {uniqueNames.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
-
-              <div className="hidden xl:flex items-center gap-2 pl-2 border-l border-slate-200">
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-2 py-0.5 text-[9px] font-bold">
-                  {filteredData.length} ITEMS FOUND
-                </Badge>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="max-h-[calc(100vh-18rem)] overflow-auto relative">
+      {/* Table Container Card */}
+      <Card className="border border-slate-350 shadow-xs bg-white overflow-hidden flex-grow flex flex-col min-h-0">
+        <CardContent className="p-0 flex-grow flex flex-col overflow-hidden min-h-0">
+          <div className="flex-grow overflow-auto relative">
             <table className="w-full border-collapse text-sm">
-              <thead className="bg-white">
-                {/* Main Branch Headers */}
-                <tr className="hover:bg-transparent border-b-0">
-                  <th className="bg-slate-100 border-r border-slate-200 text-slate-700 font-bold sticky top-0 z-30 px-4 py-3 text-left" colSpan={4}>Item Details</th>
-                  <th className="bg-[#004d99] text-white font-bold text-center text-lg py-3 border-r border-blue-800 shadow-inner sticky top-0 z-30">CG</th>
-                  <th className="bg-[#1a0033] text-white font-bold text-center text-lg py-3 border-r border-purple-900 shadow-inner sticky top-0 z-30">NE</th>
-                  <th className="bg-[#4d0000] text-white font-bold text-center text-lg py-3 border-r border-red-900 shadow-inner sticky top-0 z-30">Maniquip</th>
-                  <th className="bg-[#006666] text-white font-bold text-center text-lg py-3 shadow-inner sticky top-0 z-30">Head Office</th>
+              <thead>
+                <tr className="border-b border-slate-300 bg-slate-100">
+                  <th colSpan={4} className="px-4 py-3 text-left text-xs font-extrabold text-slate-700 border-r border-slate-300 uppercase tracking-wider bg-slate-50 select-none">
+                    Item Details
+                  </th>
+                  <th rowSpan={2} className="bg-[#0B3C5D] text-white text-center font-bold px-3 py-4 w-44 border-r border-white/20 align-top">
+                    <div className="text-sm tracking-wider font-extrabold">CG</div>
+                    <div className="text-[9.5px] leading-tight font-bold text-blue-200 mt-2 font-sans select-none uppercase tracking-wide">
+                      Reorder Quantity<br/>= Max Level - Live<br/>Stock - Indent Raised
+                    </div>
+                  </th>
+                  <th rowSpan={2} className="bg-[#1D0C30] text-white text-center font-bold px-3 py-4 w-44 border-r border-white/20 align-top">
+                    <div className="text-sm tracking-wider font-extrabold">NE</div>
+                    <div className="text-[9.5px] leading-tight font-bold text-purple-200 mt-2 font-sans select-none uppercase tracking-wide">
+                      Reorder Quantity<br/>= Max Level - Live<br/>Stock - Indent Raised
+                    </div>
+                  </th>
+                  <th rowSpan={2} className="bg-[#5D001E] text-white text-center font-bold px-3 py-4 w-44 border-r border-white/20 align-top">
+                    <div className="text-sm tracking-wider font-extrabold">Maniquip</div>
+                    <div className="text-[9.5px] leading-tight font-bold text-red-200 mt-2 font-sans select-none uppercase tracking-wide">
+                      Reorder Quantity<br/>= Max Level - Live Stock<br/>- Indent Raised
+                    </div>
+                  </th>
+                  <th rowSpan={2} className="bg-[#005B54] text-white text-center font-bold px-3 py-4 w-44 align-top">
+                    <div className="text-sm tracking-wider font-extrabold">Head Office</div>
+                    <div className="text-[9.5px] leading-tight font-bold text-teal-200 mt-2 font-sans select-none uppercase tracking-wide">
+                      Reorder Quantity<br/>= Max Level - Live<br/>Stock - Indent Raised
+                    </div>
+                  </th>
                 </tr>
-                
-                {/* Sub Headers */}
-                <tr className="hover:bg-transparent border-b border-slate-200 shadow-sm">
-                  <th className="bg-slate-50 border-r border-slate-200 text-[11px] font-bold text-slate-600 uppercase sticky top-[52px] z-30 px-2 py-2 text-left">Group</th>
-                  <th className="bg-slate-50 border-r border-slate-200 text-[11px] font-bold text-slate-600 uppercase sticky top-[52px] z-30 px-2 py-2 text-left">Category</th>
-                  <th className="bg-slate-50 border-r border-slate-200 text-[11px] font-bold text-slate-600 uppercase sticky top-[52px] z-30 px-2 py-2 text-left">Item Code</th>
-                  <th className="bg-slate-50 border-r border-slate-200 text-[11px] font-bold text-slate-600 uppercase sticky top-[52px] z-30 px-2 py-2 text-left">Name of Item</th>
-                  
-                  <th className="bg-[#003d7a] text-blue-50 text-[10px] text-center font-medium leading-tight py-2 border-r border-blue-800 sticky top-[52px] z-30">
-                    REORDER QUANTITY <br/> = MAX LEVEL - LIVE STOCK - INDENT RAISED
-                  </th>
-                  <th className="bg-[#130026] text-purple-50 text-[10px] text-center font-medium leading-tight py-2 border-r border-purple-900 sticky top-[52px] z-30">
-                    REORDER QUANTITY <br/> = MAX LEVEL - LIVE STOCK - INDENT RAISED
-                  </th>
-                  <th className="bg-[#3d0000] text-red-50 text-[10px] text-center font-medium leading-tight py-2 border-r border-red-900 sticky top-[52px] z-30">
-                    REORDER QUANTITY <br/> = MAX LEVEL - LIVE STOCK - INDENT RAISED
-                  </th>
-                  <th className="bg-[#004d4d] text-teal-50 text-[10px] text-center font-medium leading-tight py-2 sticky top-[52px] z-30">
-                    REORDER QUANTITY <br/> = MAX LEVEL - LIVE STOCK - INDENT RAISED
-                  </th>
+                <tr className="border-b border-slate-300 bg-slate-50">
+                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Group</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Category</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Item Code</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Name of Item</th>
                 </tr>
               </thead>
-              <tbody className="bg-white">
+              <tbody className="bg-white divide-y divide-slate-200">
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="h-32 text-center text-muted-foreground">
-                      No matching data found
+                    <td colSpan={8} className="h-40 text-center text-slate-500 font-bold text-sm bg-slate-50/50">
+                      No matching records found
                     </td>
                   </tr>
                 ) : (
-                  filteredData.map((row, idx) => {
-                    // Check if it's an empty row
-                    if (!row || row.every((cell: any) => !cell)) return null;
-
-                    return (
-                      <tr key={idx} className="hover:bg-slate-50/80 transition-colors border-b border-slate-100">
-                        {/* Item Details (A-D) */}
-                        <td className="border-r border-slate-100 text-[11px] px-2 py-2">{row[0]}</td>
-                        <td className="border-r border-slate-100 text-[11px] px-2 py-2">{row[1]}</td>
-                        <td className="border-r border-slate-100 text-[11px] px-2 py-2 font-mono text-slate-600">{row[2]}</td>
-                        <td className="border-r border-slate-100 text-[11px] px-2 py-2 font-medium">{row[3]}</td>
-
-                        {/* CG Data (Index 94) */}
-                        <td className={`text-center font-medium border-r border-slate-100 px-2 py-2 ${parseFloat(row[94]) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {row[94] !== undefined ? row[94] : "0"}
-                        </td>
-
-                        {/* NE Data (Index 95) */}
-                        <td className={`text-center font-medium border-r border-slate-100 px-2 py-2 ${parseFloat(row[95]) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {row[95] !== undefined ? row[95] : "0"}
-                        </td>
-
-                        {/* Maniquip Data (Index 96) */}
-                        <td className={`text-center font-medium border-r border-slate-100 px-2 py-2 ${parseFloat(row[96]) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {row[96] !== undefined ? row[96] : "0"}
-                        </td>
-
-                        {/* Head Office Data (Index 97) */}
-                        <td className={`text-center font-medium px-2 py-2 ${parseFloat(row[97]) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {row[97] !== undefined ? row[97] : "0"}
-                        </td>
-                      </tr>
-                    );
-                  })
+                  filteredData.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-bold text-slate-900 font-mono">
+                        {row.group || "-"}
+                      </td>
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-semibold text-slate-800">
+                        {row.category || "-"}
+                      </td>
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-bold text-slate-900 font-mono">
+                        {row.itemCode || "-"}
+                      </td>
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-bold text-slate-900 truncate max-w-[280px]" title={row.itemName}>
+                        {row.itemName || "-"}
+                      </td>
+                      
+                      {/* Calculated locations */}
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 text-center font-bold font-mono">
+                        <span className={row.cg < 0 ? "text-red-600" : "text-green-600"}>
+                          {row.cg}
+                        </span>
+                      </td>
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 text-center font-bold font-mono">
+                        <span className={row.ne < 0 ? "text-red-600" : "text-green-600"}>
+                          {row.ne}
+                        </span>
+                      </td>
+                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 text-center font-bold font-mono">
+                        <span className={row.maniquip < 0 ? "text-red-600" : "text-green-600"}>
+                          {row.maniquip}
+                        </span>
+                      </td>
+                      <td className="text-xs px-4 py-2.5 text-center font-bold font-mono">
+                        <span className={row.headOffice < 0 ? "text-red-600" : "text-green-600"}>
+                          {row.headOffice}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
           </div>
         </CardContent>
-        <div className="bg-slate-50 p-3 border-t border-slate-100 flex items-center justify-between">
-           <p className="text-[10px] text-muted-foreground">Rows showing: {Math.max(0, data.length - 2)}</p>
-           <p className="text-[10px] text-muted-foreground font-medium italic">Powered by Real-time Inventory Engine</p>
+        <div className="bg-slate-100 px-4 py-3 border-t border-slate-350 flex items-center justify-between shrink-0">
+          <p className="text-[11px] text-slate-700 font-bold">Showing: {filteredData.length} records</p>
+          <p className="text-[11px] text-slate-800 font-bold italic">Powered by Botivate Inventory Engine</p>
         </div>
       </Card>
     </div>

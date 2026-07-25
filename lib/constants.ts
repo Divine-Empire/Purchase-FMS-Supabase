@@ -1,7 +1,7 @@
 import {
     PlusCircle, CheckCircle2, Users, MessagesSquare, FileEdit,
     Phone, Package, ClipboardCheck, FileText, Upload, ShieldCheck,
-    CornerUpLeft, CreditCard, Truck, TruckIcon, ShieldAlert, LayoutGrid, AlertCircle, XCircle, Settings
+    CornerUpLeft, CreditCard, Truck, TruckIcon, ShieldAlert, LayoutGrid, AlertCircle, XCircle, Settings, Database
 } from "lucide-react";
 
 export const STAGES = [
@@ -28,6 +28,7 @@ export const STAGES = [
     { num: 17, name: "Damaged Records", slug: "damaged-records", icon: AlertCircle },
     { num: 18, name: "Order Cancel", slug: "order-cancel", icon: XCircle },
     { num: 19, name: "Settings", slug: "settings", icon: Settings },
+    { num: 20, name: "Master", slug: "master", icon: Database },
 ];
 
 export const PAGE_ACCESS_OPTIONS = [
@@ -55,6 +56,7 @@ export const PAGE_ACCESS_OPTIONS = [
     "Damaged Records",
     "Order Cancel",
     "Settings",
+    "Master",
 ];
 
 export function isStageAccessGranted(

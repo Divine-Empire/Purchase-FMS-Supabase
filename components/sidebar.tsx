@@ -23,6 +23,9 @@ export default function Sidebar() {
 
   // Helper to check if a page is allowed
   const isPageAllowed = useCallback((pageName: string) => {
+    if (pageName === "Master") {
+      return role?.toUpperCase() === "ADMIN";
+    }
     return isStageAccessGranted(pageName, pageAccess, role);
   }, [pageAccess, role]);
 
@@ -124,11 +127,10 @@ export default function Sidebar() {
                     <Icon className="w-5 h-5 mr-3 flex-shrink-0" />
                     <span className="truncate flex-grow text-left">{stage.name}</span>
                     {count > 0 && (
-                      <span className={`ml-auto text-[10px] rounded-full px-2 py-0.5 font-bold leading-none min-w-[20px] text-center flex-shrink-0 transition-all ${
-                        isActive(stagePath)
+                      <span className={`ml-auto text-[10px] rounded-full px-2 py-0.5 font-bold leading-none min-w-[20px] text-center flex-shrink-0 transition-all ${isActive(stagePath)
                           ? "bg-white text-slate-900 shadow-sm"
                           : "bg-blue-500 text-white shadow-sm"
-                      }`}>
+                        }`}>
                         {count}
                       </span>
                     )}

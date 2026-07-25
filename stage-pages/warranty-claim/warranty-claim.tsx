@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Search, ShieldAlert } from "lucide-react";
+import { Loader2, Search, ShieldAlert, ClipboardList, History, AlertCircle } from "lucide-react";
 import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon } from "@/lib/utils";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import WarrantyClaimPending from "./warranty-claim-pending";
 import WarrantyClaimHistory from "./warranty-claim-history";
 
@@ -331,24 +333,60 @@ export default function WarrantyClaim() {
                         </div>
                     </div>
 
-                    <TabsList className="grid w-full grid-cols-3 h-12 bg-slate-100/50 p-1 rounded-lg">
+                    <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-3 gap-1.5 border border-indigo-100/50 w-[620px] shadow-2xs">
                         <TabsTrigger
                             value="pending"
-                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                            className="text-base py-3 px-4 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center justify-center gap-3 transition-all cursor-pointer text-slate-700"
                         >
-                            Pending ({pending.length})
+                            <ClipboardList className="w-5 h-5 opacity-80" />
+                            <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                <span className="font-bold">Pending</span>
+                                <span className="text-[10px] opacity-70">Awaiting claims</span>
+                            </div>
+                            <Badge variant="secondary" className={cn(
+                                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                activeTab === "pending"
+                                    ? "bg-white text-red-600 shadow-xs"
+                                    : "bg-red-100 text-red-700"
+                            )}>
+                                {pending.length}
+                            </Badge>
                         </TabsTrigger>
                         <TabsTrigger
                             value="closurePending"
-                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                            className="text-base py-3 px-4 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center justify-center gap-3 transition-all cursor-pointer text-slate-700"
                         >
-                            Closure Pending ({closurePending.length})
+                            <AlertCircle className="w-5 h-5 opacity-80" />
+                            <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                <span className="font-bold">Closure Pending</span>
+                                <span className="text-[10px] opacity-70">Claims raised</span>
+                            </div>
+                            <Badge variant="secondary" className={cn(
+                                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                activeTab === "closurePending"
+                                    ? "bg-white text-amber-600 shadow-xs"
+                                    : "bg-amber-100 text-amber-700"
+                            )}>
+                                {closurePending.length}
+                            </Badge>
                         </TabsTrigger>
                         <TabsTrigger
                             value="history"
-                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                            className="text-base py-3 px-4 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center justify-center gap-3 transition-all cursor-pointer text-slate-700"
                         >
-                            History ({history.length})
+                            <History className="w-5 h-5 opacity-80" />
+                            <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                <span className="font-bold">History</span>
+                                <span className="text-[10px] opacity-70 font-medium">Closed claims</span>
+                            </div>
+                            <Badge variant="secondary" className={cn(
+                                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                activeTab === "history"
+                                    ? "bg-white text-emerald-600 shadow-xs"
+                                    : "bg-green-100 text-green-800"
+                            )}>
+                                {history.length}
+                            </Badge>
                         </TabsTrigger>
                     </TabsList>
                 </div>

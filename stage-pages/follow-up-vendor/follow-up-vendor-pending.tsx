@@ -54,8 +54,8 @@ export default function FollowUpVendorPending({
   return (
     <div className="border rounded-lg overflow-auto flex-1 flex flex-col min-h-[350px] md:min-h-0 bg-white">
       <Table>
-        <TableHeader className="bg-slate-200 sticky top-0 z-10">
-          <TableRow>
+        <TableHeader className="bg-slate-900 sticky top-0 z-10 shadow-sm [&_th]:text-white [&_th]:font-semibold [&_th]:h-12 border-b-0">
+          <TableRow className="border-b-0 hover:bg-slate-900">
             <TableHead className="w-12">
               <Checkbox
                 checked={
@@ -63,6 +63,7 @@ export default function FollowUpVendorPending({
                   pending.length > 0
                 }
                 onCheckedChange={selectAll}
+                className="border-slate-300 data-[state=checked]:bg-white data-[state=checked]:text-slate-900"
               />
             </TableHead>
             <TableHead className="text-center">Actions</TableHead>
@@ -89,18 +90,29 @@ export default function FollowUpVendorPending({
         <TableBody>
           {pending.map((record) => {
             const v = getVendorData(record);
+            const isSelected = selectedRecordIds.includes(record.id);
             return (
-              <TableRow key={record.id}>
+              <TableRow 
+                key={record.id}
+                className={cn(
+                  "hover:bg-indigo-50/20 transition-colors border-b border-slate-100",
+                  isSelected ? "bg-indigo-50/40" : "even:bg-slate-50/30"
+                )}
+              >
                 <TableCell>
                   <Checkbox
-                    checked={selectedRecordIds.includes(record.id)}
+                    checked={isSelected}
                     onCheckedChange={() => toggleSelect(record.id)}
                   />
                 </TableCell>
                 <TableCell className="text-center">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="h-8 text-xs font-bold px-3 border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50/50 hover:text-indigo-800 transition-colors shadow-xs"
+                      >
                         Process
                       </Button>
                     </DropdownMenuTrigger>

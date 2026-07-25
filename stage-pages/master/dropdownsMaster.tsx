@@ -1,0 +1,1204 @@
+"use client";
+
+import React, { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Database,
+  Plus,
+  Trash2,
+  Search,
+  Loader2,
+  X,
+  FileSpreadsheet,
+  Users,
+  Settings,
+  UserCheck
+} from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+const DROPDOWN_COLUMNS = [
+  { key: "Created By", label: "Created By", fieldName: "createdByOptions" },
+  { key: "Wharehouse", label: "Warehouse", fieldName: "warehouseOptions" },
+  { key: "UOM", label: "UOM", fieldName: "uomOptions" },
+  { key: "Payment Terms (Stage3)", label: "Payment Terms (Stage 3)", fieldName: "paymentTermsOptions" },
+  { key: "Approved By", label: "Approved By", fieldName: "approvedByOptions" },
+  { key: "Transporter", label: "Transporter", fieldName: "transporterOptions" },
+  { key: "Checked By", label: "Checked By", fieldName: "checkedByOptions" },
+  { key: "Tally Done By", label: "Tally Done By", fieldName: "tallyDoneByOptions" },
+  { key: "Checkers (Verification)", label: "Checkers (Verification)", fieldName: "checkersVerificationOptions" },
+  { key: "QC-Checklist", label: "QC Checklist", fieldName: "qcChecklistOptions" },
+  { key: "Reject Type (QC)", label: "Reject Type (QC)", fieldName: "rejectTypeQcOptions" },
+];
+
+
+
+interface ItemRecord {
+  id: string;
+  itemCode: string;
+  category: string;
+  itemName: string;
+}
+
+interface VendorRecord {
+  id: string;
+  vendorCode: string;
+  vendorName: string;
+}
+
+export default function DropdownsMaster() {
+  const { role, isLoading: authLoading } = useAuth();
+  const [data, setData] = useState<any>({});
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Controlled active tab state
+  const [activeTab, setActiveTab] = useState<string>("dropdowns");
+
+  // Search terms
+  const [dropdownSearchTerms, setDropdownSearchTerms] = useState<Record<string, string>>({});
+  const [itemsSearch, setItemsSearch] = useState("");
+  const [vendorsSearch, setVendorsSearch] = useState("");
+  const [responsibleSearch, setResponsibleSearch] = useState("");
+
+  // Modals for Responsible Persons, Items & Vendors
+  const [openRespModal, setOpenRespModal] = useState(false);
+  const [editingResp, setEditingResp] = useState({
+    id: "",
+    stageName: "",
+    responsibleName: "",
+    tatValue: 0,
+    tatUnit: "hours" as "hours" | "days"
+  });
+  const [isSavingResp, setIsSavingResp] = useState(false);
+  const [itemsPage, setItemsPage] = useState(1);
+  const [vendorsPage, setVendorsPage] = useState(1);
+  const pageSize = 50;
+
+  // UI States
+  const [addingToCol, setAddingToCol] = useState<string | null>(null);
+  const [newValueMap, setNewValueMap] = useState<Record<string, string>>({});
+
+  // Modals for Items & Vendors
+  const [openItemModal, setOpenItemModal] = useState(false);
+  const [newItem, setNewItem] = useState({ itemCode: "", category: "", itemName: "" });
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [manualCategory, setManualCategory] = useState("");
+
+  const [openVendorModal, setOpenVendorModal] = useState(false);
+  const [newVendor, setNewVendor] = useState({ vendorCode: "", vendorName: "" });
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/dropdowns?_t=${Date.now()}`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setData(json.data);
+      } else {
+        toast.error("Failed to load options");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("An error occurred loading dropdown options");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (role?.toUpperCase() === "ADMIN") {
+      fetchData();
+    }
+  }, [role]);
+
+  // Reset pagination to page 1 on search change
+  useEffect(() => {
+    setItemsPage(1);
+  }, [itemsSearch]);
+
+  useEffect(() => {
+    setVendorsPage(1);
+  }, [vendorsSearch]);
+
+  // Extract unique sorted categories from existing items
+  const existingCategories = useMemo(() => {
+    const itemsList: ItemRecord[] = data.items || [];
+    const cats = itemsList.map((item) => item.category?.trim()).filter(Boolean);
+    return Array.from(new Set(cats)).sort();
+  }, [data.items]);
+
+  // Filters with Reverse Sorting (Newest/Latest items or vendors at the top)
+  const filteredItems = useMemo(() => {
+    const rawList: ItemRecord[] = data.items || [];
+    // Reverse the list so newly inserted items appear first
+    const itemsList = [...rawList].reverse();
+
+    if (!itemsSearch.trim()) return itemsList;
+    const lower = itemsSearch.toLowerCase();
+    return itemsList.filter(
+      (item) =>
+        (item.itemCode || "").toLowerCase().includes(lower) ||
+        (item.category || "").toLowerCase().includes(lower) ||
+        (item.itemName || "").toLowerCase().includes(lower)
+    );
+  }, [data.items, itemsSearch]);
+
+  const filteredVendors = useMemo(() => {
+    const rawList: VendorRecord[] = data.vendors || [];
+    // Reverse the list so newly inserted vendors appear first
+    const vendorsList = [...rawList].reverse();
+
+    if (!vendorsSearch.trim()) return vendorsList;
+    const lower = vendorsSearch.toLowerCase();
+    return vendorsList.filter(
+      (vendor) =>
+        (vendor.vendorCode || "").toLowerCase().includes(lower) ||
+        (vendor.vendorName || "").toLowerCase().includes(lower)
+    );
+  }, [data.vendors, vendorsSearch]);
+
+  const getFilteredOptions = (fieldName: string, colKey: string) => {
+    const list: string[] = data[fieldName] || [];
+    const search = dropdownSearchTerms[colKey] || "";
+    if (!search.trim()) return list;
+    return list.filter((opt) => opt.toLowerCase().includes(search.toLowerCase()));
+  };
+
+  // Pagination Computations
+  const totalItemsPages = Math.ceil(filteredItems.length / pageSize) || 1;
+  const paginatedItems = useMemo(() => {
+    const start = (itemsPage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, itemsPage]);
+
+  const totalVendorsPages = Math.ceil(filteredVendors.length / pageSize) || 1;
+  const paginatedVendors = useMemo(() => {
+    const start = (vendorsPage - 1) * pageSize;
+    return filteredVendors.slice(start, start + pageSize);
+  }, [filteredVendors, vendorsPage]);
+
+  // Actions - Options
+  const handleAddOption = async (column: string) => {
+    const val = newValueMap[column]?.trim();
+    if (!val) {
+      toast.error("Please enter a value");
+      return;
+    }
+
+    // Duplicate Check
+    const colConfig = DROPDOWN_COLUMNS.find((c) => c.key === column);
+    if (colConfig) {
+      const existingOptions: string[] = data[colConfig.fieldName] || [];
+      const isDuplicate = existingOptions.some(
+        (opt) => opt.trim().toLowerCase() === val.toLowerCase()
+      );
+      if (isDuplicate) {
+        toast.warning(`Option "${val}" already exists in "${colConfig.label}".`);
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "addDropdownOption",
+          column,
+          value: val,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Option added to "${column}" successfully`);
+        setNewValueMap((prev) => ({ ...prev, [column]: "" }));
+        setAddingToCol(null);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to add option");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add option");
+    }
+  };
+
+  const handleDeleteOption = async (column: string, value: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${value}" from "${column}"?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/dropdowns?action=deleteDropdownOption&column=${encodeURIComponent(
+          column
+        )}&value=${encodeURIComponent(value)}`,
+        { method: "DELETE" }
+      );
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Option deleted from "${column}"`);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to delete option");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete option");
+    }
+  };
+
+  // Actions - Items
+  const handleAddItem = async () => {
+    // Determine the category name based on selection
+    const finalCategory = selectedCategory === "OTHER" ? manualCategory.trim() : selectedCategory.trim();
+
+    if (!finalCategory || !newItem.itemName.trim()) {
+      toast.error("Category and Item Name are required");
+      return;
+    }
+
+    // Duplicate Check: Category & Item Name combination
+    const existingItems: ItemRecord[] = data.items || [];
+    const isDuplicate = existingItems.some(
+      (item) =>
+        item.itemName.trim().toLowerCase() === newItem.itemName.trim().toLowerCase() &&
+        item.category.trim().toLowerCase() === finalCategory.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      toast.warning(`Item "${newItem.itemName}" already exists under category "${finalCategory}".`);
+      return;
+    }
+
+    // Duplicate Check: Item Code
+    if (newItem.itemCode.trim()) {
+      const isCodeDuplicate = existingItems.some(
+        (item) =>
+          item.itemCode &&
+          item.itemCode.trim().toLowerCase() === newItem.itemCode.trim().toLowerCase()
+      );
+      if (isCodeDuplicate) {
+        toast.warning(`Item code "${newItem.itemCode}" is already assigned to another item.`);
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "addItem",
+          itemCode: newItem.itemCode,
+          category: finalCategory,
+          itemName: newItem.itemName,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Item added successfully");
+        setNewItem({ itemCode: "", category: "", itemName: "" });
+        setSelectedCategory("");
+        setManualCategory("");
+        setOpenItemModal(false);
+        // Reset to page 1 to see the new item immediately at the top
+        setItemsPage(1);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to add item");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add item");
+    }
+  };
+
+  const handleDeleteItem = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete item "${name}"?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/dropdowns?action=deleteItem&id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Item deleted successfully");
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to delete item");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete item");
+    }
+  };
+
+  // Actions - Vendors
+  const handleAddVendor = async () => {
+    if (!newVendor.vendorName.trim()) {
+      toast.error("Vendor Name is required");
+      return;
+    }
+
+    // Duplicate Check: Vendor Name
+    const existingVendors: VendorRecord[] = data.vendors || [];
+    const isDuplicate = existingVendors.some(
+      (vendor) => vendor.vendorName.trim().toLowerCase() === newVendor.vendorName.trim().toLowerCase()
+    );
+
+    if (isDuplicate) {
+      toast.warning(`Vendor "${newVendor.vendorName}" already exists.`);
+      return;
+    }
+
+    // Duplicate Check: Vendor Code
+    if (newVendor.vendorCode.trim()) {
+      const isCodeDuplicate = existingVendors.some(
+        (vendor) =>
+          vendor.vendorCode &&
+          vendor.vendorCode.trim().toLowerCase() === newVendor.vendorCode.trim().toLowerCase()
+      );
+      if (isCodeDuplicate) {
+        toast.warning(`Vendor code "${newVendor.vendorCode}" is already assigned to another vendor.`);
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "addVendor",
+          vendorCode: newVendor.vendorCode,
+          vendorName: newVendor.vendorName,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Vendor added successfully");
+        setNewVendor({ vendorCode: "", vendorName: "" });
+        setOpenVendorModal(false);
+        // Reset page to 1 to see the new vendor at the top
+        setVendorsPage(1);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to add vendor");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add vendor");
+    }
+  };
+
+  const handleDeleteVendor = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete vendor "${name}"?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/dropdowns?action=deleteVendor&id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Vendor deleted successfully");
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to delete vendor");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete vendor");
+    }
+  };
+
+  // Responsible Persons Handlers (dynamic from database TAT rows)
+  const filteredStages = useMemo(() => {
+    const list = data.responsiblePersons || [];
+    const search = responsibleSearch.toLowerCase().trim();
+    if (!search) return list;
+    return list.filter((r: any) => {
+      const stage = r.stageName || "";
+      const names = r.responsibleName || "";
+      return stage.toLowerCase().includes(search) || names.toLowerCase().includes(search);
+    });
+  }, [data.responsiblePersons, responsibleSearch]);
+
+  const renderResponsibleBadges = (namesStr: string) => {
+    if (!namesStr || !namesStr.trim()) {
+      return <span className="text-slate-400 italic text-xs font-semibold">No assignees configured</span>;
+    }
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {namesStr.split(",").map((name, i) => (
+          <Badge key={i} variant="outline" className="bg-indigo-50/50 font-bold text-indigo-700 text-[10px] uppercase border-indigo-100 px-2 py-0.5 rounded-full">
+            {name.trim()}
+          </Badge>
+        ))}
+      </div>
+    );
+  };
+
+  const handleEditResponsible = (record: any) => {
+    const totalHours = record.tat || 0;
+    let val = totalHours;
+    let unit: "hours" | "days" = "hours";
+    if (totalHours > 0 && totalHours % 24 === 0) {
+      val = totalHours / 24;
+      unit = "days";
+    }
+
+    setEditingResp({
+      id: record.id,
+      stageName: record.stageName,
+      responsibleName: record.responsibleName,
+      tatValue: val,
+      tatUnit: unit
+    });
+    setOpenRespModal(true);
+  };
+
+  const handleSaveResponsible = async () => {
+    setIsSavingResp(true);
+    const totalHours = editingResp.tatUnit === "days" ? editingResp.tatValue * 24 : editingResp.tatValue;
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsertResponsible",
+          id: editingResp.id,
+          stageName: editingResp.stageName,
+          responsibleName: editingResp.responsibleName,
+          tat: totalHours
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Responsible persons updated for "${editingResp.stageName}"`);
+        setOpenRespModal(false);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to update responsible persons");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update responsible persons");
+    } finally {
+      setIsSavingResp(false);
+    }
+  };
+
+  // Authentication Checks
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)]">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-900 mb-2" />
+        <p className="text-sm font-semibold text-slate-750">Authenticating access...</p>
+      </div>
+    );
+  }
+
+  if (role?.toUpperCase() !== "ADMIN") {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 min-h-[calc(100vh-4rem)] text-center">
+        <div className="p-4 bg-red-100 text-red-700 border border-red-300 rounded-full mb-4">
+          <X className="w-12 h-12" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Access Denied</h2>
+        <p className="text-slate-700 mt-2 max-w-md font-medium">
+          This page is restricted to system administrators. Please contact your system administrator for access permissions.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6 max-w-7xl mx-auto h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+      {/* Top Header Card */}
+      <div className="p-6 bg-slate-50 border border-indigo-100 rounded-xl shadow-xs shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-indigo-600 rounded-lg shadow-indigo-100 shadow-lg text-white">
+            <Database className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-indigo-950 tracking-tight">Master Management</h1>
+            <p className="text-sm text-slate-700 font-medium mt-0.5">Manage global dropdowns, item lists, and vendors</p>
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center flex-grow py-24 text-slate-750">
+          <Loader2 className="w-8 h-8 animate-spin mb-4 text-black" />
+          <p className="text-lg animate-pulse text-black font-semibold">Fetching options...</p>
+        </div>
+      ) : (
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-4 gap-1 border border-indigo-100/50 shrink-0">
+            <TabsTrigger
+              value="dropdowns"
+              className="text-xs py-2.5 px-3 rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-transparent data-[state=active]:border-indigo-600 text-slate-755 font-bold"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Dropdown Fields</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="items"
+              className="text-xs py-2.5 px-3 rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-transparent data-[state=active]:border-indigo-600 text-slate-755 font-bold"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Items Master</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="vendors"
+              className="text-xs py-2.5 px-3 rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-transparent data-[state=active]:border-indigo-600 text-slate-755 font-bold"
+            >
+              <Users className="w-4 h-4" />
+              <span>Vendors Master</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="responsible"
+              className="text-xs py-2.5 px-3 rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-transparent data-[state=active]:border-indigo-600 text-slate-755 font-bold"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Stage Master</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* TAB 1: DROPDOWN OPTIONS GRID */}
+          <TabsContent value="dropdowns" className="mt-4 outline-none flex-1 overflow-y-auto pr-2 pb-6 min-h-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {DROPDOWN_COLUMNS.map((col) => {
+                const isAdding = addingToCol === col.key;
+                const options = getFilteredOptions(col.fieldName, col.key);
+                return (
+                  <Card key={col.key} className="border border-indigo-100 shadow-xs hover:shadow-sm transition-all flex flex-col h-[380px] bg-white">
+                    <CardHeader className="p-4 border-b border-indigo-100 flex flex-row items-center justify-between space-y-0 shrink-0 bg-slate-100/70">
+                      <div>
+                        <CardTitle className="text-sm font-bold text-slate-950">{col.label}</CardTitle>
+                        <CardDescription className="text-xs text-slate-700 font-semibold mt-0.5">
+                          {options.length} options
+                        </CardDescription>
+                      </div>
+                      <Button
+                        size="icon"
+                        variant={isAdding ? "destructive" : "outline"}
+                        className={cn(
+                          "h-8 w-8 cursor-pointer rounded-lg border transition-colors",
+                          isAdding 
+                            ? "bg-red-50 text-red-600 hover:bg-red-100 border-red-200" 
+                            : "bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100/80 hover:text-indigo-700"
+                        )}
+                        onClick={() => {
+                          setAddingToCol(isAdding ? null : col.key);
+                          if (!isAdding) {
+                            setNewValueMap((prev) => ({ ...prev, [col.key]: "" }));
+                          }
+                        }}
+                      >
+                        {isAdding ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                      </Button>
+                    </CardHeader>
+
+                    <CardContent className="p-4 flex-1 flex flex-col overflow-hidden min-h-0 space-y-3">
+                      {/* Search Bar for Options */}
+                      <div className="relative shrink-0">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+                        <Input
+                          placeholder={`Filter options...`}
+                          value={dropdownSearchTerms[col.key] || ""}
+                          onChange={(e) =>
+                            setDropdownSearchTerms((prev) => ({
+                              ...prev,
+                              [col.key]: e.target.value,
+                            }))
+                          }
+                          className="pl-8 h-8 text-xs border-slate-350 focus-visible:ring-slate-900 bg-white placeholder-slate-500 font-medium text-slate-900"
+                        />
+                      </div>
+
+                      {/* Inline Adding Textarea */}
+                      {isAdding && (
+                        <div className="p-2 border border-slate-350 rounded-lg bg-slate-100 space-y-2 shrink-0 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <Textarea
+                            placeholder="Type new option name..."
+                            value={newValueMap[col.key] || ""}
+                            onChange={(e) =>
+                              setNewValueMap((prev) => ({
+                                ...prev,
+                                [col.key]: e.target.value,
+                              }))
+                            }
+                            rows={2}
+                            className="text-xs resize-none border-slate-350 focus-visible:ring-slate-955 bg-white text-slate-955 placeholder-slate-600 font-semibold"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 px-3 text-slate-700 border-slate-350 bg-white hover:bg-slate-200 rounded-md cursor-pointer font-bold"
+                              onClick={() => setAddingToCol(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="text-xs h-7 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-md cursor-pointer font-bold"
+                              onClick={() => handleAddOption(col.key)}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* List of Options */}
+                      <div className="flex-grow overflow-y-auto space-y-1 pr-1 border border-slate-100 rounded-lg p-1 bg-slate-50/50">
+                        {options.length === 0 ? (
+                          <div className="text-center py-8 text-slate-600 text-xs font-bold">
+                            No options found.
+                          </div>
+                        ) : (
+                          options.map((opt, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center justify-between px-3 py-1.5 hover:bg-slate-100/80 border border-transparent hover:border-slate-200 rounded-lg group transition-all"
+                            >
+                              <span className="text-xs font-semibold text-slate-900 break-all pr-2">
+                                {opt}
+                              </span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 text-red-500 hover:bg-red-50 hover:text-red-700 cursor-pointer border border-transparent hover:border-red-200 rounded-md shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => handleDeleteOption(col.key, opt)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </TabsContent>
+
+          {/* TAB 2: ITEM MASTER TABLE */}
+          <TabsContent value="items" className="mt-4 outline-none flex-grow flex flex-col overflow-hidden">
+            <Card className="border border-indigo-100 shadow-xs flex-grow flex flex-col overflow-hidden min-h-0 bg-white">
+              <div className="p-4 bg-slate-100/70 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary" className="bg-indigo-50/50 border-indigo-100 text-indigo-700 font-bold px-3 py-1 text-xs">
+                    Items ({filteredItems.length})
+                  </Badge>
+                  <div className="relative w-64 sm:w-80">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-650" />
+                    <Input
+                      placeholder="Search code, category, or name..."
+                      value={itemsSearch}
+                      onChange={(e) => setItemsSearch(e.target.value)}
+                      className="pl-9 h-9 text-xs border-indigo-100 bg-white rounded-lg focus-visible:ring-slate-950 placeholder-slate-600 font-semibold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setNewItem({ itemCode: "", category: "", itemName: "" });
+                    setSelectedCategory("");
+                    setManualCategory("");
+                    setOpenItemModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer border-none"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Catalog Item
+                </Button>
+              </div>
+
+              {/* Table Body Container */}
+              <div className="flex-grow overflow-y-auto min-h-0">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-slate-100 hover:bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-755 border-b border-slate-350">
+                      <TableHead className="w-[100px] text-center font-bold text-slate-900">Actions</TableHead>
+                      <TableHead className="font-bold text-slate-900">Item Code</TableHead>
+                      <TableHead className="font-bold text-slate-900">Item Category</TableHead>
+                      <TableHead className="font-bold text-slate-900">Item Name</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-12 text-slate-600 text-sm font-bold">
+                          No items catalogued.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedItems.map((item) => (
+                        <TableRow key={item.id} className="hover:bg-slate-50 border-b border-slate-200 transition-colors">
+                          <TableCell className="text-center">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-md cursor-pointer border border-transparent hover:border-red-200"
+                              onClick={() => handleDeleteItem(item.id, item.itemName)}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs font-bold text-slate-800">
+                            {item.itemCode || "N/A"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-indigo-50/50 font-bold text-indigo-700 text-[10px] uppercase border-indigo-100 px-2 py-0.5 rounded-full">
+                              {item.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-bold text-slate-900">{item.itemName}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Frontend Pagination Controls for Items */}
+              {filteredItems.length > 0 && (
+                <div className="p-4 bg-slate-100/70 border-t border-slate-355 flex items-center justify-between shrink-0">
+                  <span className="text-xs text-slate-700 font-bold">
+                    Showing {Math.min(filteredItems.length, (itemsPage - 1) * pageSize + 1)}-
+                    {Math.min(filteredItems.length, itemsPage * pageSize)} of {filteredItems.length} items
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setItemsPage((prev) => Math.max(1, prev - 1))}
+                      disabled={itemsPage === 1}
+                      className="text-xs h-8 cursor-pointer rounded-lg bg-white border-slate-350 font-bold text-slate-900"
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-xs font-extrabold text-slate-955 px-2">
+                      Page {itemsPage} of {totalItemsPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setItemsPage((prev) => Math.min(totalItemsPages, prev + 1))}
+                      disabled={itemsPage === totalItemsPages}
+                      className="text-xs h-8 cursor-pointer rounded-lg bg-white border-slate-350 font-bold text-slate-900"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* TAB 3: VENDOR MASTER TABLE */}
+          <TabsContent value="vendors" className="mt-4 outline-none flex-grow flex flex-col overflow-hidden">
+            <Card className="border border-indigo-100 shadow-xs flex-grow flex flex-col overflow-hidden min-h-0 bg-white">
+              <div className="p-4 bg-slate-100/70 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary" className="bg-indigo-50/50 border-indigo-100 text-indigo-700 font-bold px-3 py-1 text-xs">
+                    Vendors ({filteredVendors.length})
+                  </Badge>
+                  <div className="relative w-64 sm:w-80">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-655" />
+                    <Input
+                      placeholder="Search vendor code or name..."
+                      value={vendorsSearch}
+                      onChange={(e) => setVendorsSearch(e.target.value)}
+                      className="pl-9 h-9 text-xs border-indigo-100 bg-white rounded-lg focus-visible:ring-slate-950 placeholder-slate-600 font-semibold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => setOpenVendorModal(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer border-none"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Vendor
+                </Button>
+              </div>
+
+              {/* Table Body Container */}
+              <div className="flex-grow overflow-y-auto min-h-0">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-slate-100 hover:bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-755 border-b border-slate-350">
+                      <TableHead className="w-[100px] text-center font-bold text-slate-900">Actions</TableHead>
+                      <TableHead className="font-bold text-slate-900">Vendor Code</TableHead>
+                      <TableHead className="font-bold text-slate-900">Vendor Name</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedVendors.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-12 text-slate-600 text-sm font-bold">
+                          No vendors catalogued.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedVendors.map((vendor) => (
+                        <TableRow key={vendor.id} className="hover:bg-slate-50 border-b border-slate-200 transition-colors">
+                          <TableCell className="text-center">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-md cursor-pointer border border-transparent hover:border-red-200"
+                              onClick={() => handleDeleteVendor(vendor.id, vendor.vendorName)}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs font-bold text-slate-800">
+                            {vendor.vendorCode || "N/A"}
+                          </TableCell>
+                          <TableCell className="font-bold text-slate-900">{vendor.vendorName}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Frontend Pagination Controls for Vendors */}
+              {filteredVendors.length > 0 && (
+                <div className="p-4 bg-slate-100/70 border-t border-slate-355 flex items-center justify-between shrink-0">
+                  <span className="text-xs text-slate-700 font-bold">
+                    Showing {Math.min(filteredVendors.length, (vendorsPage - 1) * pageSize + 1)}-
+                    {Math.min(filteredVendors.length, vendorsPage * pageSize)} of {filteredVendors.length} vendors
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVendorsPage((prev) => Math.max(1, prev - 1))}
+                      disabled={vendorsPage === 1}
+                      className="text-xs h-8 cursor-pointer rounded-lg bg-white border-slate-355 font-bold text-slate-900"
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-xs font-extrabold text-slate-955 px-2">
+                      Page {vendorsPage} of {totalVendorsPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVendorsPage((prev) => Math.min(totalVendorsPages, prev + 1))}
+                      disabled={vendorsPage === totalVendorsPages}
+                      className="text-xs h-8 cursor-pointer rounded-lg bg-white border-slate-355 font-bold text-slate-900"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* TAB 4: STAGE-WISE RESPONSIBLE PERSONS TABLE */}
+          <TabsContent value="responsible" className="mt-4 outline-none flex-grow flex flex-col overflow-hidden">
+            <Card className="border border-indigo-100 shadow-xs flex-grow flex flex-col overflow-hidden min-h-0 bg-white">
+              <div className="p-4 bg-slate-100/70 border-b border-indigo-100 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary" className="bg-indigo-50/50 border-indigo-100 text-indigo-700 font-bold px-3 py-1 text-xs">
+                    Stages ({(data.responsiblePersons || []).length})
+                  </Badge>
+                  <div className="relative w-64 sm:w-80">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-655" />
+                    <Input
+                      placeholder="Search stage or assigned person..."
+                      value={responsibleSearch}
+                      onChange={(e) => setResponsibleSearch(e.target.value)}
+                      className="pl-9 h-9 text-xs border-indigo-100 bg-white rounded-lg focus-visible:ring-slate-950 placeholder-slate-600 font-semibold text-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Container */}
+              <div className="flex-grow overflow-y-auto min-h-0">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-slate-100 hover:bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-755 border-b border-indigo-100">
+                      <TableHead className="w-[100px] text-center font-bold text-slate-900">Actions</TableHead>
+                      <TableHead className="font-bold text-slate-900">Stage Name</TableHead>
+                      <TableHead className="w-[120px] text-center font-bold text-slate-900">TAT (Limit)</TableHead>
+                      <TableHead className="font-bold text-slate-900">Responsible Person(s)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredStages.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-12 text-slate-600 text-sm font-bold">
+                          No matching stages found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredStages.map((record: any) => {
+                        const names = record.responsibleName || "";
+                        const tatVal = record.tat || 0;
+                        const tatDisplay = tatVal > 0 && tatVal % 24 === 0 ? `${tatVal / 24} Days` : `${tatVal} Hours`;
+                        return (
+                          <TableRow key={record.id} className="hover:bg-slate-50 border-b border-indigo-50/60 transition-colors">
+                            <TableCell className="text-center">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 px-3 text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 font-bold rounded-lg cursor-pointer"
+                                onClick={() => handleEditResponsible(record)}
+                              >
+                                Edit
+                              </Button>
+                            </TableCell>
+                            <TableCell className="font-bold text-slate-900">{record.stageName}</TableCell>
+                            <TableCell className="font-bold text-slate-900 text-center">{tatDisplay}</TableCell>
+                            <TableCell>{renderResponsibleBadges(names)}</TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
+
+      {/* Responsible Persons Modal */}
+      <Dialog open={openRespModal} onOpenChange={setOpenRespModal}>
+        <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
+          <DialogHeader className="border-b border-slate-200 pb-2">
+            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Edit Responsible Persons</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 my-4 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-900">Stage Name</Label>
+              <Input
+                value={editingResp.stageName}
+                disabled
+                className="h-9 text-xs border-slate-300 bg-slate-100 font-bold text-slate-800 focus-visible:ring-0"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tatVal" className="text-xs font-bold text-slate-900">TAT (Turnaround Time)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="tatVal"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 24"
+                  value={editingResp.tatValue === 0 ? "" : editingResp.tatValue}
+                  onChange={(e) => setEditingResp((prev) => ({ ...prev, tatValue: parseInt(e.target.value) || 0 }))}
+                  className="h-9 text-xs border-slate-350 bg-white rounded-lg focus-visible:ring-slate-950 font-semibold text-slate-900 flex-1"
+                />
+                <select
+                  id="tatUnit"
+                  value={editingResp.tatUnit}
+                  onChange={(e) => setEditingResp((prev) => ({ ...prev, tatUnit: e.target.value as "hours" | "days" }))}
+                  className="flex h-9 rounded-md border border-slate-350 bg-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-slate-950 cursor-pointer w-28"
+                >
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="respNames" className="text-xs font-bold text-slate-900">Responsible Person(s)</Label>
+              <Textarea
+                id="respNames"
+                placeholder="Enter names separated by commas (e.g. NAMRATA RAJAK, HARISH KUMAR)"
+                value={editingResp.responsibleName}
+                onChange={(e) => setEditingResp((prev) => ({ ...prev, responsibleName: e.target.value.toUpperCase() }))}
+                rows={3}
+                className="text-xs uppercase resize-none border-slate-350 focus-visible:ring-slate-950 font-semibold placeholder-slate-500 text-slate-900 bg-white"
+              />
+              <p className="text-[10px] text-slate-650 font-semibold leading-relaxed">
+                * Enter multiple names separated by commas. Names will be automatically formatted to uppercase and trimmed.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setOpenRespModal(false)}
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveResponsible}
+              disabled={isSavingResp}
+              className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold gap-2"
+            >
+              {isSavingResp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Item Modal */}
+      <Dialog open={openItemModal} onOpenChange={setOpenItemModal}>
+        <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
+          <DialogHeader className="border-b border-slate-200 pb-2">
+            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Add New Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 my-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="itemCode" className="text-xs font-bold text-slate-900">Item Code (Optional)</Label>
+              <Input
+                id="itemCode"
+                placeholder="e.g. ITM-001"
+                value={newItem.itemCode}
+                onChange={(e) => setNewItem((prev) => ({ ...prev, itemCode: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+              />
+            </div>
+
+            {/* Category Dropdown Selection & Other Manually option */}
+            <div className="space-y-1.5">
+              <Label htmlFor="categorySelect" className="text-xs font-bold text-slate-900">Item Category</Label>
+              <select
+                id="categorySelect"
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-slate-350 bg-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-slate-950 cursor-pointer"
+              >
+                <option value="">Select Category...</option>
+                <option value="OTHER">OTHER (ENTER MANUALLY)</option>
+                {existingCategories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedCategory === "OTHER" && (
+              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                <Label htmlFor="categoryManual" className="text-xs font-bold text-slate-900">Enter Category Manually</Label>
+                <Input
+                  id="categoryManual"
+                  placeholder="e.g. Cables"
+                  value={manualCategory}
+                  onChange={(e) => setManualCategory(e.target.value)}
+                  className="h-9 text-xs border-slate-355 focus-visible:ring-slate-900 font-semibold text-slate-905"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="itemName" className="text-xs font-bold text-slate-900">Item Name</Label>
+              <Input
+                id="itemName"
+                placeholder="e.g. 3 Core Copper Cable"
+                value={newItem.itemName}
+                onChange={(e) => setNewItem((prev) => ({ ...prev, itemName: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setOpenItemModal(false)}
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddItem}
+              className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold"
+            >
+              Add Item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Vendor Modal */}
+      <Dialog open={openVendorModal} onOpenChange={setOpenVendorModal}>
+        <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
+          <DialogHeader className="border-b border-slate-200 pb-2">
+            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Add New Vendor</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 my-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="vendorCode" className="text-xs font-bold text-slate-900">Vendor Code (Optional)</Label>
+              <Input
+                id="vendorCode"
+                placeholder="e.g. VND-901"
+                value={newVendor.vendorCode}
+                onChange={(e) => setNewVendor((prev) => ({ ...prev, vendorCode: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-900 font-semibold"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vendorName" className="text-xs font-bold text-slate-900">Vendor Name</Label>
+              <Input
+                id="vendorName"
+                placeholder="e.g. Acme Corp Industries"
+                value={newVendor.vendorName}
+                onChange={(e) => setNewVendor((prev) => ({ ...prev, vendorName: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setOpenVendorModal(false)}
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddVendor}
+              className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold"
+            >
+              Add Vendor
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

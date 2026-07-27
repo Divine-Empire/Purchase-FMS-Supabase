@@ -698,7 +698,7 @@ export default function MaterialReceived() {
                 onValueChange={(v) => setActiveTab(v as any)}
                 className="w-full"
             >
-                <div className="md:sticky md:top-0 z-30 bg-slate-50/30 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+                <div className="md:sticky md:top-0 z-50 bg-slate-50 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
                     <div className="p-4 md:p-6 bg-gradient-to-r from-indigo-50/50 via-blue-50/20 to-white border border-indigo-100/60 rounded-xl shadow-xs mb-4 md:mb-6">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">

@@ -298,7 +298,7 @@ export default function WarrantyClaim() {
                 onValueChange={(v) => setActiveTab(v as any)}
                 className="w-full"
             >
-                <div className="sticky top-0 z-30 bg-[#f8fafc] -mx-6 px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+                <div className="sticky top-0 z-50 bg-[#f8fafc] -mx-6 px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
                     <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
                         <div className="flex items-start justify-between flex-wrap gap-4">
                             <div className="flex items-center gap-3">

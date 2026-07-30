@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
         lifts:pfms_lift(
           *,
           transporterFollowUp:"pfms_transporter-follow-up"(*)
+        )
       `)
       .order("timestamp", { ascending: false }) as any;
 

@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, ShieldAlert, Eye, Printer, PlusCircle, Check, ChevronsUpDown, Download, X, ClipboardList, History } from "lucide-react";
@@ -427,6 +434,7 @@ export default function SerialGeneration() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+    const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
 
     const [open, setOpen] = useState(false);
     const [selectedRecords, setSelectedRecords] = useState<any[]>([]);
@@ -511,8 +519,41 @@ export default function SerialGeneration() {
         );
     }, [searchTerm]);
 
-    const pending = useMemo(() => applySearch(pendingRecords), [pendingRecords, applySearch]);
-    const history = useMemo(() => applySearch(historyRecords), [historyRecords, applySearch]);
+    const pending = useMemo(() => {
+        let items = applySearch(pendingRecords);
+        if (indentFilter === "increasing") {
+            items = [...items].sort((a, b) => {
+                const valA = a.data?.indentNo || "";
+                const valB = b.data?.indentNo || "";
+                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+        } else if (indentFilter === "decreasing") {
+            items = [...items].sort((a, b) => {
+                const valA = a.data?.indentNo || "";
+                const valB = b.data?.indentNo || "";
+                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+            });
+        }
+        return items;
+    }, [pendingRecords, applySearch, indentFilter]);
+
+    const history = useMemo(() => {
+        let items = applySearch(historyRecords);
+        if (indentFilter === "increasing") {
+            items = [...items].sort((a, b) => {
+                const valA = a.data?.indentNo || "";
+                const valB = b.data?.indentNo || "";
+                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+        } else if (indentFilter === "decreasing") {
+            items = [...items].sort((a, b) => {
+                const valA = a.data?.indentNo || "";
+                const valB = b.data?.indentNo || "";
+                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+            });
+        }
+        return items;
+    }, [historyRecords, applySearch, indentFilter]);
 
     const pendingGroups = useMemo(() => {
         const groups: Record<string, {
@@ -1277,44 +1318,60 @@ export default function SerialGeneration() {
                         </div>
                     </div>
 
-                    <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
-                        <TabsTrigger
-                            value="pending"
-                            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
-                        >
-                            <ClipboardList className="w-5 h-5 opacity-80" />
-                            <div className="flex flex-col items-start leading-none gap-1 text-left">
-                                <span className="font-bold">Pending</span>
-                                <span className="text-[10px] opacity-70">Awaiting serials</span>
-                            </div>
-                            <Badge variant="secondary" className={cn(
-                                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
-                                activeTab === "pending"
-                                    ? "bg-white text-red-600 shadow-xs"
-                                    : "bg-red-100 text-red-700"
-                            )}>
-                                {pending.length}
-                            </Badge>
-                        </TabsTrigger>
-                        <TabsTrigger
-                            value="history"
-                            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
-                        >
-                            <History className="w-5 h-5 opacity-80" />
-                            <div className="flex flex-col items-start leading-none gap-1 text-left">
-                                <span className="font-bold">History</span>
-                                <span className="text-[10px] opacity-70 font-medium">Completed serials</span>
-                            </div>
-                            <Badge variant="secondary" className={cn(
-                                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
-                                activeTab === "history"
-                                    ? "bg-white text-emerald-600 shadow-xs"
-                                    : "bg-green-100 text-green-800"
-                            )}>
-                                {history.length}
-                            </Badge>
-                        </TabsTrigger>
-                    </TabsList>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                        <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
+                            <TabsTrigger
+                                value="pending"
+                                className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
+                            >
+                                <ClipboardList className="w-5 h-5 opacity-80" />
+                                <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                    <span className="font-bold">Pending</span>
+                                    <span className="text-[10px] opacity-70">Awaiting serials</span>
+                                </div>
+                                <Badge variant="secondary" className={cn(
+                                    "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                    activeTab === "pending"
+                                        ? "bg-white text-red-600 shadow-xs"
+                                        : "bg-red-100 text-red-700"
+                                )}>
+                                    {pending.length}
+                                </Badge>
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="history"
+                                className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
+                            >
+                                <History className="w-5 h-5 opacity-80" />
+                                <div className="flex flex-col items-start leading-none gap-1 text-left">
+                                    <span className="font-bold">History</span>
+                                    <span className="text-[10px] opacity-70 font-medium">Completed serials</span>
+                                </div>
+                                <Badge variant="secondary" className={cn(
+                                    "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                                    activeTab === "history"
+                                        ? "bg-white text-emerald-600 shadow-xs"
+                                        : "bg-green-100 text-green-800"
+                                )}>
+                                    {history.length}
+                                </Badge>
+                            </TabsTrigger>
+                        </TabsList>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-sm font-semibold text-slate-700">Indent Wise Filter:</span>
+                            <Select value={indentFilter} onValueChange={(val) => setIndentFilter(val as any)}>
+                                <SelectTrigger className="w-[180px] bg-white border border-indigo-100 hover:border-indigo-200 focus:ring-2 focus:ring-indigo-500 rounded-lg text-slate-700 font-semibold shadow-xs">
+                                    <SelectValue placeholder="No Filter" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white border border-indigo-100 rounded-lg shadow-md">
+                                    <SelectItem value="no_filter" className="text-slate-700 hover:bg-indigo-50 focus:bg-indigo-50 font-medium">No Filter</SelectItem>
+                                    <SelectItem value="increasing" className="text-slate-700 hover:bg-indigo-50 focus:bg-indigo-50 font-medium">Increasing</SelectItem>
+                                    <SelectItem value="decreasing" className="text-slate-700 hover:bg-indigo-50 focus:bg-indigo-50 font-medium">Decreasing</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
                 </div>
 
                 {isLoading ? (

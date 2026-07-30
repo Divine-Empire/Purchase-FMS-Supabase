@@ -12,6 +12,30 @@ export function parseSheetDate(dateStr: string | Date | null | undefined): Date 
   if (!dateStr || dateStr === "-" || dateStr === "—" || dateStr === "Invalid Date") return null;
   if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
   
+  // Try parsing YYYY-MM-DD first to avoid UTC timezone mismatch issues
+  if (typeof dateStr === 'string' && dateStr.includes('-')) {
+    const parts = dateStr.split(' ');
+    const dateParts = parts[0].split('-');
+    if (dateParts.length === 3 && dateParts[0].length === 4) {
+      const year = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const day = parseInt(dateParts[2], 10);
+      
+      let hours = 0, mins = 0, secs = 0;
+      if (parts[1]) {
+        const timeParts = parts[1].split(':');
+        if (timeParts.length >= 2) {
+          hours = parseInt(timeParts[0], 10);
+          mins = parseInt(timeParts[1], 10);
+          if (timeParts[2]) secs = parseInt(timeParts[2], 10);
+        }
+      }
+      
+      const parsed = new Date(year, month, day, hours, mins, secs);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+  }
+
   // Try standard parsing
   const d = new Date(dateStr);
   if (!isNaN(d.getTime())) return d;

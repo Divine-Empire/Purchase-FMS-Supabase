@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LayoutGrid, Search, PlusCircle, ClipboardList, History as HistoryIcon, Loader2 } from "lucide-react";
 import { parseSheetDate, cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import CreateIndentPending from "./create-indent-pending";
 import CreateIndentHistory from "./create-indent-history";
 
@@ -19,6 +26,7 @@ export default function Stage1() {
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [openCreateModal, setOpenCreateModal] = useState(false);
+  const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -53,17 +61,47 @@ export default function Stage1() {
     );
   };
 
-  const pending = useMemo(() =>
-    sheetRecords
+  const pending = useMemo(() => {
+    let records = sheetRecords
       .filter((r) => r.status === "pending")
-      .filter(matchesSearch)
-    , [sheetRecords, searchTerm]);
+      .filter(matchesSearch);
 
-  const history = useMemo(() =>
-    sheetRecords
+    if (indentFilter === "increasing") {
+      records = [...records].sort((a, b) => {
+        const valA = a.data?.indentNumber || "";
+        const valB = b.data?.indentNumber || "";
+        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    } else if (indentFilter === "decreasing") {
+      records = [...records].sort((a, b) => {
+        const valA = a.data?.indentNumber || "";
+        const valB = b.data?.indentNumber || "";
+        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+    return records;
+  }, [sheetRecords, searchTerm, indentFilter]);
+
+  const history = useMemo(() => {
+    let records = sheetRecords
       .filter((r) => r.status === "completed")
-      .filter(matchesSearch)
-    , [sheetRecords, searchTerm]);
+      .filter(matchesSearch);
+
+    if (indentFilter === "increasing") {
+      records = [...records].sort((a, b) => {
+        const valA = a.data?.indentNumber || "";
+        const valB = b.data?.indentNumber || "";
+        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    } else if (indentFilter === "decreasing") {
+      records = [...records].sort((a, b) => {
+        const valA = a.data?.indentNumber || "";
+        const valB = b.data?.indentNumber || "";
+        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+    return records;
+  }, [sheetRecords, searchTerm, indentFilter]);
 
   return (
     <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
@@ -111,44 +149,60 @@ export default function Stage1() {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
-            <TabsTrigger
-              value="pending"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
-            >
-              <ClipboardList className="w-5 h-5 opacity-80" />
-              <div className="flex flex-col items-start leading-none gap-1 text-left">
-                <span className="font-bold">Pending</span>
-                <span className="text-[10px] opacity-70 font-medium">Awaiting processing</span>
-              </div>
-              <Badge variant="secondary" className={cn(
-                "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
-                activeTab === "pending"
-                  ? "bg-white text-red-600 shadow-xs"
-                  : "bg-red-100 text-red-700"
-              )}>
-                {pending.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger
-              value="history"
-              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
-            >
-              <HistoryIcon className="w-5 h-5 opacity-80" />
-              <div className="flex flex-col items-start leading-none gap-1 text-left">
-                <span className="font-bold">History</span>
-                <span className="text-[10px] opacity-70 font-medium">Completed records</span>
-              </div>
-              <Badge variant="secondary" className={cn(
-                "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
-                activeTab === "history"
-                  ? "bg-white text-emerald-600 shadow-xs"
-                  : "bg-green-100 text-green-800"
-              )}>
-                {history.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 shrink-0">
+            <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1.5 border border-indigo-100/50 w-[420px] shadow-2xs">
+              <TabsTrigger
+                value="pending"
+                className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
+              >
+                <ClipboardList className="w-5 h-5 opacity-80" />
+                <div className="flex flex-col items-start leading-none gap-1 text-left">
+                  <span className="font-bold">Pending</span>
+                  <span className="text-[10px] opacity-70 font-medium">Awaiting processing</span>
+                </div>
+                <Badge variant="secondary" className={cn(
+                  "px-2.5 py-0.5 font-extrabold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                  activeTab === "pending"
+                    ? "bg-white text-red-600 shadow-xs"
+                    : "bg-red-100 text-red-700"
+                )}>
+                  {pending.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger
+                value="history"
+                className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md flex items-center gap-3 transition-all cursor-pointer text-slate-700"
+              >
+                <HistoryIcon className="w-5 h-5 opacity-80" />
+                <div className="flex flex-col items-start leading-none gap-1 text-left">
+                  <span className="font-bold">History</span>
+                  <span className="text-[10px] opacity-70 font-medium">Completed records</span>
+                </div>
+                <Badge variant="secondary" className={cn(
+                  "px-2.5 py-0.5 font-bold rounded-full text-xs min-w-[24px] text-center border-none transition-all",
+                  activeTab === "history"
+                    ? "bg-white text-emerald-600 shadow-xs"
+                    : "bg-green-100 text-green-800"
+                )}>
+                  {history.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-slate-700">Indent Wise Filter:</span>
+              <Select value={indentFilter} onValueChange={(val) => setIndentFilter(val as any)}>
+                <SelectTrigger className="w-[180px] bg-white border border-indigo-100 hover:border-indigo-200 focus:ring-2 focus:ring-indigo-500 rounded-lg text-slate-700 font-semibold shadow-xs">
+                  <SelectValue placeholder="No Filter" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border border-indigo-100 rounded-lg shadow-md">
+                  <SelectItem value="no_filter" className="text-slate-700 hover:bg-indigo-50 focus:bg-indigo-50 font-medium">No Filter</SelectItem>
+                  <SelectItem value="increasing" className="text-slate-700 hover:bg-indigo-50 focus:bg-indigo-50 font-medium">Increasing</SelectItem>
+                  <SelectItem value="decreasing" className="text-slate-700 hover:bg-indigo-50 focus:bg-indigo-50 font-medium">Decreasing</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
           <TabsContent value="pending" className="mt-0 outline-none flex-1 flex flex-col overflow-hidden">
             <CreateIndentPending

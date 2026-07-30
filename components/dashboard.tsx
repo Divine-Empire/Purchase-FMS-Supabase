@@ -454,21 +454,33 @@ export default function PurchaseDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="sm:col-span-2 lg:col-span-1">
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+
                 <Input
+                  type="date"
                   placeholder="dd-mm-yyyy"
-                  className="h-9 text-xs"
+                  className="h-9 text-xs cursor-pointer"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
+                  onClick={(e) => {
+                    try {
+                      e.currentTarget.showPicker();
+                    } catch (err) { }
+                  }}
                 />
                 <span className="text-xs text-muted-foreground flex-shrink-0">
                   to
                 </span>
                 <Input
+                  type="date"
                   placeholder="dd-mm-yyyy"
-                  className="h-9 text-xs"
+                  className="h-9 text-xs cursor-pointer"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
+                  onClick={(e) => {
+                    try {
+                      e.currentTarget.showPicker();
+                    } catch (err) { }
+                  }}
                 />
               </div>
             </div>

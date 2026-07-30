@@ -192,6 +192,25 @@ export async function POST(request: NextRequest) {
 
         if (insertError) throw insertError;
 
+        // Clean up any leftover incomplete/orphan records for this liftNo in downstream tables
+        const { error: delTestingError } = await supabase
+          .from("pfms_material-testing")
+          .delete()
+          .eq("liftNo", liftNo);
+        if (delTestingError) throw delTestingError;
+
+        const { error: delPaymentError } = await supabase
+          .from("pfms_vendor-payment-details")
+          .delete()
+          .eq("liftNo", liftNo);
+        if (delPaymentError) throw delPaymentError;
+
+        const { error: delDamageError } = await supabase
+          .from("pfms_damaged-record")
+          .delete()
+          .eq("liftNo", liftNo);
+        if (delDamageError) throw delDamageError;
+
         // Populate initial record in material-testing table
         const receivedQtyVal = parseFloat(form.receivedQty) || 0;
         const { error: testingError } = await supabase

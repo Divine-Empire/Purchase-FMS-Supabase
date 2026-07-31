@@ -8,7 +8,7 @@ interface CreateIndentHistoryProps {
 }
 
 export default function CreateIndentHistory({ history }: CreateIndentHistoryProps) {
-  return (
+  return ( 
     <div className="mt-0 outline-none flex-1 flex flex-col overflow-hidden">
       <StageTable
         title=""

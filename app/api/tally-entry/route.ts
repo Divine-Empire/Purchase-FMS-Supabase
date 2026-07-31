@@ -47,7 +47,8 @@ export async function GET() {
           )
         )
       `)
-      .not("plannedTallyEntry", "is", null) as any;
+      .not("plannedTallyEntry", "is", null)
+      .order("timestamp", { ascending: false }) as any;
 
     if (matError) throw matError;
 

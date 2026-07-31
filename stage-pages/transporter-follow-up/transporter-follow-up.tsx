@@ -140,7 +140,7 @@ export default function TransporterFollowUp() {
             const aValue = a.data[sortConfig.key] || "";
             const bValue = b.data[sortConfig.key] || "";
 
-            if (sortConfig.key === "expectedDate") {
+            if (["expectedDeliveryDate", "lastFollowUpDate", "nextFollowUpDate", "actualDate", "plannedDate"].includes(sortConfig.key)) {
                 const dateA = new Date(aValue).getTime() || 0;
                 const dateB = new Date(bValue).getTime() || 0;
                 if (dateA < dateB) return sortConfig.direction === "asc" ? -1 : 1;
@@ -190,9 +190,10 @@ export default function TransporterFollowUp() {
     const pendingColumns = [
         { key: "indentNumber", label: "Indent No" },
         { key: "itemName", label: "Item Name" },
-        { key: "plannedDate", label: "Expected Date" },
+        { key: "expectedDeliveryDate", label: "Expected Date" },
         { key: "totalFollowUps", label: "Total Follow-Ups" },
-        { key: "expectedDate", label: "Last Follow-Up Date" },
+        { key: "lastFollowUpDate", label: "Last Follow-Up Date" },
+        { key: "nextFollowUpDate", label: "Next Follow-Up Date" },
         { key: "remarks", label: "Remarks" },
         { key: "liftNo", label: "Unit Tracking No." },
         { key: "vendorName", label: "Vendor Name" },
@@ -209,10 +210,11 @@ export default function TransporterFollowUp() {
     const historyColumns = [
         { key: "indentNumber", label: "Indent No" },
         { key: "itemName", label: "Item Name" },
-        { key: "plannedDate", label: "Expected Date" },
+        { key: "expectedDeliveryDate", label: "Expected Date" },
         { key: "actualDate", label: "Actual" },
         { key: "totalFollowUps", label: "Total Follow-Ups" },
-        { key: "expectedDate", label: "Last Follow-Up Date" },
+        { key: "lastFollowUpDate", label: "Last Follow-Up Date" },
+        { key: "nextFollowUpDate", label: "Next Follow-Up Date" },
         { key: "remarks", label: "Remarks" },
         { key: "liftNo", label: "Unit Tracking No." },
         { key: "vendorName", label: "Vendor Name" },
@@ -381,7 +383,7 @@ export default function TransporterFollowUp() {
                 const rowData = pending.map((record) => {
                     return pendingColumns.map((col) => {
                         const val = record.data[col.key];
-                        if (col.key === "plannedDate" || col.key === "expectedDate") {
+                        if (["plannedDate", "expectedDeliveryDate", "lastFollowUpDate", "nextFollowUpDate"].includes(col.key)) {
                             return formatDateDash(val);
                         }
                         return val === undefined || val === null || String(val).trim() === "" ? "-" : String(val);

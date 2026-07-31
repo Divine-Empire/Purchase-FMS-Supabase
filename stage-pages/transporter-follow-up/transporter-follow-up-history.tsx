@@ -70,7 +70,7 @@ export default function TransporterFollowUpHistory({
                   );
                 }
 
-                if (c.key === "plannedDate" || c.key === "actualDate" || c.key === "expectedDate") {
+                if (["plannedDate", "actualDate", "expectedDeliveryDate", "lastFollowUpDate", "nextFollowUpDate"].includes(c.key)) {
                   return (
                     <TableCell key={c.key} className="text-center border-b px-4 py-2 text-slate-700">
                       {formatDateDash(val)}

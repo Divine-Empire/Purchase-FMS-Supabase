@@ -64,12 +64,29 @@ export async function GET(request: NextRequest) {
 
     if (receiptError) throw receiptError;
 
-    // 2. Fetch all serial numbers to determine completed lifts and map them
-    const { data: serials, error: serialError } = await supabase
-      .from("pfms_serial-number")
-      .select("*");
+    // 2. Fetch all serial numbers using pagination to bypass PostgREST default limit
+    const serials: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageSerials, error: pageError } = await supabase
+        .from("pfms_serial-number")
+        .select("*")
+        .range(page * pageSize, (page + 1) * pageSize - 1);
 
-    if (serialError) throw serialError;
+      if (pageError) throw pageError;
+      if (!pageSerials || pageSerials.length === 0) {
+        hasMore = false;
+      } else {
+        serials.push(...pageSerials);
+        if (pageSerials.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+    }
 
     // 3. Fetch item codes
     const { data: itemsMaster } = await supabase

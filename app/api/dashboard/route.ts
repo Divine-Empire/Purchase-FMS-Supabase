@@ -325,14 +325,33 @@ export async function GET(request: NextRequest) {
     // 4. Fetch warranty claim counts
     let warrantyClaimCount = 0;
     try {
-      const { data: warrantySerials } = await supabase
-        .from("pfms_serial-number")
-        .select(`
-          id,
-          plannedWarrantyClaim,
-          warrantyClaim:"pfms_warranty-claim"(id)
-        `)
-        .not("plannedWarrantyClaim", "is", null);
+      const warrantySerials: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data: pageSerials, error: pageError } = await supabase
+          .from("pfms_serial-number")
+          .select(`
+            id,
+            plannedWarrantyClaim,
+            warrantyClaim:"pfms_warranty-claim"(id)
+          `)
+          .not("plannedWarrantyClaim", "is", null)
+          .range(page * pageSize, (page + 1) * pageSize - 1) as any;
+
+        if (pageError) throw pageError;
+        if (!pageSerials || pageSerials.length === 0) {
+          hasMore = false;
+        } else {
+          warrantySerials.push(...pageSerials);
+          if (pageSerials.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        }
+      }
 
       const { data: activeClaims } = await supabase
         .from("pfms_warranty-claim")

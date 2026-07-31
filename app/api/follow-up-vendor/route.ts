@@ -69,8 +69,8 @@ export async function GET() {
         const approvedQty = approval.approvedQty !== null ? approval.approvedQty : row.quantity;
         const pendingLifted = Math.max(0, approvedQty - totalLifted);
 
-        // Status is completed if at least one lift has been logged
-        const status = lifts.length > 0 ? "completed" : "pending";
+        // Status is pending if there is still quantity left to lift (pendingLifted > 0)
+        const status = pendingLifted > 0 ? "pending" : "completed";
 
         return {
           id: row.indentNo,

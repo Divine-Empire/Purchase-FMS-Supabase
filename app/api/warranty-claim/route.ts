@@ -11,32 +11,49 @@ function getLocalTimestamp(dateInput?: Date | string | number | null): string {
 export async function GET() {
   try {
     // 1. Fetch pending serials (plannedWarrantyClaim is not null, left-join warranty-claim and check null)
-    const { data: serials, error: serialError } = await supabase
-      .from("pfms_serial-number")
-      .select(`
-        *,
-        warrantyClaim:"pfms_warranty-claim" (
-          id
-        ),
-        lift:pfms_lift!inner (
-          liftNo,
-          indent:pfms_indent-generation!inner (
-            indentNo,
-            itemName,
-            negotiation:pfms_negotiation (
-              selectedVendorName
-            )
+    const serials: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageSerials, error: pageError } = await supabase
+        .from("pfms_serial-number")
+        .select(`
+          *,
+          warrantyClaim:"pfms_warranty-claim" (
+            id
           ),
-          materialReceived:"pfms_material-received" (
-            invoiceDate,
-            invoiceNumber,
-            billAttachment
+          lift:pfms_lift!inner (
+            liftNo,
+            indent:pfms_indent-generation!inner (
+              indentNo,
+              itemName,
+              negotiation:pfms_negotiation (
+                selectedVendorName
+              )
+            ),
+            materialReceived:"pfms_material-received" (
+              invoiceDate,
+              invoiceNumber,
+              billAttachment
+            )
           )
-        )
-      `)
-      .not("plannedWarrantyClaim", "is", null) as any;
+        `)
+        .not("plannedWarrantyClaim", "is", null)
+        .range(page * pageSize, (page + 1) * pageSize - 1) as any;
 
-    if (serialError) throw serialError;
+      if (pageError) throw pageError;
+      if (!pageSerials || pageSerials.length === 0) {
+        hasMore = false;
+      } else {
+        serials.push(...pageSerials);
+        if (pageSerials.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+    }
 
     const pending = [];
     for (const s of (serials || [])) {

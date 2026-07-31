@@ -81,8 +81,12 @@ interface RecordLifting {
   followUpDate?: string;
   remarks?: string;
   quantity?: number | string;
+  pendingLifted?: number | string;
   liftingData: LiftingEntry;
   indentNumber: string;
+  itemName?: string;
+  approvedQty?: number | string;
+  vendorName?: string;
 }
 
 const formatDateDash = (date: any) => {
@@ -403,6 +407,7 @@ export default function Stage6() {
       });
     }
 
+    const vData = getVendorData(record);
     const initialData = [
       {
         recordId: recordId,
@@ -411,7 +416,7 @@ export default function Stage6() {
         remarks: "",
         liftingData: {
           liftNumber: existLift.liftNumber || "",
-          liftingQty: existLift.liftingQty || String(record.data.quantity || 0),
+          liftingQty: existLift.liftingQty || String(record.data.pendingLifted || 0),
           transporterName: existLift.transporterName || "",
           vehicleNumber: existLift.vehicleNumber || "",
           contactNumber: existLift.contactNumber || "",
@@ -426,6 +431,10 @@ export default function Stage6() {
         },
         indentNumber: record.data.indentNumber,
         quantity: record.data.quantity,
+        pendingLifted: record.data.pendingLifted,
+        itemName: record.data.itemName,
+        approvedQty: record.data.approvedQty || record.data.quantity,
+        vendorName: vData.name,
       }
     ];
     setBulkFormData(initialData);
@@ -477,7 +486,7 @@ export default function Stage6() {
       selectedRecordIds.forEach(id => {
         const record = sheetRecords.find(r => r.id === id);
         const existLift = record?.data.liftingData || {};
-        qtys[id] = existLift.liftingQty || String(record?.data.quantity || 0);
+        qtys[id] = existLift.liftingQty || String(record?.data.pendingLifted || 0);
       });
       setUnifiedLiftingQtys(qtys);
     } else {
@@ -510,6 +519,7 @@ export default function Stage6() {
     const initialData = selectedRecordIds.map((id) => {
       const record = sheetRecords.find((r) => r.id === id)!;
       const existLift = record.data.liftingData || {};
+      const vData = getVendorData(record);
 
       return {
         recordId: id,
@@ -518,7 +528,7 @@ export default function Stage6() {
         remarks: "",
         liftingData: {
           liftNumber: existLift.liftNumber || "",
-          liftingQty: existLift.liftingQty || String(record.data.quantity || 0),
+          liftingQty: existLift.liftingQty || String(record.data.pendingLifted || 0),
           transporterName: existLift.transporterName || "",
           vehicleNumber: existLift.vehicleNumber || "",
           contactNumber: existLift.contactNumber || "",
@@ -533,6 +543,10 @@ export default function Stage6() {
         },
         indentNumber: record.data.indentNumber,
         quantity: record.data.quantity,
+        pendingLifted: record.data.pendingLifted,
+        itemName: record.data.itemName,
+        approvedQty: record.data.approvedQty || record.data.quantity,
+        vendorName: vData.name,
       };
     });
     setBulkFormData(initialData);
@@ -561,6 +575,26 @@ export default function Stage6() {
   const handleBulkSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Validate quantities do not exceed remaining pending quantity to lift
+      for (const record of bulkFormData) {
+        const origRecord = sheetRecords.find(r => r.id === record.recordId);
+        const pendingLifted = parseFloat(origRecord?.data.pendingLifted) || 0;
+        const liftQty = parseFloat(isUnifiedMode ? (unifiedLiftingQtys[record.recordId] || "0") : (record.liftingData.liftingQty || "0")) || 0;
+        
+        const statusCheck = isUnifiedMode ? unifiedFormData?.status : record.status;
+        
+        if (statusCheck === "lift-material") {
+          if (liftQty > pendingLifted) {
+            toast.error(`Lifting quantity for ${origRecord?.data.indentNumber} cannot exceed remaining quantity of ${pendingLifted}.`);
+            return;
+          }
+          if (liftQty <= 0) {
+            toast.error(`Lifting quantity for ${origRecord?.data.indentNumber} must be greater than 0.`);
+            return;
+          }
+        }
+      }
+
       setIsSubmitting(true);
 
       let commonFileUrl = "";
@@ -1085,17 +1119,23 @@ export default function Stage6() {
             </div>
           ) : processMode === "follow-up" ? (
             <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <h4 className="font-semibold text-slate-800 mb-2">Selected Indents ({bulkFormData.length})</h4>
-                <div className="flex flex-wrap gap-2">
-                  {bulkFormData.map((item) => {
-                    const record = sheetRecords.find((r) => r.id === item.recordId);
-                    return (
-                      <Badge key={item.recordId} variant="secondary" className="bg-white">
-                        {record?.data.indentNumber} - {record?.data.itemName}
-                      </Badge>
-                    );
-                  })}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                <h4 className="font-semibold text-slate-800 border-b pb-2">Selected Indents ({bulkFormData.length})</h4>
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                  {bulkFormData.map((item) => (
+                    <div key={item.recordId} className="bg-white border border-slate-200 rounded-md p-3 shadow-2xs">
+                      <div className="font-bold text-slate-900 text-sm">
+                        Lift the Material - Indent No. {item.indentNumber}
+                      </div>
+                      <div className="text-xs text-slate-600 mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                        <span>{item.itemName || "-"}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Qty: {item.approvedQty}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Vendor: {item.vendorName || "-"}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1162,19 +1202,25 @@ export default function Stage6() {
             </form>
           ) : isUnifiedMode && unifiedFormData ? (
             <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <h4 className="font-semibold text-slate-800 mb-2">Selected Indents ({bulkFormData.length})</h4>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {bulkFormData.map((item) => {
-                    const record = sheetRecords.find((r) => r.id === item.recordId);
-                    return (
-                      <Badge key={item.recordId} variant="secondary" className="bg-white">
-                        {record?.data.indentNumber} - {record?.data.itemName}
-                      </Badge>
-                    );
-                  })}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                <h4 className="font-semibold text-slate-800 border-b pb-2">Selected Indents ({bulkFormData.length})</h4>
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                  {bulkFormData.map((item) => (
+                    <div key={item.recordId} className="bg-white border border-slate-200 rounded-md p-3 shadow-2xs">
+                      <div className="font-bold text-slate-900 text-sm">
+                        Lift the Material - Indent No. {item.indentNumber}
+                      </div>
+                      <div className="text-xs text-slate-600 mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                        <span>{item.itemName || "-"}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Qty: {item.approvedQty}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Vendor: {item.vendorName || "-"}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex gap-4 text-sm text-slate-600">
+                <div className="flex gap-4 text-sm text-slate-600 pt-2 border-t border-slate-200">
                   <span><strong>Vendor:</strong> {commonVendorPO?.vendor}</span>
                   <span><strong>PO Number:</strong> {commonVendorPO?.poNumber}</span>
                 </div>
@@ -1392,12 +1438,13 @@ export default function Stage6() {
                               <Input
                                 type="number"
                                 min="0.01"
+                                max={record?.data.pendingLifted}
                                 step="0.01"
                                 className="h-8 text-sm"
                                 value={unifiedLiftingQtys[item.recordId] || ""}
                                 onChange={(e) => handleUnifiedQtyChange(item.recordId, e.target.value)}
                                 required
-                                placeholder={`Max: ${record?.data.quantity}`}
+                                placeholder={`Max: ${record?.data.pendingLifted}`}
                               />
                             </div>
                           </div>
@@ -1454,6 +1501,9 @@ export default function Stage6() {
                             <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Lifting Qty *</Label>
                             <Input
                               type="number"
+                              min="0.01"
+                              max={record?.data.pendingLifted}
+                              step="0.01"
                               className="bg-white border-green-200 focus:ring-green-500"
                               value={item.liftingData.liftingQty}
                               onChange={(e) =>
@@ -1464,6 +1514,7 @@ export default function Stage6() {
                                 )
                               }
                               required
+                              placeholder={`Max: ${record?.data.pendingLifted}`}
                             />
                           </div>
                           <div>

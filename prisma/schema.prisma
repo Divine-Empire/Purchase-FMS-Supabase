@@ -31,15 +31,15 @@ model User {
 //* STAGE 1: INDENT GENERATION
 //-------------------------------------------
 model IndentGeneration {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   timestamp DateTime @default(now())
 
   indentNo          String  @unique
-  createdBy         String
-  category          String
-  itemName          String
-  quantity          Float
-  warehouseLocation String
+  createdBy         String?
+  category          String?
+  itemName          String?
+  quantity          Float?
+  warehouseLocation String?
   itemCode          String?
   leadTime          Int?
   uom               String?
@@ -66,7 +66,7 @@ model IndentGeneration {
 //* STAGE 2: INDENT APPROVAL
 //-------------------------------------------
 model IndentApproval {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   timestamp DateTime @default(now())
 
   indentNo String           @unique
@@ -91,7 +91,7 @@ model IndentApproval {
 //* STAGE 3: UPDATE 3 VENDORS
 //-------------------------------------------
 model Update3Vendors {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   timestamp DateTime @default(now())
 
   indentNo String           @unique
@@ -139,14 +139,14 @@ model Update3Vendors {
 //* STAGE 4: NEGOTIATION
 //-------------------------------------------
 model Negotiation {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   timestamp DateTime @default(now())
 
   indentNo String           @unique
   indent   IndentGeneration @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
 
-  selectedVendorName String
-  finalApprovedBy    String
+  selectedVendorName String?
+  finalApprovedBy    String?
   negotiationRemarks String?
 
   plannedPOEntry DateTime?
@@ -161,15 +161,15 @@ model Negotiation {
 //* STAGE 5: PO ENTRY
 //-------------------------------------------
 model POEntry {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   timestamp DateTime @default(now())
 
   indentNo String           @unique
   indent   IndentGeneration @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade)
 
-  poNumber     String
-  basicValue   Float
-  totalWithTax Float
+  poNumber     String?
+  basicValue   Float?
+  totalWithTax Float?
   hsn          String?
   poCopy       String?
   gst          String?
@@ -217,7 +217,6 @@ model Lift {
 
   // Stage outputs (next stages planned dates)
   plannedSerialGen        DateTime?
-  plannedTallyEntry       DateTime?
   plannedMaterialRcd      DateTime?
   plannedTransporterFlwUp DateTime?
 
@@ -296,6 +295,7 @@ model MaterialReceived {
   damageImage  String?
 
   plannedMaterialTesting DateTime?
+  plannedTallyEntry      DateTime?
 
   // Warranty & Product Expiry
   productExpiry     String?
@@ -723,7 +723,7 @@ model Dropdown {
 //* PFMS FOR IMS
 //-------------------------------------------
 model PfmsForIms {
-  id                String  @id @default(uuid())
+  id                String  @id @default(uuid()) @db.Uuid
   indentNo          String? @map("indent no.")
   materialName      String? @map("material name")
   warehouseLocation String? @map("warehouse location")
@@ -758,9 +758,9 @@ model ReportHistory {
 //* RESPONSIBLE PERSONS
 //-------------------------------------------
 model ResponsiblePersons {
-  id              String @id @default(uuid())
-  stageName       String
-  responsibleName String
+  id              String  @id @default(uuid()) @db.Uuid
+  stageName       String?
+  responsibleName String?
 
   @@map("pfms_responsible_persons")
 }

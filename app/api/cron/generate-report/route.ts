@@ -103,11 +103,11 @@ export async function GET(request: NextRequest) {
             liftsByIndent.set(l.indentNo, list);
         });
 
-        // Map responsible persons by stageName
+        // Map responsible persons by stageName (lowercased for case-insensitive lookup)
         const respMap: Record<string, string> = {};
         responsibles.forEach((r: any) => {
             if (r.stageName && r.responsibleNames) {
-                respMap[r.stageName.trim()] = r.responsibleNames.trim();
+                respMap[r.stageName.trim().toLowerCase()] = r.responsibleNames.trim();
             }
         });
 
@@ -252,12 +252,31 @@ export async function GET(request: NextRequest) {
             }
         });
 
+        const stageSlugMap: Record<string, string[]> = {
+            "Indent Approval": ["indent-approval"],
+            "PO Entry": ["po-entry"],
+            "Follow-Up Vendor": ["follow-up-vendor"],
+            "Transporter Follow-Up": ["transporter-flw-up", "transporter-follow-up"]
+        };
+
+        const getResponsible = (stage: string) => {
+            const keys = [
+                ...(stageSlugMap[stage] || []),
+                stage.toLowerCase(),
+                stage.toLowerCase().replace(/\s+/g, '-')
+            ];
+            for (const key of keys) {
+                if (respMap[key]) return respMap[key];
+            }
+            return "-";
+        };
+
         const summaryData = allowedStages
             .filter(name => overdueCounts[name] > 0)
             .map(name => ({
                 stage: name,
                 pending: overdueCounts[name],
-                responsible: respMap[name] || "-",
+                responsible: getResponsible(name),
                 uniquePoCount: name === "Follow-Up Vendor" ? followUpVendorPOs.size : undefined
             }));
 

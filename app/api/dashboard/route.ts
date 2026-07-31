@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
         // STAGE 11: Receipt in Tally
         if (mr && !tally) {
           stageCounts["Receipt in Tally"]++;
-          if (isPast(lift.plannedTallyEntry)) stageOverdueCounts["Receipt in Tally"]++;
+          if (isPast(mr.plannedTallyEntry)) stageOverdueCounts["Receipt in Tally"]++;
         }
 
         // STAGE 12: Submit Invoice (HO)

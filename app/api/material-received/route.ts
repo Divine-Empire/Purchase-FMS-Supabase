@@ -144,20 +144,23 @@ export async function POST(request: NextRequest) {
     const now = getLocalTimestamp();
 
     if (action === "recordMaterialReceived") {
-      // 1. Fetch TAT for material-testing
-      const { data: tatData } = await supabase
+      // 1. Fetch TAT settings
+      const { data: tatRecords } = await supabase
         .from("pfms_tat")
-        .select("actionTime")
-        .eq("stageName", "material-testing")
-        .single();
-      const tatHours = tatData?.actionTime || 72; // Default to 72 hours
+        .select("stageName, actionTime")
+        .in("stageName", ["material-testing", "receipt-in-tally"]);
+
+      const tatMap = new Map(tatRecords?.map((t: any) => [t.stageName, t.actionTime]) || []);
+      const tatHours = tatMap.get("material-testing") || 72; // Default to 72 hours
+      const tallyHours = tatMap.get("receipt-in-tally") || 24; // Default to 24 hours
 
       for (const item of records) {
         const liftNo = item.liftNo || item.data?.liftNo;
         const form = item.form || item;
 
-        // Calculate plannedMaterialTesting (irrespective of qcRequired)
+        // Calculate plannedMaterialTesting and plannedTallyEntry
         const plannedMaterialTesting = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+        const plannedTallyEntry = getLocalTimestamp(new Date(Date.now() + tallyHours * 60 * 60 * 1000));
 
         // A. Insert into material-received table
         const { error: insertError } = await supabase
@@ -180,6 +183,7 @@ export async function POST(request: NextRequest) {
             damageReason: form.damageReason || null,
             damageImage: form.damageImage || null,
             plannedMaterialTesting: plannedMaterialTesting,
+            plannedTallyEntry: plannedTallyEntry,
             productExpiry: form.productClaim || null,
             productExpiryDate: form.productExpiry ? getLocalTimestamp(form.productExpiry) : null,
             warranty: form.warrantyClaim || null,

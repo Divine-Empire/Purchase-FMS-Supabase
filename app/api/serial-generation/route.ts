@@ -141,11 +141,74 @@ export async function GET(request: NextRequest) {
     });
 
     const vendorCodeMap: Record<string, string> = {};
-    (vendorsMaster || []).forEach((row: any) => {
+    const validMasters = (vendorsMaster || []).filter(
+      (m: any) => m["Vendor Code"] && m["Vendor Code"] !== "null" && m["Vendor Code"] !== ""
+    );
+
+    // 1. Populate exact matches
+    validMasters.forEach((row: any) => {
       const name = row["Vendor List"]?.trim();
       const code = row["Vendor Code"]?.trim();
       if (name && code) vendorCodeMap[name] = code;
     });
+
+    // 2. Helper functions for name cleaning and matching
+    const cleanName = (name: string) => {
+      if (!name) return "";
+      return name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .replace(/\b(ms|limited|ltd|pvt|co|company|private)\b/g, "")
+        .trim();
+    };
+
+    const findBestMatch = (negName: string) => {
+      const nameLower = negName.trim().toLowerCase();
+      
+      // Exact case-insensitive match
+      let best = validMasters.find((m: any) => m["Vendor List"]?.trim().toLowerCase() === nameLower);
+      if (best) return best;
+
+      const cleanNeg = cleanName(negName);
+      if (!cleanNeg) return null;
+
+      // Exact clean match
+      best = validMasters.find((m: any) => cleanName(m["Vendor List"]) === cleanNeg);
+      if (best) return best;
+
+      // Substring containment match
+      if (cleanNeg.length >= 6) {
+        best = validMasters.find((m: any) => {
+          const cleanMaster = cleanName(m["Vendor List"]);
+          return cleanMaster && cleanMaster.length >= 6 && 
+                 (cleanMaster.includes(cleanNeg) || cleanNeg.includes(cleanMaster));
+        });
+        if (best) return best;
+      }
+
+      // Shared prefix match (8 chars)
+      best = validMasters.find((m: any) => {
+        const cleanMaster = cleanName(m["Vendor List"]);
+        if (!cleanMaster || cleanMaster.length < 8 || cleanNeg.length < 8) return false;
+        return cleanMaster.substring(0, 8) === cleanNeg.substring(0, 8);
+      });
+
+      return best || null;
+    };
+
+    // 3. Match active negotiation vendors dynamically
+    for (const receipt of (receipts || [])) {
+      const lift = receipt.lift || {};
+      const indent = lift.indent || {};
+      const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
+      const vendorName = negotiation.selectedVendorName;
+      if (vendorName && !vendorCodeMap[vendorName]) {
+        const match = findBestMatch(vendorName);
+        if (match) {
+          vendorCodeMap[vendorName] = match["Vendor Code"].trim();
+        }
+      }
+    }
 
     // Fetch cancellations
     const { data: cancelledList } = await supabase

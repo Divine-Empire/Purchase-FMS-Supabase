@@ -144,6 +144,17 @@ export async function POST(request: NextRequest) {
           .eq("liftNo", liftNo);
 
         if (updateError) throw updateError;
+
+        // Also update plannedTransporterFlwUp in pfms_lift
+        const { error: liftUpdateError } = await supabase
+          .from("pfms_lift")
+          .update({
+            plannedTransporterFlwUp: expectedDate ? getLocalTimestamp(expectedDate) : null,
+            updatedAt: now
+          })
+          .eq("liftNo", liftNo);
+
+        if (liftUpdateError) throw liftUpdateError;
       } else {
         // status is Received
         const { error: updateError } = await supabase

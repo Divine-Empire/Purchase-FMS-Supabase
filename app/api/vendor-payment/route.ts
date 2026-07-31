@@ -25,7 +25,6 @@ export async function GET() {
         *,
         lift:pfms_lift!inner (
           liftNo,
-          plannedTallyEntry,
           accountsVerification:pfms_accounts-verification (
             verificationDate
           ),
@@ -46,7 +45,8 @@ export async function GET() {
             invoiceNumber,
             invoiceDate,
             receivedQty,
-            billAttachment
+            billAttachment,
+            plannedTallyEntry
           )
         )
       `) as any;
@@ -114,8 +114,8 @@ export async function GET() {
       } else if (verification.verificationDate) {
         const vDate = new Date(verification.verificationDate);
         plan1Date = getLocalTimestamp(new Date(vDate.getTime() + tatHours * 60 * 60 * 1000));
-      } else if (lift.plannedTallyEntry) {
-        plan1Date = lift.plannedTallyEntry;
+      } else if (matRecd.plannedTallyEntry) {
+        plan1Date = matRecd.plannedTallyEntry;
       }
 
       pending.push({

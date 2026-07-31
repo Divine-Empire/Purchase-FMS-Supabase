@@ -10,66 +10,55 @@ function getLocalTimestamp(dateInput?: Date | string | number | null): string {
 
 export async function GET() {
   try {
-    // 1. Fetch all lifts that have plannedTallyEntry populated
-    const { data: lifts, error: liftError } = await supabase
-      .from("pfms_lift")
+    // 1. Fetch all material received records that have plannedTallyEntry populated
+    const { data: materials, error: matError } = await supabase
+      .from("pfms_material-received")
       .select(`
         *,
-        tallyEntry:"pfms_tally-entry" (
-          id,
-          timestamp,
-          doneBy,
-          doneDate,
-          remarks,
-          checkedStatus,
-          checkedByAcc
-        ),
-        indent:"pfms_indent-generation"!inner (
-          indentNo,
-          itemName,
-          category,
-          warehouseLocation,
-          quantity,
-          createdBy,
-          negotiation:pfms_negotiation (
-            selectedVendorName
+        lift:pfms_lift!inner (
+          *,
+          tallyEntry:"pfms_tally-entry" (
+            id,
+            timestamp,
+            doneBy,
+            doneDate,
+            remarks,
+            checkedStatus,
+            checkedByAcc
           ),
-          poEntry:"pfms_po-entry" (
-            poNumber,
-            poCopy,
-            basicValue,
-            totalWithTax,
-            pkgAmount,
-            pkgGST
+          indent:"pfms_indent-generation"!inner (
+            indentNo,
+            itemName,
+            category,
+            warehouseLocation,
+            quantity,
+            createdBy,
+            negotiation:pfms_negotiation (
+              selectedVendorName
+            ),
+            poEntry:"pfms_po-entry" (
+              poNumber,
+              poCopy,
+              basicValue,
+              totalWithTax,
+              pkgAmount,
+              pkgGST
+            )
           )
-        ),
-
-        materialReceived:"pfms_material-received" (
-          invoiceType,
-          invoiceNumber,
-          invoiceDate,
-          receivedQty,
-          receivedItemImage,
-          billAttachment,
-          qcRequired,
-          hydraAmt,
-          labourAmt,
-          hamaliAmt,
-          extraFreight
         )
       `)
       .not("plannedTallyEntry", "is", null) as any;
 
-    if (liftError) throw liftError;
+    if (matError) throw matError;
 
     const pending = [];
     const history = [];
 
-    for (const lift of (lifts || [])) {
+    for (const mat of (materials || [])) {
+      const lift = mat.lift || {};
       const indent = lift.indent || {};
       const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
       const poEntry = Array.isArray(indent.poEntry) ? (indent.poEntry[0] || {}) : (indent.poEntry || {});
-      const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
       
       const tally = Array.isArray(lift.tallyEntry) ? lift.tallyEntry[0] : lift.tallyEntry;
 
@@ -96,20 +85,20 @@ export async function GET() {
         paymentDate: lift.paymentDate || "",
         paymentStatus: lift.paymentStatus || "",
         biltyCopy: lift.biltyCopy || "",
-        invoiceType: matRecd.invoiceType || "-",
-        invoiceDate: matRecd.invoiceDate || "-",
-        invoiceNumber: matRecd.invoiceNumber || "-",
-        receivedQty: matRecd.receivedQty || "-",
-        receivedItemImage: matRecd.receivedItemImage || "",
+        invoiceType: mat.invoiceType || "-",
+        invoiceDate: mat.invoiceDate || "-",
+        invoiceNumber: mat.invoiceNumber || "-",
+        receivedQty: mat.receivedQty || "-",
+        receivedItemImage: mat.receivedItemImage || "",
         srnNumber: "-", // populated downstream in testing
-        qcRequirement: matRecd.qcRequired || "-",
-        billAttachment: matRecd.billAttachment || "",
-        paymentAmountHydra: matRecd.hydraAmt || "",
-        paymentAmountLabour: matRecd.labourAmt || "",
-        paymentAmountHamali: matRecd.hamaliAmt || "",
-        remarks7: matRecd.damageReason || "",
+        qcRequirement: mat.qcRequired || "-",
+        billAttachment: mat.billAttachment || "",
+        paymentAmountHydra: mat.hydraAmt || "",
+        paymentAmountLabour: mat.labourAmt || "",
+        paymentAmountHamali: mat.hamaliAmt || "",
+        remarks7: mat.damageReason || "",
 
-        plan8: lift.plannedTallyEntry || "",
+        plan8: mat.plannedTallyEntry || "",
         actual8: tally ? tally.timestamp : "",
         doneBy: tally ? tally.doneBy : "-",
         doneDate: tally ? tally.doneDate : "",

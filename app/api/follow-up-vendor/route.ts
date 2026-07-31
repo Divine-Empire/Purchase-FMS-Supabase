@@ -248,6 +248,7 @@ export async function POST(request: NextRequest) {
         const { error: updateError } = await supabase
           .from("pfms_po-entry")
           .update({
+            plannedFollowUpVendor: followUpDateVal,
             estimatedFollowUpVendor: followUpDateVal,
             remarksFollowUpVendor: item.remarks || null,
             updatedAt: now
@@ -274,7 +275,7 @@ export async function POST(request: NextRequest) {
       const { data: tats, error: tatError } = await supabase
         .from("pfms_tat")
         .select("stageName, actionTime")
-        .in("stageName", ["transporter-flw-up", "material-received", "serial-generation", "receipt-in-tally"]);
+        .in("stageName", ["transporter-flw-up", "material-received", "serial-generation"]);
 
       if (tatError) throw tatError;
 
@@ -282,7 +283,6 @@ export async function POST(request: NextRequest) {
       const transFlwHours = tatMap.get("transporter-flw-up") || 24;
       const matRecdHours = tatMap.get("material-received") || 24;
       const serialGenHours = tatMap.get("serial-generation") || 1;
-      const tallyEntryHours = tatMap.get("receipt-in-tally") || 1;
 
       // 3. Insert each lift record
       const liftsToInsert = [];
@@ -304,7 +304,6 @@ export async function POST(request: NextRequest) {
         const plannedTransporterFlwUp = getLocalTimestamp(new Date(formFilledTime.getTime() + transFlwHours * 60 * 60 * 1000));
         const plannedMaterialRcd = getLocalTimestamp(new Date(formFilledTime.getTime() + matRecdHours * 60 * 60 * 1000));
         const plannedSerialGen = getLocalTimestamp(new Date(formFilledTime.getTime() + serialGenHours * 60 * 60 * 1000));
-        const plannedTallyEntry = getLocalTimestamp(new Date(formFilledTime.getTime() + tallyEntryHours * 60 * 60 * 1000));
 
         liftsToInsert.push({
           id: randomUUID(),
@@ -328,7 +327,6 @@ export async function POST(request: NextRequest) {
           plannedTransporterFlwUp,
           plannedMaterialRcd,
           plannedSerialGen,
-          plannedTallyEntry,
           timestamp: now,
           createdAt: now,
           updatedAt: now

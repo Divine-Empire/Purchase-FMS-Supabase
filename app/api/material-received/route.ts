@@ -215,26 +215,28 @@ export async function POST(request: NextRequest) {
           .eq("liftNo", liftNo);
         if (delDamageError) throw delDamageError;
 
-        // Populate initial record in material-testing table
-        const receivedQtyVal = parseFloat(form.receivedQty) || 0;
-        const { error: testingError } = await supabase
-          .from("pfms_material-testing")
-          .insert({
-            id: randomUUID(),
-            timestamp: now,
-            liftNo: liftNo,
-            pendingQty: receivedQtyVal,
-            approvedQty: 0,
-            rejectedQty: 0,
-            qcBy: null,
-            qcDate: null,
-            workingCondition: null,
-            remarks: null,
-            createdAt: now,
-            updatedAt: now
-          });
+        // Populate initial record in material-testing table if QC is required
+        if (form.qcRequirement === "yes") {
+          const receivedQtyVal = parseFloat(form.receivedQty) || 0;
+          const { error: testingError } = await supabase
+            .from("pfms_material-testing")
+            .insert({
+              id: randomUUID(),
+              timestamp: now,
+              liftNo: liftNo,
+              pendingQty: receivedQtyVal,
+              approvedQty: 0,
+              rejectedQty: 0,
+              qcBy: null,
+              qcDate: null,
+              workingCondition: null,
+              remarks: null,
+              createdAt: now,
+              updatedAt: now
+            });
 
-        if (testingError) throw testingError;
+          if (testingError) throw testingError;
+        }
 
         // Populate initial record in vendor-payment-details table
         const { data: liftData, error: liftFetchError } = await supabase

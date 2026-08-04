@@ -450,6 +450,8 @@ CREATE TABLE public.pfms_for_ims (
   receiving date text,
   tally entry date text,
   intransit qty double precision,
+  "expiry date" text,
+  "serial numbers" text,
   createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_for_ims_pkey PRIMARY KEY (id)

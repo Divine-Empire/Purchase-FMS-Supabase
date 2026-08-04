@@ -232,7 +232,7 @@ export default function MaterialReceived() {
         remarks: "",
         pkgAmount: "",
         pkgGST: "",
-        damageReceived: "no",
+        damageReceived: "",
         damagedQty: "",
         damageReason: "",
         damageImage: null as File | null,
@@ -423,7 +423,7 @@ export default function MaterialReceived() {
             remarks: "",
             pkgAmount: "",
             pkgGST: "",
-            damageReceived: "no",
+            damageReceived: "",
             damagedQty: "",
             damageReason: "",
             damageImage: null,
@@ -522,7 +522,9 @@ export default function MaterialReceived() {
         form.billAttachment &&
         form.warrantyClaim &&
         form.productClaim &&
-        (form.productClaim !== "yes" || form.productExpiry)),
+        (form.productClaim !== "yes" || form.productExpiry) &&
+        form.damageReceived &&
+        (form.damageReceived !== "yes" || (form.damagedQty && form.damageReason))),
         [
             form.receivedQty,
             form.invoiceNumber,
@@ -531,7 +533,10 @@ export default function MaterialReceived() {
             form.billAttachment,
             form.warrantyClaim,
             form.productClaim,
-            form.productExpiry
+            form.productExpiry,
+            form.damageReceived,
+            form.damagedQty,
+            form.damageReason
         ]);
 
     const pending = useMemo(() => {
@@ -1496,7 +1501,7 @@ export default function MaterialReceived() {
                             <div className="space-y-3">
                                 <div className="grid grid-cols-3 gap-3">
                                     <div className="space-y-1.5">
-                                        <Label>Damage Received</Label>
+                                        <Label>Damage Received <span className="text-red-500">*</span></Label>
                                         <Select
                                             value={form.damageReceived}
                                             onValueChange={(v) => {
@@ -1524,20 +1529,22 @@ export default function MaterialReceived() {
                             {form.damageReceived === "yes" && (
                                 <div className="grid grid-cols-3 gap-3 bg-red-50/50 p-3 rounded-lg border border-red-100">
                                     <div className="space-y-1.5">
-                                        <Label className="text-red-900 font-medium">Damaged Qty</Label>
+                                        <Label className="text-red-900 font-medium">Damaged Qty <span className="text-red-500">*</span></Label>
                                         <Input
                                             type="number"
                                             value={form.damagedQty}
                                             onChange={(e) => setForm({ ...form, damagedQty: e.target.value })}
                                             placeholder="0"
+                                            required
                                         />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <Label className="text-red-900 font-medium">Reason</Label>
+                                        <Label className="text-red-900 font-medium">Reason <span className="text-red-500">*</span></Label>
                                         <Input
                                             value={form.damageReason}
                                             onChange={(e) => setForm({ ...form, damageReason: e.target.value })}
                                             placeholder="Why is it damaged?"
+                                            required
                                         />
                                     </div>
                                     <div className="space-y-1.5">
@@ -1779,7 +1786,7 @@ export default function MaterialReceived() {
                         {isBulkMode ? (
                             <Button 
                                 onClick={handleBulkSubmit}
-                                disabled={isSubmitting || bulkItems.some(i => !i.receivedQty || !i.qcRequirement)} 
+                                disabled={isSubmitting || bulkItems.some(i => !i.receivedQty || !i.qcRequirement || (i.damageReceived === "yes" && (!i.damagedQty || !i.damageReason)))} 
                                 className="bg-amber-600 hover:bg-amber-700 text-white"
                             >
                                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

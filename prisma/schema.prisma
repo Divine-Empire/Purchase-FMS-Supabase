@@ -55,6 +55,7 @@ model IndentGeneration {
   negotiation    Negotiation?
   poEntry        POEntry?
   lifts          Lift[]
+  pfmsForIms     PfmsForIms?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -724,7 +725,7 @@ model Dropdown {
 //-------------------------------------------
 model PfmsForIms {
   id                String  @id @default(uuid()) @db.Uuid
-  indentNo          String? @map("indent no.")
+  indentNo          String? @unique @map("indent no.")
   materialName      String? @map("material name")
   warehouseLocation String? @map("warehouse location")
 
@@ -735,9 +736,13 @@ model PfmsForIms {
   receivingDate        String? @map("receiving date")
   tallyEntryDate       String? @map("tally entry date")
   intransitQty         Float?  @map("intransit qty")
+  expiryDate           String? @map("expiry date")
+  serialNumbers        String? @map("serial numbers")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  indent IndentGeneration? @relation(fields: [indentNo], references: [indentNo], onDelete: Cascade, onUpdate: Cascade)
 
   @@map("pfms_for_ims")
 }

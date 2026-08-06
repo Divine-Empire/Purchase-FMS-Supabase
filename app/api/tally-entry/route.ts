@@ -93,7 +93,7 @@ export async function GET() {
         receivedItemImage: mat.receivedItemImage || "",
         srnNumber: "-", // populated downstream in testing
         qcRequirement: mat.qcRequired || "-",
-        billAttachment: mat.billAttachment || "",
+        billAttachment: mat.billAttachment || lift.biltyCopy || "",
         paymentAmountHydra: mat.hydraAmt || "",
         paymentAmountLabour: mat.labourAmt || "",
         paymentAmountHamali: mat.hamaliAmt || "",

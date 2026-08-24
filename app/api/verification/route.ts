@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -157,18 +158,10 @@ export async function POST(request: NextRequest) {
 
     if (insertError) throw insertError;
 
-    // Fetch TAT for vendor-payment to calculate plannedDate
-    const { data: tatData } = await supabase
-      .from("pfms_tat")
-      .select("actionTime")
-      .eq("stageName", "vendor-payment")
-      .maybeSingle();
-    const tatHours = tatData?.actionTime || 72; // default to 72 hours
-
     // Update plannedDate in vendor-payment-details
     for (const rec of records) {
       const vDate = rec.verificationDate ? new Date(rec.verificationDate) : new Date();
-      const plannedDate = getLocalTimestamp(new Date(vDate.getTime() + tatHours * 60 * 60 * 1000));
+      const plannedDate = await calculatePlannedTime("vendor-payments", vDate);
 
       await supabase
         .from("pfms_vendor-payment-details")

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -205,26 +206,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
       }
 
-      // Fetch TAT for warranty-claimed
-      let tatHours = 72; // Default
-      const { data: tatData1 } = await supabase
-        .from("pfms_tat")
-        .select("actionTime")
-        .eq("stageName", "warranty-claimed")
-        .single();
-      
-      if (tatData1) {
-        tatHours = tatData1.actionTime;
-      } else {
-        const { data: tatData2 } = await supabase
-          .from("pfms_tat")
-          .select("actionTime")
-          .eq("stageName", "warranty-claim")
-          .single();
-        if (tatData2) tatHours = tatData2.actionTime;
-      }
-
-      const plannedClosure = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+      // Calculate planned time for warranty-claim closure
+      const plannedClosure = await calculatePlannedTime("warranty-claim");
 
       const { error: insertError } = await supabase
         .from("pfms_warranty-claim")

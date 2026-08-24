@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -271,20 +272,7 @@ export async function POST(request: NextRequest) {
         throw new Error("Failed to generate Lift IDs: " + seqError.message);
       }
 
-      // 2. Fetch TAT configuration for planned dates calculation
-      const { data: tats, error: tatError } = await supabase
-        .from("pfms_tat")
-        .select("stageName, actionTime")
-        .in("stageName", ["transporter-flw-up", "material-received", "serial-generation"]);
-
-      if (tatError) throw tatError;
-
-      const tatMap = new Map(tats?.map((t: any) => [t.stageName, t.actionTime]) || []);
-      const transFlwHours = tatMap.get("transporter-flw-up") || 24;
-      const matRecdHours = tatMap.get("material-received") || 24;
-      const serialGenHours = tatMap.get("serial-generation") || 1;
-
-      // 3. Insert each lift record
+      // 2. Insert each lift record
       const liftsToInsert = [];
       const transporterFollowUpsToInsert = [];
       for (let i = 0; i < records.length; i++) {
@@ -301,9 +289,9 @@ export async function POST(request: NextRequest) {
 
         const formFilledTime = new Date();
 
-        const plannedTransporterFlwUp = getLocalTimestamp(new Date(formFilledTime.getTime() + transFlwHours * 60 * 60 * 1000));
-        const plannedMaterialRcd = getLocalTimestamp(new Date(formFilledTime.getTime() + matRecdHours * 60 * 60 * 1000));
-        const plannedSerialGen = getLocalTimestamp(new Date(formFilledTime.getTime() + serialGenHours * 60 * 60 * 1000));
+        const plannedTransporterFlwUp = await calculatePlannedTime("transporter-flw-up", formFilledTime);
+        const plannedMaterialRcd = await calculatePlannedTime("material-received", formFilledTime);
+        const plannedSerialGen = await calculatePlannedTime("serial-generation", formFilledTime);
 
         liftsToInsert.push({
           id: randomUUID(),

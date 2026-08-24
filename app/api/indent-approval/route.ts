@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -87,17 +88,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "No records selected" }, { status: 400 });
       }
 
-      // 1. Fetch TAT for update-3-vendors
-      const { data: tatData } = await supabase
-        .from("pfms_tat")
-        .select("actionTime")
-        .eq("stageName", "update-3-vendors")
-        .single();
-      const tatHours = tatData?.actionTime || 3; // Default to 3 hours if not configured
-
+      // 1. Calculate planned time for update-3-vendors
       const now = getLocalTimestamp();
-      const plannedTime = new Date(Date.now() + tatHours * 60 * 60 * 1000);
-      const plannedUpdateVendors = getLocalTimestamp(plannedTime);
+      const plannedUpdateVendors = await calculatePlannedTime("update-3-vendors");
 
       // 2. Prepare approval rows
       const approvalsToInsert = recordsToSubmit.map((record: any) => {

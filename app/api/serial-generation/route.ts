@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -256,15 +257,8 @@ export async function POST(request: NextRequest) {
 
     const now = getLocalTimestamp();
 
-    // Fetch TAT for warranty-claim
-    const { data: tatData } = await supabase
-      .from("pfms_tat")
-      .select("actionTime")
-      .eq("stageName", "warranty-claim")
-      .single();
-    const tatHours = tatData?.actionTime || 24;
-
-    const plannedWarrantyClaim = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+    // Calculate planned time for warranty-claim
+    const plannedWarrantyClaim = await calculatePlannedTime("warranty-claim");
 
     const serialsToInsert = [];
 

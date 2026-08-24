@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -118,17 +119,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "No records to process" }, { status: 400 });
       }
 
-      // 1. Fetch TAT for negotiation
-      const { data: tatData } = await supabase
-        .from("pfms_tat")
-        .select("actionTime")
-        .eq("stageName", "negotiation")
-        .single();
-      const tatHours = tatData?.actionTime || 3; // Default to 3 hours if not configured
-
+      // 1. Calculate planned time for negotiation
       const now = getLocalTimestamp();
-      const plannedTime = new Date(Date.now() + tatHours * 60 * 60 * 1000);
-      const plannedNegotiation = getLocalTimestamp(plannedTime);
+      const plannedNegotiation = await calculatePlannedTime("negotiation");
 
       // 2. Insert vendor comparison records
       const vendorsToInsert = idsToProcess.map((recordId: string) => {

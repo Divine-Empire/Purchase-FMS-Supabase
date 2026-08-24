@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -195,14 +196,8 @@ export async function POST(request: NextRequest) {
     const now = getLocalTimestamp();
     const actDate = actualDate ? getLocalTimestamp(actualDate) : now;
 
-    // Fetch TAT for return-approval
-    const { data: tatData } = await supabase
-      .from("pfms_tat")
-      .select("actionTime")
-      .eq("stageName", "return-approval")
-      .maybeSingle();
-    const tatHours = tatData?.actionTime || 24; // Default to 24 hours
-    const plannedReturnApproval = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+    // Calculate planned time for return-approval
+    const plannedReturnApproval = await calculatePlannedTime("return-approval");
 
     // Insert purchase-return record
     const { error: insertError } = await supabase

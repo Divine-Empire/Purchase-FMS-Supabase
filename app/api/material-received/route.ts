@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -144,23 +145,14 @@ export async function POST(request: NextRequest) {
     const now = getLocalTimestamp();
 
     if (action === "recordMaterialReceived") {
-      // 1. Fetch TAT settings
-      const { data: tatRecords } = await supabase
-        .from("pfms_tat")
-        .select("stageName, actionTime")
-        .in("stageName", ["material-testing", "receipt-in-tally"]);
-
-      const tatMap = new Map(tatRecords?.map((t: any) => [t.stageName, t.actionTime]) || []);
-      const tatHours = tatMap.get("material-testing") || 72; // Default to 72 hours
-      const tallyHours = tatMap.get("receipt-in-tally") || 24; // Default to 24 hours
 
       for (const item of records) {
         const liftNo = item.liftNo || item.data?.liftNo;
         const form = item.form || item;
 
         // Calculate plannedMaterialTesting and plannedTallyEntry
-        const plannedMaterialTesting = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
-        const plannedTallyEntry = getLocalTimestamp(new Date(Date.now() + tallyHours * 60 * 60 * 1000));
+        const plannedMaterialTesting = await calculatePlannedTime("material-testing");
+        const plannedTallyEntry = await calculatePlannedTime("receipt-in-tally");
 
         // A. Insert into material-received table
         const { error: insertError } = await supabase

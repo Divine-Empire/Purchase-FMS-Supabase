@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -190,13 +191,7 @@ export async function POST(request: NextRequest) {
     // 5. Determine planned purchase returns if pending becomes 0 and there are rejected quantities
     let plannedPurchaseReturns = currentTesting.plannedPurchaseReturns;
     if (newPending === 0 && newRejected > 0) {
-      const { data: tatData } = await supabase
-        .from("pfms_tat")
-        .select("actionTime")
-        .eq("stageName", "purchase-return")
-        .maybeSingle();
-      const tatHours = tatData?.actionTime || 24; // Default to 24 hours
-      plannedPurchaseReturns = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+      plannedPurchaseReturns = await calculatePlannedTime("purchase-return");
     }
 
     // 6. Update the testing record

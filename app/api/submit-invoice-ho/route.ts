@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -128,18 +129,8 @@ export async function POST(request: NextRequest) {
 
     const now = getLocalTimestamp();
 
-    // Fetch TAT for submit-invoice (Stage 9)
-    let tatHours = 192; // default
-    const { data: tatData } = await supabase
-      .from("pfms_tat")
-      .select("actionTime")
-      .eq("stageName", "submit-invoice")
-      .single();
-    if (tatData) {
-      tatHours = tatData.actionTime;
-    }
-
-    const plannedInvoice = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+    // Calculate planned time for submit-invoice
+    const plannedInvoice = await calculatePlannedTime("submit-invoice");
 
     // Batch insert HO invoice submissions
     const inserts = records.map((rec: any) => ({

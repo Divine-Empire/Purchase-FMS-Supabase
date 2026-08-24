@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -97,15 +98,8 @@ export async function POST(request: NextRequest) {
         throw new Error("Failed to generate Indent IDs: " + seqError.message);
       }
 
-      // 2. Fetch TAT for indent-approval to calculate planned time
-      const { data: tatData } = await supabase
-        .from("pfms_tat")
-        .select("actionTime")
-        .eq("stageName", "indent-approval")
-        .single();
-      const tatHours = tatData?.actionTime || 2; // Default to 2 hours if not configured
-
-      const plannedIndentApproval = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+      // 2. Calculate planned time for indent-approval
+      const plannedIndentApproval = await calculatePlannedTime("indent-approval");
       const now = getLocalTimestamp();
 
       // 3. Prepare generation rows with generated UUIDs and required timestamps

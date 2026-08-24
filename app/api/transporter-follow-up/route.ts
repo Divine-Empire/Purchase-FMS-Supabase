@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
 
 function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -171,14 +172,6 @@ export async function POST(request: NextRequest) {
 
         if (updateError) throw updateError;
 
-        // Fetch TAT for freight-payments to calculate plannedDate
-        const { data: tatData } = await supabase
-          .from("pfms_tat")
-          .select("actionTime")
-          .eq("stageName", "freight-payments")
-          .maybeSingle();
-        const tatHours = tatData?.actionTime || 72; // default to 72 hours
-
         // Fetch freightAmount from lift
         const { data: liftData } = await supabase
           .from("pfms_lift")
@@ -187,8 +180,8 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
         const freightAmount = liftData?.freightAmount || 0;
 
-        // Populate initial record in freight-payment-details table
-        const plannedDate = getLocalTimestamp(new Date(Date.now() + tatHours * 60 * 60 * 1000));
+        // Calculate plannedDate for freight-payments
+        const plannedDate = await calculatePlannedTime("freight-payments");
 
         const { data: existing } = await supabase
           .from("pfms_freight-payment-details")

@@ -469,3 +469,161 @@ CREATE TABLE public.pfms_responsible_persons (
   responsibleName text,
   CONSTRAINT pfms_responsible_persons_pkey PRIMARY KEY (id)
 );
+
+
+-- ==========================================================
+-- VIEW: pfms_view-indent-lift
+-- ==========================================================
+CREATE VIEW public."pfms_view-indent-lift" AS
+SELECT
+    ig."timestamp" AS "timestamp_stage1",
+    ig."indentNo" AS "indent_number",
+    ig."createdBy" AS "created_by",
+    ig."itemName" AS "item_name",
+    ig."quantity" AS "qty",
+    ig."warehouseLocation" AS "warehouse_location",
+    ig."plannedIndentApproval" AS "planned_stage2",
+    ia."timestamp" AS "actual_stage2",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (ia."timestamp" - ig."plannedIndentApproval")) / 86400, 0)) AS "delay_stage2",
+    ia."approvedQty" AS "approved_qty",
+    ia."plannedUpdateVendors" AS "planned_stage3",
+    uv."timestamp" AS "actual_stage3",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (uv."timestamp" - ia."plannedUpdateVendors")) / 86400, 0)) AS "delay_stage3",
+    uv."vendor1Name" AS "vendor1_name",
+    uv."vendor2Name" AS "vendor2_name",
+    uv."vendor3Name" AS "vendor3_name",
+    uv."plannedNegotiation" AS "planned_stage4",
+    neg."timestamp" AS "actual_stage4",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (neg."timestamp" - uv."plannedNegotiation")) / 86400, 0)) AS "delay_stage4",
+    neg."selectedVendorName" AS "selected_vendor_name",
+    neg."plannedPOEntry" AS "planned_stage5",
+    po."timestamp" AS "actual_stage5",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (po."timestamp" - neg."plannedPOEntry")) / 86400, 0)) AS "delay_stage5",
+    po."poNumber" AS "po_number",
+    po."plannedFollowUpVendor" AS "planned_stage6",
+    (
+        SELECT l."timestamp"
+        FROM public."pfms_lift" l
+        WHERE l."indentNo" = ig."indentNo"
+        ORDER BY l."timestamp" DESC
+        LIMIT 1
+    ) AS "actual_stage6",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (
+        (SELECT l."timestamp" FROM public."pfms_lift" l WHERE l."indentNo" = ig."indentNo" ORDER BY l."timestamp" DESC LIMIT 1) - po."plannedFollowUpVendor"
+    )) / 86400, 0)) AS "delay_stage6",
+    (
+        SELECT tfu."expectedDeliveryDate"
+        FROM public."pfms_transporter-follow-up" tfu
+        JOIN public."pfms_lift" l ON tfu."liftNo" = l."liftNo"
+        WHERE l."indentNo" = ig."indentNo"
+          AND tfu."expectedDeliveryDate" IS NOT NULL
+        ORDER BY tfu."updatedAt" DESC
+        LIMIT 1
+    ) AS "expected_delivery_date",
+    (
+        SELECT l."estimatedDate"
+        FROM public."pfms_lift" l
+        WHERE l."indentNo" = ig."indentNo"
+        ORDER BY l."timestamp" DESC
+        LIMIT 1
+    ) AS "estimated_date",
+    (
+        SELECT l."remarksFollowUp"
+        FROM public."pfms_lift" l
+        WHERE l."indentNo" = ig."indentNo"
+        ORDER BY l."timestamp" DESC
+        LIMIT 1
+    ) AS "remarks_follow_up"
+FROM public."pfms_indent-generation" ig
+LEFT JOIN public."pfms_indent-approval" ia ON ig."indentNo" = ia."indentNo"
+LEFT JOIN public."pfms_update-3-vendors" uv ON ig."indentNo" = uv."indentNo"
+LEFT JOIN public."pfms_negotiation" neg ON ig."indentNo" = neg."indentNo"
+LEFT JOIN public."pfms_po-entry" po ON ig."indentNo" = po."indentNo";
+
+
+-- ==========================================================
+-- VIEW: pfms_view-receiving_accounts
+-- ==========================================================
+CREATE VIEW public."pfms_view-receiving_accounts" AS
+SELECT
+    l."timestamp" AS "timestamp_lift",
+    l."liftNo" AS "lift_no",
+    l."indentNo" AS "indent_no",
+    ig."itemName" AS "item_name",
+    neg."selectedVendorName" AS "vendor_name",
+    po."poNumber" AS "po_number",
+    po."basicValue" AS "po_basic_value",
+    po."poCopy" AS "po_copy",
+    ia."approvedQty" AS "approved_qty",
+    l."liftingQty" AS "lifting_qty",
+    l."transporterName" AS "transporter_name",
+    l."vehicleNo" AS "vehicle_no",
+    l."plannedTransporterFlwUp" AS "planned_stage6_1",
+    l."plannedMaterialRcd" AS "planned_stage7",
+    l."plannedSerialGen" AS "planned_stage7_5",
+    tfu."timestamp" AS "actual_stage6_1",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (tfu."timestamp" - l."plannedTransporterFlwUp")) / 86400, 0)) AS "delay_stage6_1",
+    tfu."expectedDeliveryDate" AS "expected_delivery_date",
+    mr."timestamp" AS "actual_stage7",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (mr."timestamp" - l."plannedMaterialRcd")) / 86400, 0)) AS "delay_stage7",
+    mr."invoiceNumber" AS "invoice_number",
+    mr."receivedQty" AS "received_qty",
+    mr."plannedTallyEntry" AS "planned_stage8",
+    mr."plannedMaterialTesting" AS "planned_stage11",
+    (
+        SELECT MAX(sn."timestamp")
+        FROM public."pfms_serial-number" sn
+        WHERE sn."liftNo" = l."liftNo"
+    ) AS "actual_stage7_5",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (
+        (SELECT MAX(sn."timestamp") FROM public."pfms_serial-number" sn WHERE sn."liftNo" = l."liftNo") - l."plannedSerialGen"
+    )) / 86400, 0)) AS "delay_stage7_5",
+    te."timestamp" AS "actual_stage8",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (te."timestamp" - mr."plannedTallyEntry")) / 86400, 0)) AS "delay_stage8",
+    te."doneBy" AS "tally_done_by",
+    te."doneDate" AS "tally_done_date",
+    te."checkedByAcc" AS "tally_checked_by_acc",
+    te."plannedInvoiceHO" AS "planned_stage8_5",
+    siho."timestamp" AS "actual_stage8_5",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (siho."timestamp" - te."plannedInvoiceHO")) / 86400, 0)) AS "delay_stage8_5",
+    siho."plannedInvoice" AS "planned_stage9",
+    si."timestamp" AS "actual_stage9",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (si."timestamp" - siho."plannedInvoice")) / 86400, 0)) AS "delay_stage9",
+    si."handoverBy" AS "invoice_handover_by",
+    si."plannedVerification" AS "planned_stage10",
+    av."timestamp" AS "actual_stage10",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (av."timestamp" - si."plannedVerification")) / 86400, 0)) AS "delay_stage10",
+    av."verifiedCheckedBy" AS "accounts_verified_by",
+    mt."timestamp" AS "actual_stage11",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (mt."timestamp" - mr."plannedMaterialTesting")) / 86400, 0)) AS "delay_stage11",
+    mt."approvedQty" AS "testing_approved_qty",
+    mt."rejectedQty" AS "testing_rejected_qty",
+    mt."plannedPurchaseReturns" AS "planned_stage11_5",
+    pr."timestamp" AS "actual_stage11_5",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (pr."timestamp" - mt."plannedPurchaseReturns")) / 86400, 0)) AS "delay_stage11_5",
+    pr."returnedQty" AS "pr_returned_qty",
+    pr."plannedReturnApproval" AS "planned_stage12",
+    ra."timestamp" AS "actual_stage12",
+    GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (ra."timestamp" - pr."plannedReturnApproval")) / 86400, 0)) AS "delay_stage12",
+    vpd."paidAmount" AS "paid_amount"
+FROM public."pfms_lift" l
+LEFT JOIN public."pfms_indent-generation" ig ON l."indentNo" = ig."indentNo"
+LEFT JOIN public."pfms_indent-approval" ia ON ig."indentNo" = ia."indentNo"
+LEFT JOIN public."pfms_negotiation" neg ON ig."indentNo" = neg."indentNo"
+LEFT JOIN public."pfms_po-entry" po ON ig."indentNo" = po."indentNo"
+LEFT JOIN public."pfms_transporter-follow-up" tfu ON l."liftNo" = tfu."liftNo"
+LEFT JOIN public."pfms_material-received" mr ON l."liftNo" = mr."liftNo"
+LEFT JOIN public."pfms_tally-entry" te ON l."liftNo" = te."liftNo"
+LEFT JOIN public."pfms_submit-invoice-ho" siho ON l."liftNo" = siho."liftNo"
+LEFT JOIN public."pfms_submit-invoice" si ON l."liftNo" = si."liftNo"
+LEFT JOIN public."pfms_accounts-verification" av ON l."liftNo" = av."liftNo"
+LEFT JOIN (
+    SELECT DISTINCT ON ("liftNo") * FROM public."pfms_material-testing" ORDER BY "liftNo", "timestamp" DESC
+) mt ON l."liftNo" = mt."liftNo"
+LEFT JOIN (
+    SELECT DISTINCT ON ("liftNo") * FROM public."pfms_purchase-return" ORDER BY "liftNo", "timestamp" DESC
+) pr ON l."liftNo" = pr."liftNo"
+LEFT JOIN (
+    SELECT DISTINCT ON ("liftNo") * FROM public."pfms_return-approval" ORDER BY "liftNo", "timestamp" DESC
+) ra ON l."liftNo" = ra."liftNo"
+LEFT JOIN public."pfms_vendor-payment-details" vpd ON l."liftNo" = vpd."liftNo";

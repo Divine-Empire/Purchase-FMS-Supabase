@@ -21,6 +21,7 @@ export async function GET() {
           update3Vendors:pfms_update-3-vendors(*)
         )
       `)
+      .ilike("status", "approved")
       .order("timestamp", { ascending: false });
 
     if (error) throw error;
@@ -32,7 +33,7 @@ export async function GET() {
     const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
 
     const mappedData = approvals
-      .filter((app: any) => app.indent) // ensure generation row exists
+      .filter((app: any) => app.indent && app.status?.toLowerCase() === "approved") // ensure generation row exists and status is approved
       .map((app: any) => {
         const row = app.indent;
         const vendorArray = row.update3Vendors;

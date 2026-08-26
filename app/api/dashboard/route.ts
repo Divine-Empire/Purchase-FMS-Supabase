@@ -169,12 +169,14 @@ export async function GET(request: NextRequest) {
           // This indent is also pending for lifting (Purchase Data tab)
           purchaseItems.push({
             erp: poEntry.poNumber || "-",
+            indentNo: indentNo,
             material: row.itemName || "-",
             party: negotiation?.selectedVendorName || "-",
             qty: approvedQty - totalLifted,
             warehouse: row.warehouseLocation || "-",
             leadTime: row.leadTime || null,
             expDelivery: poEntry.estimatedFollowUpVendor || poEntry.plannedFollowUpVendor || null,
+            poCopy: poEntry.poCopy || "",
           });
         }
       }
@@ -284,6 +286,7 @@ export async function GET(request: NextRequest) {
         if (mr) {
           receivedItems.push({
             erp: indentNo,
+            invoiceNumber: mr.invoiceNumber || "-",
             material: row.itemName || "-",
             party: negotiation?.selectedVendorName || "-",
             billImage: mr.billAttachment || mr.receivedItemImage || "",

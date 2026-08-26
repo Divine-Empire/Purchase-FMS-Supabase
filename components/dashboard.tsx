@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,8 @@ import {
   Users,
   ShieldAlert,
   Settings2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { parseSheetDate, formatDate } from "@/lib/utils";
@@ -164,6 +166,8 @@ export default function PurchaseDashboard() {
   ]);
 
   const [warrantyMonthsFilter, setWarrantyMonthsFilter] = useState<string>("");
+
+  const [expandedPOs, setExpandedPOs] = useState<Record<string, boolean>>({});
 
   const [totalPurchaseOrders, setTotalPurchaseOrders] = useState<number | null>(null);
   const [pendingPOs, setPendingPOs] = useState<number | null>(null);
@@ -355,6 +359,46 @@ export default function PurchaseDashboard() {
   const finalPendingData = useMemo(() => searchData(sortedPendingData, pendingSearch), [sortedPendingData, pendingSearch]);
   const finalWarrantyData = useMemo(() => searchData(sortedWarrantyData, warrantySearch), [sortedWarrantyData, warrantySearch]);
 
+  const togglePOExpand = (erp: string) => {
+    setExpandedPOs((prev) => ({
+      ...prev,
+      [erp]: !prev[erp],
+    }));
+  };
+
+  const groupedPendingData = useMemo(() => {
+    const groupsMap: {
+      [key: string]: {
+        erp: string;
+        party: string;
+        totalQty: number;
+        poCopy: string;
+        items: any[];
+      };
+    } = {};
+
+    finalPendingData.forEach((item: any) => {
+      const key = item.erp || "N/A";
+      if (!groupsMap[key]) {
+        groupsMap[key] = {
+          erp: key,
+          party: item.party || "-",
+          totalQty: 0,
+          poCopy: item.poCopy || "",
+          items: [],
+        };
+      }
+      groupsMap[key].items.push(item);
+      const numericQty = typeof item.qty === "number" ? item.qty : parseFloat(item.qty) || 0;
+      groupsMap[key].totalQty += numericQty;
+      if (!groupsMap[key].poCopy && item.poCopy) {
+        groupsMap[key].poCopy = item.poCopy;
+      }
+    });
+
+    return Object.values(groupsMap);
+  }, [finalPendingData]);
+
   // Export to CSV function
   const exportToCSV = (data: any[], filename: string, visibleColumns?: string[]) => {
     if (data.length === 0) return;
@@ -451,7 +495,7 @@ export default function PurchaseDashboard() {
           </p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="sm:col-span-2 lg:col-span-1">
               <div className="flex items-center gap-2">
 
@@ -513,17 +557,6 @@ export default function PurchaseDashboard() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="intransit">In-Transit</SelectItem>
-                <SelectItem value="received">Received</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               variant="outline"
               size="sm"
@@ -553,7 +586,7 @@ export default function PurchaseDashboard() {
             Overview
           </TabsTrigger>
           <TabsTrigger value="purchase" className="text-xs sm:text-sm">
-            Purchase Data
+            Purchase Orders
           </TabsTrigger>
           <TabsTrigger value="intransit" className="text-xs sm:text-sm">
             In-Transit
@@ -1230,6 +1263,7 @@ export default function PurchaseDashboard() {
                       {receivedSort.key === "party" &&
                         (receivedSort.direction === "asc" ? "↑" : "↓")}
                     </TableHead>
+                    <TableHead className="text-xs">Invoice Number</TableHead>
                     <TableHead className="text-xs">Bill Image</TableHead>
                     <TableHead className="text-xs">Truck No.</TableHead>
                     <TableHead
@@ -1263,6 +1297,9 @@ export default function PurchaseDashboard() {
                       <TableCell className="text-xs">{item.material}</TableCell>
                       <TableCell className="text-xs max-w-48 truncate">
                         {item.party}
+                      </TableCell>
+                      <TableCell className="text-xs font-medium text-slate-700">
+                        {item.invoiceNumber || "-"}
                       </TableCell>
                       <TableCell className="text-xs">
                         {item.billImage ? (
@@ -1331,33 +1368,123 @@ export default function PurchaseDashboard() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8"></TableHead>
                     <TableHead className="text-xs">ERP PO Number</TableHead>
                     <TableHead className="text-xs">Material Name</TableHead>
                     <TableHead className="text-xs">Party Name</TableHead>
                     <TableHead className="text-xs text-right">Quantity</TableHead>
+                    <TableHead className="text-xs text-center">PO Copy</TableHead>
                     <TableHead className="text-xs">Warehouse</TableHead>
                     <TableHead className="text-xs">Lead Time</TableHead>
                     <TableHead className="text-xs">Exp. Delivery</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {finalPendingData.map((item: any, idx: number) => (
-                    <TableRow key={idx}>
-                      <TableCell className="font-medium text-xs">
-                        {item.erp}
-                      </TableCell>
-                      <TableCell className="text-xs">{item.material}</TableCell>
-                      <TableCell className="text-xs">{item.party}</TableCell>
-                      <TableCell className="text-right text-xs">
-                        {typeof item.qty === 'number' ? item.qty.toFixed(2) : item.qty}
-                      </TableCell>
-                      <TableCell className="text-xs">{item.warehouse}</TableCell>
-                      <TableCell className="text-xs">{item.leadTime}</TableCell>
-                      <TableCell className="text-xs">
-                        {item.expDelivery}
+                  {groupedPendingData.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        No pending purchase orders available
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    groupedPendingData.map((group: any) => {
+                      const isExpanded = !!expandedPOs[group.erp];
+                      const count = group.items.length;
+
+                      return (
+                        <Fragment key={group.erp}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-slate-50/80 font-medium"
+                            onClick={() => togglePOExpand(group.erp)}
+                          >
+                            <TableCell className="text-xs w-8 p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => togglePOExpand(group.erp)}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4 text-blue-600" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-gray-500" />
+                                )}
+                              </Button>
+                            </TableCell>
+                            <TableCell className="font-semibold text-xs">
+                              {group.erp}
+                            </TableCell>
+                            <TableCell className="text-xs font-normal text-muted-foreground">
+                              {count} {count === 1 ? "material" : "materials"}
+                            </TableCell>
+                            <TableCell className="text-xs">{group.party}</TableCell>
+                            <TableCell className="text-right text-xs font-semibold">
+                              {group.totalQty.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-xs text-center" onClick={(e) => e.stopPropagation()}>
+                              {group.poCopy ? (
+                                <a
+                                  href={group.poCopy}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center justify-center h-6 w-6 rounded-full hover:bg-gray-100 text-blue-600 transition-colors"
+                                  title="View PO Copy"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">-</TableCell>
+                            <TableCell className="text-xs">-</TableCell>
+                            <TableCell className="text-xs">-</TableCell>
+                          </TableRow>
+
+                          {/* Expanded child rows for individual PO materials */}
+                          {isExpanded &&
+                            group.items.map((subItem: any, subIdx: number) => (
+                              <TableRow
+                                key={`${group.erp}-sub-${subIdx}`}
+                                className="bg-slate-50/80 hover:bg-slate-100/80 border-l-2 border-l-blue-500"
+                              >
+                                <TableCell className="text-xs"></TableCell>
+                                <TableCell className="text-xs text-muted-foreground pl-4 font-mono">
+                                  └ IND-{subItem.indentNo || subItem.erp}
+                                </TableCell>
+                                <TableCell className="text-xs font-medium text-blue-900">
+                                  {subItem.material}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {subItem.party}
+                                </TableCell>
+                                <TableCell className="text-right text-xs font-medium">
+                                  {typeof subItem.qty === 'number' ? subItem.qty.toFixed(2) : subItem.qty}
+                                </TableCell>
+                                <TableCell className="text-xs text-center">
+                                  {subItem.poCopy ? (
+                                    <a
+                                      href={subItem.poCopy}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center justify-center h-6 w-6 rounded-full hover:bg-gray-100 text-blue-600 transition-colors"
+                                      title="View PO Copy"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </a>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs">{subItem.warehouse || "-"}</TableCell>
+                                <TableCell className="text-xs">{subItem.leadTime || "-"}</TableCell>
+                                <TableCell className="text-xs">{subItem.expDelivery || "-"}</TableCell>
+                              </TableRow>
+                            ))}
+                        </Fragment>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

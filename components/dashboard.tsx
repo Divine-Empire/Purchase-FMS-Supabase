@@ -93,6 +93,22 @@ const purchaseStages = [
   { id: 19, name: "Freight Payments", color: "bg-zinc-500" },
 ];
 
+const formatExpDeliveryDate = (dateStr: any) => {
+  if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
+  if (typeof dateStr === "string") {
+    const cleanStr = dateStr.split("T")[0].split(" ")[0];
+    if (cleanStr && /^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+      return cleanStr;
+    }
+  }
+  const d = dateStr instanceof Date ? dateStr : parseSheetDate(dateStr);
+  if (!d || isNaN(d.getTime())) return typeof dateStr === "string" ? dateStr : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 export default function PurchaseDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -1012,7 +1028,7 @@ export default function PurchaseDashboard() {
                         {typeof item.qty === 'number' ? item.qty.toFixed(2) : item.qty}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {item.expDelivery || "-"}
+                        {formatExpDeliveryDate(item.expDelivery)}
                       </TableCell>
                       <TableCell className="text-xs">
                         <Badge
@@ -1478,7 +1494,7 @@ export default function PurchaseDashboard() {
                                 </TableCell>
                                 <TableCell className="text-xs">{subItem.warehouse || "-"}</TableCell>
                                 <TableCell className="text-xs">{subItem.leadTime || "-"}</TableCell>
-                                <TableCell className="text-xs">{subItem.expDelivery || "-"}</TableCell>
+                                <TableCell className="text-xs">{formatExpDeliveryDate(subItem.expDelivery)}</TableCell>
                               </TableRow>
                             ))}
                         </Fragment>

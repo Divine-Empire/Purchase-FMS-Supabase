@@ -3,34 +3,52 @@ import { supabase } from "@/utils/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. Fetch all indents with their full workflow stages and relations in a single nested select
-    const { data: indents, error: indentError } = await supabase
-      .from("pfms_indent-generation")
-      .select(`
-        *,
-        approval:"pfms_indent-approval"(*),
-        update3Vendors:"pfms_update-3-vendors"(*),
-        negotiation:pfms_negotiation(*),
-        poEntry:"pfms_po-entry"(*),
-        lifts:pfms_lift(
+    // 1. Fetch all indents with their full workflow stages and relations using pagination to surpass default 1000 row limit
+    const indents: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageIndents, error: indentError } = await supabase
+        .from("pfms_indent-generation")
+        .select(`
           *,
-          transporterFollowUp:"pfms_transporter-follow-up"(*),
-          materialReceived:"pfms_material-received"(*),
-          serials:"pfms_serial-number"(*),
-          tallyEntry:"pfms_tally-entry"(*),
-          submitInvoiceHO:"pfms_submit-invoice-ho"(*),
-          submitInvoice:"pfms_submit-invoice"(*),
-          accountsVerification:"pfms_accounts-verification"(*),
-          materialTesting:"pfms_material-testing"(*),
-          purchaseReturn:"pfms_purchase-return"(*),
-          returnApproval:"pfms_return-approval"(*),
-          vendorPaymentDetails:"pfms_vendor-payment-details"(*),
-          freightPaymentDetails:"pfms_freight-payment-details"(*)
-        )
-      `)
-      .order("timestamp", { ascending: false });
+          approval:"pfms_indent-approval"(*),
+          update3Vendors:"pfms_update-3-vendors"(*),
+          negotiation:pfms_negotiation(*),
+          poEntry:"pfms_po-entry"(*),
+          lifts:pfms_lift(
+            *,
+            transporterFollowUp:"pfms_transporter-follow-up"(*),
+            materialReceived:"pfms_material-received"(*),
+            serials:"pfms_serial-number"(*),
+            tallyEntry:"pfms_tally-entry"(*),
+            submitInvoiceHO:"pfms_submit-invoice-ho"(*),
+            submitInvoice:"pfms_submit-invoice"(*),
+            accountsVerification:"pfms_accounts-verification"(*),
+            materialTesting:"pfms_material-testing"(*),
+            purchaseReturn:"pfms_purchase-return"(*),
+            returnApproval:"pfms_return-approval"(*),
+            vendorPaymentDetails:"pfms_vendor-payment-details"(*),
+            freightPaymentDetails:"pfms_freight-payment-details"(*)
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
 
-    if (indentError) throw indentError;
+      if (indentError) throw indentError;
+
+      if (!pageIndents || pageIndents.length === 0) {
+        hasMore = false;
+      } else {
+        indents.push(...pageIndents);
+        if (pageIndents.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+    }
 
     // 2. Fetch list of cancelled indents
     const { data: cancelledList } = await supabase

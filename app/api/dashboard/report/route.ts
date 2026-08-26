@@ -15,23 +15,41 @@ const RESPONSIBLE_MAP: Record<string, string> = {
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. Fetch indents and their stage relations
-    const { data: indents, error: indentError } = await supabase
-      .from("pfms_indent-generation")
-      .select(`
-        *,
-        approval:"pfms_indent-approval"(*),
-        update3Vendors:"pfms_update-3-vendors"(*),
-        negotiation:pfms_negotiation(*),
-        poEntry:"pfms_po-entry"(*),
-        lifts:pfms_lift(
+    // 1. Fetch indents and their stage relations using pagination
+    const indents: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageIndents, error: indentError } = await supabase
+        .from("pfms_indent-generation")
+        .select(`
           *,
-          transporterFollowUp:"pfms_transporter-follow-up"(*)
-        )
-      `)
-      .order("timestamp", { ascending: false }) as any;
+          approval:"pfms_indent-approval"(*),
+          update3Vendors:"pfms_update-3-vendors"(*),
+          negotiation:pfms_negotiation(*),
+          poEntry:"pfms_po-entry"(*),
+          lifts:pfms_lift(
+            *,
+            transporterFollowUp:"pfms_transporter-follow-up"(*)
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1) as any;
 
-    if (indentError) throw indentError;
+      if (indentError) throw indentError;
+
+      if (!pageIndents || pageIndents.length === 0) {
+        hasMore = false;
+      } else {
+        indents.push(...pageIndents);
+        if (pageIndents.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+    }
 
     // 2. Fetch list of cancelled indents
     const { data: cancelledList } = await supabase

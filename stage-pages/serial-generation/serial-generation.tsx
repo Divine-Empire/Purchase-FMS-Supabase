@@ -617,7 +617,7 @@ export default function SerialGeneration() {
         }
     }, [selectedInvoiceGroup]);
 
-    const fetchNextSequence = async (vendorName: string, invoiceDate: string) => {
+    const fetchNextSequence = useCallback(async (vendorName: string, invoiceDate: string) => {
         setIsCheckingSequence(true);
         try {
             const vendorCode = vendorCodes[vendorName] || "UNKNOWN";
@@ -634,9 +634,9 @@ export default function SerialGeneration() {
         } finally {
             setIsCheckingSequence(false);
         }
-    };
+    }, [vendorCodes]);
 
-    const fetchDirectNextSequence = async (vendorName: string, invoiceDate: string) => {
+    const fetchDirectNextSequence = useCallback(async (vendorName: string, invoiceDate: string) => {
         setDirectIsCheckingSequence(true);
         try {
             const vendorCode = vendorCodes[vendorName] || "UNKNOWN";
@@ -653,14 +653,13 @@ export default function SerialGeneration() {
         } finally {
             setDirectIsCheckingSequence(false);
         }
-    };
-
+    }, [vendorCodes]);
 
     useEffect(() => {
         if (directForm.vendorName && directForm.invoiceDate && directFormOpen) {
             fetchDirectNextSequence(directForm.vendorName, directForm.invoiceDate);
         }
-    }, [directForm.vendorName, directForm.invoiceDate, directFormOpen]);
+    }, [directForm.vendorName, directForm.invoiceDate, directFormOpen, fetchDirectNextSequence]);
 
     useEffect(() => {
         if (!directFormOpen) return;
@@ -929,7 +928,13 @@ export default function SerialGeneration() {
         }
 
         setOpen(true);
-    }, [vendorCodes]);
+    }, [vendorCodes, fetchNextSequence]);
+
+    useEffect(() => {
+        if (open && selectedRecords.length > 0) {
+            fetchNextSequence(selectedRecords[0].data.vendorName, selectedRecords[0].data.invoiceDate);
+        }
+    }, [open, selectedRecords, vendorCodes, fetchNextSequence]);
 
     useEffect(() => {
         if (selectedRecords.length === 0) return;

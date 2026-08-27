@@ -20,11 +20,23 @@ export async function GET(request: NextRequest) {
       if (error) throw error;
       let maxSeq = 0;
       for (const s of (serials || [])) {
-        const parts = s.serialNo.split("/");
-        if (parts.length >= 3) {
-          const seqNum = parseInt(parts[2], 10);
+        if (!s.serialNo) continue;
+        const suffix = s.serialNo.startsWith(prefix)
+          ? s.serialNo.slice(prefix.length)
+          : (s.serialNo.split("/").pop() || "");
+        const match = suffix.match(/^\d+/);
+        if (match) {
+          const seqNum = parseInt(match[0], 10);
           if (!isNaN(seqNum) && seqNum > maxSeq) {
             maxSeq = seqNum;
+          }
+        } else {
+          const parts = s.serialNo.split("/");
+          if (parts.length >= 3) {
+            const seqNum = parseInt(parts[2], 10);
+            if (!isNaN(seqNum) && seqNum > maxSeq) {
+              maxSeq = seqNum;
+            }
           }
         }
       }
@@ -386,6 +398,23 @@ export async function POST(request: NextRequest) {
             updatedAt: now
           });
         }
+      }
+    }
+
+    const serialNosToCheck = serialsToInsert.map(s => s.serialNo).filter(Boolean);
+    if (serialNosToCheck.length > 0) {
+      const { data: existingSerials, error: checkErr } = await supabase
+        .from("pfms_serial-number")
+        .select("serialNo")
+        .in("serialNo", serialNosToCheck);
+
+      if (checkErr) throw checkErr;
+      if (existingSerials && existingSerials.length > 0) {
+        const dupes = existingSerials.map(e => e.serialNo).join(", ");
+        return NextResponse.json({
+          success: false,
+          error: `Duplicate serial number(s) detected: ${dupes}. Please regenerate serial numbers.`
+        }, { status: 400 });
       }
     }
 

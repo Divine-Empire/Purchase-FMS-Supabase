@@ -9,8 +9,11 @@ function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   return new Date(date.getTime() - offset).toISOString().replace("Z", "");
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const statusFilter = (searchParams.get("status") || searchParams.get("statusFilter") || "all").toLowerCase();
+
     // Fetch all indents and join with indent-approval
     const { data: indents, error } = await supabase
       .from("pfms_indent-generation")
@@ -65,6 +68,9 @@ export async function GET() {
       .filter((row: any) => {
         if (row.status === "pending" && cancelledNos.has(row.data.indentNumber)) {
           return false;
+        }
+        if (row.status === "completed" && statusFilter !== "all") {
+          return row.data.status?.toLowerCase() === statusFilter;
         }
         return true;
       });

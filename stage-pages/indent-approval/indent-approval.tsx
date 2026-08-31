@@ -85,6 +85,7 @@ export default function Stage2() {
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
+  const [statusFilter, setStatusFilter] = useState<"all" | "approved" | "rejected">("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [approvalForm, setApprovalForm] = useState({
     status: "",
@@ -111,10 +112,10 @@ export default function Stage2() {
     }
   }, [isModalOpen]);
 
-  const fetchData = async () => {
+  const fetchData = async (status = statusFilter) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/indent-approval?_t=${Date.now()}`);
+      const res = await fetch(`/api/indent-approval?status=${status}&_t=${Date.now()}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setSheetRecords(json.data);
@@ -126,8 +127,8 @@ export default function Stage2() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(statusFilter);
+  }, [statusFilter]);
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -174,6 +175,10 @@ export default function Stage2() {
         );
       });
 
+    if (statusFilter !== "all") {
+      records = records.filter((r) => r.data.status?.toLowerCase() === statusFilter);
+    }
+
     if (indentFilter === "increasing") {
       records = [...records].sort((a, b) => {
         const valA = a.data?.indentNumber || "";
@@ -188,7 +193,7 @@ export default function Stage2() {
       });
     }
     return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+  }, [sheetRecords, searchTerm, indentFilter, statusFilter]);
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
     columns.map((c) => c.key)
@@ -497,15 +502,13 @@ export default function Stage2() {
               <p className="text-lg font-medium text-gray-900">Loading History...</p>
               <p className="text-sm text-gray-500 mt-1">Fetching completed records</p>
             </div>
-          ) : history.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-lg">No completed records found</p>
-            </div>
           ) : (
             <IndentApprovalHistory
               history={history}
               selectedColumns={selectedColumns}
               columns={columns}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
             />
           )}
         </TabsContent>

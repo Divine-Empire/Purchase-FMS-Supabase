@@ -156,10 +156,10 @@ export default function Stage4() {
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent" },
-    { key: "itemName", label: "Item" },
-    { key: "quantity", label: "Qty" },
     { key: "planned3", label: "Planned" },
     { key: "actual3", label: "Actual" },
+    { key: "itemName", label: "Item" },
+    { key: "quantity", label: "Qty" },
   ];
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(

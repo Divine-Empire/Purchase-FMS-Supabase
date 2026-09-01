@@ -18,7 +18,7 @@ const RecordRow = React.memo(({ rec, columns, onAction, isHistory = false, rende
             className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all active:scale-95 h-8 px-3 text-[11px] font-semibold"
             onClick={() => onAction(rec)}
           >
-            {columns.length === 7 ? "Update" : "Claim"}
+            {columns.some((c: any) => c.key === "status") ? "Update" : "Claim"}
           </Button>
         </td>
       )}

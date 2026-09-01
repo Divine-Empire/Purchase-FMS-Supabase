@@ -202,9 +202,10 @@ export default function Stage6() {
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent No.", icon: null },
+    { key: "planned5", label: "Planned", icon: null },
+    { key: "actual5", label: "Actual", icon: null },
     { key: "itemName", label: "Item", icon: null },
     { key: "quantity", label: "Qty", icon: null },
-    { key: "planned5", label: "Planned", icon: null },
     { key: "totalLifted", label: "Total Dispatch Qty", icon: null },
     { key: "pendingLifted", label: "Pending Dispatch Qty", icon: null },
     { key: "estimatedDate", label: "Estimated Date", icon: null },

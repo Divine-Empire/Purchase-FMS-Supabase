@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, RefreshCw, Search, Eye, ClipboardList, History } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTimeDash } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import PurchaseReturnHistory from "./purchase-return-history";
 
 const PENDING_COLUMNS = [
   { key: "indentNumber", label: "Indent No" },
+  { key: "plan6", label: "Planned" },
   { key: "unitTrackingNo", label: "Unit Tracking No" },
   { key: "itemName", label: "Item" },
   { key: "rejectedQty", label: "Rejected Qty" },
@@ -38,11 +39,12 @@ const PENDING_COLUMNS = [
   { key: "remark", label: "Remark" },
   { key: "partName", label: "Part Name" },
   { key: "serialNoWithPhoto", label: "S-No. with Photo" },
-  { key: "plan6", label: "Planned" },
 ] as const;
 
 const HISTORY_COLUMNS = [
   { key: "indentNumber", label: "Indent No" },
+  { key: "plan6", label: "Planned" },
+  { key: "actual6", label: "Actual" },
   { key: "unitTrackingNo", label: "Unit Tracking No" },
   { key: "itemName", label: "Item" },
   { key: "vendor", label: "Vendor" },
@@ -50,8 +52,6 @@ const HISTORY_COLUMNS = [
   { key: "remark", label: "Remark" },
   { key: "partName", label: "Part Name" },
   { key: "serialNoWithPhoto", label: "S-No. with Photo" },
-  { key: "plan6", label: "Planned" },
-  { key: "actual6", label: "Actual" },
   { key: "returnedQty", label: "Return Qty" },
   { key: "returnAmount", label: "Return Amount" },
   { key: "returnReason", label: "Reason" },
@@ -60,15 +60,7 @@ const HISTORY_COLUMNS = [
   { key: "creditNoteImage", label: "Credit Note" },
 ] as const;
 
-const formatDateDash = (date: any) => {
-  if (!date || date === "-" || date === "—") return "-";
-  const d = new Date(date);
-  if (isNaN(d.getTime())) return typeof date === "string" ? date : "-";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${dd}-${mm}-${yyyy}`;
-};
+const formatDateDash = (date: any) => formatDateTimeDash(date);
 
 const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();

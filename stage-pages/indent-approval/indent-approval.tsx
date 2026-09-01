@@ -62,6 +62,8 @@ import IndentApprovalHistory from "./indent-approval-history";
 
 const columns = [
   { key: "indentNumber", label: "Indent", icon: Hash },
+  { key: "plannedDate", label: "Planned", icon: Calendar },
+  { key: "actualDate", label: "Actual", icon: Calendar },
   { key: "createdBy", label: "Created By", icon: User },
   { key: "category", label: "Category", icon: FileText },
   { key: "itemName", label: "Item", icon: Package },
@@ -70,8 +72,6 @@ const columns = [
   { key: "warehouseLocation", label: "Warehouse", icon: Warehouse },
   { key: "itemCode", label: "Item Code", icon: Hash },
   { key: "leadTime", label: "Lead Time", icon: Clock },
-  { key: "plannedDate", label: "Planned", icon: Calendar },
-  { key: "actualDate", label: "Actual", icon: Calendar },
   { key: "delay", label: "Delay", icon: Clock },
   { key: "status", label: "Status", icon: Tag },
   { key: "remarks", label: "Remarks", icon: FileText },
@@ -516,7 +516,7 @@ export default function Stage2() {
 
       {/* ------------------- APPROVAL MODAL ------------------- */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-[90vw] w-full p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+        <DialogContent className="max-w-4xl w-full p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
           <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex items-center justify-between ">
             <div className="flex items-center gap-3 ">
               <div className="p-2 bg-white/10 rounded-lg">
@@ -555,7 +555,7 @@ export default function Stage2() {
                     <TableHeader className="bg-indigo-50/50 sticky top-0 z-10 border-b border-indigo-100">
                       <TableRow className="hover:bg-transparent border-b border-indigo-100">
                         <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Indent ID</TableHead>
-                        <TableHead className="min-w-[200px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Item Description</TableHead>
+                        <TableHead className="max-w-[280px] min-w-[200px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest">Item Description</TableHead>
                         <TableHead className="w-[80px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest text-center">Req. Qty</TableHead>
                         <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest text-center">Status</TableHead>
                         <TableHead className="w-[120px] h-10 px-4 text-[10px] font-extrabold text-indigo-950 uppercase tracking-widest text-center">Vendor Type</TableHead>
@@ -568,7 +568,7 @@ export default function Stage2() {
                           className="transition-all border-b border-indigo-50 last:border-0 odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20"
                         >
                           <TableCell className="py-3 px-4 font-mono text-xs font-bold text-indigo-950">{item.data.indentNumber}</TableCell>
-                          <TableCell className="py-3 px-4 text-slate-600 text-xs font-semibold">{item.data.itemName}</TableCell>
+                          <TableCell className="py-3 px-4 text-slate-600 text-xs font-semibold max-w-[280px] break-words whitespace-normal leading-relaxed">{item.data.itemName}</TableCell>
                           <TableCell className="py-2 px-4 text-center">
                             <div className="flex flex-col items-center gap-1">
                               <Input

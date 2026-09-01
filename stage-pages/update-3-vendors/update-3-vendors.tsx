@@ -229,6 +229,8 @@ export default function Stage3() {
 
   const baseColumns = [
     { header: "Indent", accessorKey: "indentNumber" },
+    { header: "Planned", accessorKey: "planned2" },
+    { header: "Actual", accessorKey: "actual2" },
     { header: "Created By", accessorKey: "createdBy" },
     { header: "Category", accessorKey: "category" },
     { header: "Item", accessorKey: "itemName" },
@@ -236,8 +238,6 @@ export default function Stage3() {
     { header: "Warehouse", accessorKey: "warehouseLocation" },
     { header: "Item Code", accessorKey: "itemCode" },
     { header: "Lead Time", accessorKey: "leadTime" },
-    { header: "Planned", accessorKey: "planned2" },
-    { header: "Actual", accessorKey: "actual2" },
 
     { header: "Status", accessorKey: "status" },
     { header: "Approved Qty", accessorKey: "approvedQty" },

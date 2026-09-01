@@ -189,6 +189,7 @@ export default function TransporterFollowUp() {
 
     const pendingColumns = [
         { key: "indentNumber", label: "Indent No" },
+        { key: "plannedDate", label: "Planned" },
         { key: "itemName", label: "Item Name" },
         { key: "expectedDeliveryDate", label: "Expected Date" },
         { key: "totalFollowUps", label: "Total Follow-Ups" },
@@ -209,9 +210,10 @@ export default function TransporterFollowUp() {
 
     const historyColumns = [
         { key: "indentNumber", label: "Indent No" },
+        { key: "plannedDate", label: "Planned" },
+        { key: "actualDate", label: "Actual" },
         { key: "itemName", label: "Item Name" },
         { key: "expectedDeliveryDate", label: "Expected Date" },
-        { key: "actualDate", label: "Actual" },
         { key: "totalFollowUps", label: "Total Follow-Ups" },
         { key: "lastFollowUpDate", label: "Last Follow-Up Date" },
         { key: "nextFollowUpDate", label: "Next Follow-Up Date" },

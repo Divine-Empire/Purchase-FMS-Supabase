@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Loader2, Search, ClipboardCheck, RefreshCw, Eye, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { getFmsTimestamp, cn } from "@/lib/utils";
+import { getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import MaterialTestingPending from "./material-testing-pending";
@@ -61,21 +61,19 @@ function SearchableSrnDropdown({ value, onChange, options, placeholder }: Search
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredOptions = useMemo(() => {
-    const term = search.toLowerCase().trim();
-    if (!term) return options;
-    return options.filter((opt) => opt.toLowerCase().includes(term));
-  }, [options, search]);
+  const filteredOptions = options.filter((opt) =>
+    opt.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <Input
+      <input
+        type="text"
+        className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
         placeholder={placeholder}
-        className="bg-slate-50/50 border-slate-200 rounded-lg h-9 text-sm w-full focus-visible:ring-1 focus-visible:ring-blue-500"
         value={search}
         onChange={(e) => {
           setSearch(e.target.value);
-          onChange(e.target.value);
           setIsOpen(true);
         }}
         onFocus={() => setIsOpen(true)}
@@ -105,8 +103,8 @@ function SearchableSrnDropdown({ value, onChange, options, placeholder }: Search
 
 const PENDING_COLUMNS = [
   { key: "indentNumber", label: "Indent No." },
-  { key: "liftNo", label: "Unit Tracking No." },
   { key: "plan7", label: "Planned" },
+  { key: "liftNo", label: "Unit Tracking No." },
   { key: "itemName", label: "Item" },
   { key: "receivedQty", label: "Received Qty" },
   { key: "totalApproved", label: "Approved" },
@@ -119,8 +117,9 @@ const PENDING_COLUMNS = [
 
 const HISTORY_COLUMNS = [
   { key: "indentNumber", label: "Indent No." },
+  { key: "plan7", label: "Planned" },
+  { key: "qcDate", label: "Actual" },
   { key: "liftNo", label: "Lift No." },
-  { key: "qcDate", label: "QC-Date" },
   { key: "workingCondition", label: "Working Condition" },
   { key: "qcBy", label: "Checked By" },
   { key: "approvedQty", label: "Approved Qty" },
@@ -395,15 +394,7 @@ export default function MaterialTesting() {
     }
   }, [selectedRecord, formData, fetchData]);
 
-  const formatDateDash = (dateStr: any) => {
-    if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${day}-${month}-${year}`;
-  };
+  const formatDateDash = (dateStr: any) => formatDateTimeDash(dateStr);
 
   const safeValue = useCallback((record: any, key: string) => {
     try {

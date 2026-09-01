@@ -10,17 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileText, Shield, ShieldCheck } from "lucide-react";
-import { parseSheetDate, cn } from "@/lib/utils";
+import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
-const formatDateDash = (date: any) => {
-  if (!date || date === "-" || date === "—") return "-";
-  const d = date instanceof Date ? date : parseSheetDate(date);
-  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${dd}-${mm}-${yyyy}`;
-};
+const formatDateDash = (date: any) => formatDateTimeDash(date);
 
 interface PoEntryPendingProps {
   pending: any[];
@@ -57,7 +49,7 @@ export default function PoEntryPending({
               </div>
             </TableHead>
             {baseColumns
-              .filter((c) => selectedColumns.includes(c.key))
+              .filter((c) => selectedColumns.includes(c.key) && c.key !== "actual4")
               .map((col) => (
                 <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">
                   {col.label}
@@ -93,7 +85,7 @@ export default function PoEntryPending({
                   />
                 </TableCell>
                 {baseColumns
-                  .filter((c) => selectedColumns.includes(c.key))
+                  .filter((c) => selectedColumns.includes(c.key) && c.key !== "actual4")
                   .map((col) => (
                     <TableCell key={col.key} className={cn(
                       "text-sm font-medium border-b border-indigo-50/80 px-4 py-3 whitespace-nowrap",

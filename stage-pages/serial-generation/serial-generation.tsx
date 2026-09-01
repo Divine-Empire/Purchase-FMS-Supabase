@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, ShieldAlert, Eye, Printer, PlusCircle, Check, ChevronsUpDown, Download, X, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { cn, formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { cn, formatDate, parseSheetDate, getFmsTimestamp, formatDateTimeDash } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import {
     Command,
@@ -96,18 +96,11 @@ const LocalQRPreview = ({ itemName, itemCode, serialNo, expiryDate }: { itemName
     );
 };
 
-const formatDateDash = (date: any) => {
-    if (!date || date === "-" || date === "—") return "-";
-    const d = date instanceof Date ? date : parseSheetDate(date);
-    if (!d || isNaN(d.getTime())) return typeof date === "string" ? date : "-";
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${dd}-${mm}-${yyyy}`;
-};
+const formatDateDash = (date: any) => formatDateTimeDash(date);
 
 const PENDING_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
+    { key: "planned", label: "Planned" },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
@@ -119,11 +112,12 @@ const PENDING_COLUMNS = [
     { key: "receivedQty", label: "Received Qty" },
     { key: "warrantyExpiry", label: "Warranty Expiry" },
     { key: "productExpiry", label: "Product Expiry" },
-    { key: "planned", label: "Planned" },
 ] as const;
 
 const HISTORY_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
+    { key: "planned", label: "Planned" },
+    { key: "actual", label: "Actual" },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
@@ -135,8 +129,6 @@ const HISTORY_COLUMNS = [
     { key: "receivedQty", label: "Received Qty" },
     { key: "warrantyExpiry", label: "Warranty Expiry" },
     { key: "productExpiry", label: "Product Expiry" },
-    { key: "planned", label: "Planned" },
-    { key: "actual", label: "Actual" },
     { key: "actions", label: "Action" },
 ] as const;
 

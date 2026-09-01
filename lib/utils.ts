@@ -13,8 +13,10 @@ export function parseSheetDate(dateStr: string | Date | null | undefined): Date 
   if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
   
   // Try parsing YYYY-MM-DD first to avoid UTC timezone mismatch issues
-  if (typeof dateStr === 'string' && dateStr.includes('-')) {
-    const parts = dateStr.split(' ');
+  const normalizedStr = typeof dateStr === 'string' ? dateStr.replace('T', ' ').replace('Z', '') : dateStr;
+
+  if (typeof normalizedStr === 'string' && normalizedStr.includes('-')) {
+    const parts = normalizedStr.trim().split(' ');
     const dateParts = parts[0].split('-');
     if (dateParts.length === 3 && dateParts[0].length === 4) {
       const year = parseInt(dateParts[0], 10);
@@ -27,7 +29,7 @@ export function parseSheetDate(dateStr: string | Date | null | undefined): Date 
         if (timeParts.length >= 2) {
           hours = parseInt(timeParts[0], 10);
           mins = parseInt(timeParts[1], 10);
-          if (timeParts[2]) secs = parseInt(timeParts[2], 10);
+          if (timeParts[2]) secs = parseFloat(timeParts[2]);
         }
       }
       
@@ -78,6 +80,24 @@ export function formatDate(date?: Date | string | null): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${dd}/${mm}/${yyyy}`;
+}
+
+/**
+ * Formats a date/timestamp to DD-MM-YYYY HH:mm (24-hour format) for display.
+ */
+export function formatDateTimeDash(date: any): string {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return typeof date === "string" ? date : "-";
+  
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+
+  return `${dd}-${mm}-${yyyy} ${hours}:${minutes}`;
 }
 /**
  * Generates a timestamp compatible with FMS sheets (YYYY-MM-DD HH:mm:ss).

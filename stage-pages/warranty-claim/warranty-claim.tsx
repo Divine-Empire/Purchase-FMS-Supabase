@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Search, ShieldAlert, ClipboardList, History, AlertCircle } from "lucide-react";
-import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon, formatDateTimeDash } from "@/lib/utils";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -35,11 +35,11 @@ const PENDING_COLUMNS = [
     { key: "invoiceDate", label: "Invoice Date" },
     { key: "serialNo", label: "Serial No." },
     { key: "warrantyEnd", label: "Warranty End" },
-    { key: "planned", label: "Planned" },
 ] as const;
 
 const CLOSURE_PENDING_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
+    { key: "planned", label: "Planned" },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "serialNo", label: "Serial No." },
     { key: "invoiceNo", label: "Invoice No." },
@@ -50,14 +50,14 @@ const CLOSURE_PENDING_COLUMNS = [
 
 const HISTORY_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
+    { key: "planned", label: "Planned" },
+    { key: "actual", label: "Actual" },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceDate", label: "Invoice Date" },
     { key: "serialNo", label: "Serial No." },
     { key: "warrantyEnd", label: "Warranty End" },
-    { key: "planned", label: "Planned" },
-    { key: "actual", label: "Actual" },
 ] as const;
 
 export default function WarrantyClaim() {
@@ -282,15 +282,7 @@ export default function WarrantyClaim() {
         }
     }, [selectedRecord, closureFormData, fetchData]);
 
-    const formatDateDash = (dateStr: any) => {
-        if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
-        const d = parseSheetDate(dateStr);
-        if (!d || isNaN(d.getTime())) return dateStr;
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${day}-${month}-${year}`;
-    };
+    const formatDateDash = (dateStr: any) => formatDateTimeDash(dateStr);
 
     const renderCell = useCallback((data: any, key: string) => {
         const val = data?.[key];

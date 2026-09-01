@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, Search, RefreshCw, ClipboardList, History } from "lucide-react";
-import { parseSheetDate, getFmsTimestamp, cn } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,6 +30,7 @@ import TallyEntryHistory from "./tally-entry-history";
 
 const pendingColumns = [
   { key: "indentNumber", label: "Indent No." },
+  { key: "plan8", label: "Planned" },
   { key: "createdBy", label: "Created By" },
   { key: "category", label: "Category" },
   { key: "itemName", label: "Item" },
@@ -47,12 +48,29 @@ const pendingColumns = [
   { key: "qcRequirement", label: "QC Required" },
   { key: "receivedItemImage", label: "Rec. Item Img" },
   { key: "billAttachment", label: "Bill Attach" },
-  { key: "plan8", label: "Planned" },
 ] as const;
 
 const historyColumns = [
-  ...pendingColumns,
+  { key: "indentNumber", label: "Indent No." },
+  { key: "plan8", label: "Planned" },
   { key: "actual8", label: "Actual" },
+  { key: "createdBy", label: "Created By" },
+  { key: "category", label: "Category" },
+  { key: "itemName", label: "Item" },
+  { key: "indentQty", label: "Qty" },
+  { key: "warehouse", label: "Warehouse" },
+  { key: "vendorName", label: "Vendor" },
+  { key: "poNumber", label: "PO Number" },
+  { key: "basicValue", label: "Basic Value" },
+  { key: "totalWithTax", label: "Total w/Tax" },
+  { key: "poCopy", label: "PO Copy" },
+  { key: "receiptLiftNumber", label: "Unit Tracking No." },
+  { key: "receivedQty", label: "Rec. Qty" },
+  { key: "invoiceNumber", label: "Invoice No." },
+  { key: "invoiceDate", label: "Invoice Date" },
+  { key: "qcRequirement", label: "QC Required" },
+  { key: "receivedItemImage", label: "Rec. Item Img" },
+  { key: "billAttachment", label: "Bill Attach" },
   { key: "doneBy", label: "Tally Done By" },
   { key: "doneDate", label: "Tally Date" },
   { key: "tallyStatus", label: "Tally Status" },
@@ -305,15 +323,7 @@ export default function TallyEntry() {
     };
   };
 
-  const formatDateDash = (dateStr: any) => {
-    if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
-    const d = parseSheetDate(dateStr);
-    if (!d || isNaN(d.getTime())) return dateStr;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${day}-${month}-${year}`;
-  };
+  const formatDateDash = (dateStr: any) => formatDateTimeDash(dateStr);
 
   const safeValue = useCallback((record: any, key: string) => {
     try {

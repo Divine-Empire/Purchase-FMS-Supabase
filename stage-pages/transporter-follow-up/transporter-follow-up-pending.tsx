@@ -10,21 +10,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { parseSheetDate, cn } from "@/lib/utils";
+import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
-const formatDateDash = (date: any) => {
-  if (!date || date === "-" || date === "—") return "-";
-  try {
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${dd}-${mm}-${yyyy}`;
-  } catch (e) {
-    return typeof date === 'string' ? date : "-";
-  }
-};
+const formatDateDash = (date: any) => formatDateTimeDash(date);
 
 interface TransporterFollowUpPendingProps {
   pending: any[];

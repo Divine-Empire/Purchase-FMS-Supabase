@@ -18,17 +18,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FileText, Shield, ShieldCheck } from "lucide-react";
-import { parseSheetDate, cn } from "@/lib/utils";
+import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
-const formatDateDash = (date: any) => {
-  if (!date || date === "-" || date === "—") return "-";
-  const d = date instanceof Date ? date : parseSheetDate(date);
-  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${dd}-${mm}-${yyyy}`;
-};
+const formatDateDash = (date: any) => formatDateTimeDash(date);
 
 interface FollowUpVendorPendingProps {
   pending: any[];
@@ -68,7 +60,7 @@ export default function FollowUpVendorPending({
             </TableHead>
             <TableHead className="text-center">Actions</TableHead>
             {baseColumns
-              .filter((c) => selectedColumns.includes(c.key))
+              .filter((c) => selectedColumns.includes(c.key) && c.key !== "actual5")
               .map((col) => (
                 <TableHead key={col.key} className={cn((col.key === "totalLifted" || col.key === "pendingLifted") && "text-center")}>
                   {col.label}
@@ -133,7 +125,7 @@ export default function FollowUpVendorPending({
                   </DropdownMenu>
                 </TableCell>
                 {baseColumns
-                  .filter((c) => selectedColumns.includes(c.key))
+                  .filter((c) => selectedColumns.includes(c.key) && c.key !== "actual5")
                   .map((col) => (
                     <TableCell key={col.key} className={cn((col.key === "totalLifted" || col.key === "pendingLifted") && "text-center")}>
                       {col.key === "planned5" || col.key === "estimatedDate"

@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, formatDateTimeDash } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -33,6 +33,7 @@ import SubmitInvoiceHistory from "./submit-invoice-history";
 
 const pendingColumns = [
   { key: "indentNumber", label: "Indent No." },
+  { key: "plan9", label: "Planned" },
   { key: "liftNo", label: "Unit Tracking No." },
   { key: "category", label: "Category" },
   { key: "itemName", label: "Item" },
@@ -47,12 +48,26 @@ const pendingColumns = [
   { key: "billAttachment", label: "Bill Attach" },
   { key: "tallyDate", label: "Tally Date" },
   { key: "tallyRemarks", label: "Tally Remarks" },
-  { key: "plan9", label: "Planned" },
 ] as const;
 
 const historyColumns = [
-  ...pendingColumns,
+  { key: "indentNumber", label: "Indent No." },
+  { key: "plan9", label: "Planned" },
   { key: "actual9", label: "Actual" },
+  { key: "liftNo", label: "Unit Tracking No." },
+  { key: "category", label: "Category" },
+  { key: "itemName", label: "Item" },
+  { key: "quantity", label: "Qty" },
+  { key: "warehouse", label: "Warehouse" },
+  { key: "vendorName", label: "Vendor" },
+  { key: "poNumber", label: "PO No." },
+  { key: "invoiceNumber", label: "Invoice No." },
+  { key: "invoiceDate", label: "Invoice Date" },
+  { key: "basicValue", label: "Basic Value" },
+  { key: "totalWithTax", label: "Total Value" },
+  { key: "billAttachment", label: "Bill Attach" },
+  { key: "tallyDate", label: "Tally Date" },
+  { key: "tallyRemarks", label: "Tally Remarks" },
   { key: "handoverBy", label: "Hardcopy Submitted" },
   { key: "invoiceSubmissionDate", label: "Submission Date" },
 ] as const;
@@ -261,15 +276,7 @@ export default function SubmitInvoice() {
     }
   };
 
-  const formatDateDash = (dateStr: any) => {
-    if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
-    const d = parseSheetDate(dateStr);
-    if (!d || isNaN(d.getTime())) return dateStr;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${day}-${month}-${year}`;
-  };
+  const formatDateDash = (dateStr: any) => formatDateTimeDash(dateStr);
 
   const safeValue = useCallback((record: any, key: string) => {
     try {

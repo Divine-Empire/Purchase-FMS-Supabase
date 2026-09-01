@@ -10,21 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CheckCircle2 } from "lucide-react";
-import { parseSheetDate, cn } from "@/lib/utils";
+import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
-const formatDateDash = (dateStr: string) => {
-  if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
-  try {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    const d = date.getDate().toString().padStart(2, '0');
-    const m = (date.getMonth() + 1).toString().padStart(2, '0');
-    const y = date.getFullYear();
-    return `${d}-${m}-${y}`;
-  } catch {
-    return dateStr;
-  }
-};
+const formatDateDash = (dateStr: string) => formatDateTimeDash(dateStr);
 
 interface NegotiationHistoryProps {
   completed: any[];

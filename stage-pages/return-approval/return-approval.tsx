@@ -23,19 +23,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, RefreshCw, Upload, FileText, X, Search, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getFmsTimestamp } from "@/lib/utils";
+import { getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
 import ReturnApprovalPending from "./return-approval-pending";
 import ReturnApprovalHistory from "./return-approval-history";
 
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString();
-};
+const formatDate = (dateStr: string) => formatDateTimeDash(dateStr);
 
 const safeValue = (val: any) => {
   return val && String(val).trim() !== "" ? val : "-";

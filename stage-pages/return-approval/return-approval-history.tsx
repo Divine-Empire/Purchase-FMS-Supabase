@@ -39,6 +39,12 @@ export default function ReturnApprovalHistory({
               Indent
             </th>
             <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
+              Planned
+            </th>
+            <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
+              Actual
+            </th>
+            <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
               Unit Tracking No.
             </th>
             <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
@@ -52,12 +58,6 @@ export default function ReturnApprovalHistory({
             </th>
             <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
               Status
-            </th>
-            <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
-              Planned
-            </th>
-            <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
-              Actual
             </th>
             <th className="bg-slate-900 px-4 py-3 font-bold text-white border-b border-slate-800 text-[11px] uppercase tracking-wider whitespace-nowrap text-center">
               Delay
@@ -83,6 +83,12 @@ export default function ReturnApprovalHistory({
                 {rec.data.indentNumber}
               </td>
               <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap border-b border-slate-100">
+                {formatDate(rec.data.plannedDate)}
+              </td>
+              <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap font-medium text-blue-600 border-b border-slate-100">
+                {formatDate(rec.data.actualDate)}
+              </td>
+              <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap border-b border-slate-100">
                 {rec.data.liftNumber}
               </td>
               <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap border-b border-slate-100">
@@ -98,12 +104,6 @@ export default function ReturnApprovalHistory({
                 <span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold uppercase tracking-wider">
                   {safeValue(rec.data.returnStatus)}
                 </span>
-              </td>
-              <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap border-b border-slate-100">
-                {formatDate(rec.data.plannedDate)}
-              </td>
-              <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap font-medium text-blue-600 border-b border-slate-100">
-                {formatDate(rec.data.actualDate)}
               </td>
               <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap border-b border-slate-100">
                 {rec.data.delay}

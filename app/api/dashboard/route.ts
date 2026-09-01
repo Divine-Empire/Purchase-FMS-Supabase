@@ -110,11 +110,14 @@ export async function GET(request: NextRequest) {
       const lifts = row.lifts || [];
 
       // Determine Overview Status
+      const isApproved = approval && approval.status?.toLowerCase() === "approved";
       let computedStatus = "Pending";
       if (isCancelled) {
         computedStatus = "Cancelled";
       } else if (!approval) {
         computedStatus = "Pending Indent";
+      } else if (approval.status?.toLowerCase() === "rejected") {
+        computedStatus = "Rejected Indent";
       } else {
         computedStatus = "Approved Indent";
       }
@@ -140,7 +143,7 @@ export async function GET(request: NextRequest) {
       }
 
       // STAGE 3: Update 3 Vendors
-      if (approval && !update3Vendors) {
+      if (isApproved && !update3Vendors) {
         stageCounts["Update 3 Vendors"]++;
         if (isPast(approval.plannedUpdateVendors)) stageOverdueCounts["Update 3 Vendors"]++;
       }

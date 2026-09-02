@@ -944,7 +944,12 @@ export default function SerialGeneration() {
 
             newEntriesMap[rec.id] = Array.from({ length }, (_, idx) => {
                 if (!isSerialEnabled) {
-                    return { serialNo: prefix };
+                    if (isCheckingSequence) {
+                        return { serialNo: `${prefix}Loading...` };
+                    } else {
+                        const seqStr = String(currentSeq + idx).padStart(3, "0");
+                        return { serialNo: `${prefix}${seqStr}` };
+                    }
                 } else if (isAutoMode) {
                     if (isCheckingSequence) {
                         return { serialNo: `${prefix}Loading...` };
@@ -957,8 +962,8 @@ export default function SerialGeneration() {
                 }
             });
 
-            if (isSerialEnabled && isAutoMode && !isCheckingSequence) {
-                currentSeq += qty;
+            if (!isCheckingSequence && (!isSerialEnabled || isAutoMode)) {
+                currentSeq += length;
             }
         });
 
@@ -1035,12 +1040,11 @@ export default function SerialGeneration() {
                 let serialsForRecord = [];
 
                 if (!isSerialEnabled) {
-                    const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
-                    const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
-                    const prefix = `SN-${vendorCode}/${encodedDate}/`;
+                    const entry = recEntries[0];
+                    const serialNo = entry?.serialNo?.trim() || "";
 
                     serialsForRecord.push({
-                        serialNo: prefix,
+                        serialNo: serialNo,
                         qrLink: null,
                         warrantyExpiry: rec.data.warrantyExpiry || null,
                         productExpiry: rec.data.productExpiry || null
@@ -1242,9 +1246,9 @@ export default function SerialGeneration() {
         if (selectedRecords.length === 0) return false;
         return selectedRecords.every(rec => {
             const recEntries = entriesMap[rec.id] || [];
-            return recEntries.length > 0 && recEntries.every(e => !isSerialEnabled || (e.serialNo.trim() !== "" && !e.serialNo.includes("Loading...")));
+            return recEntries.length > 0 && recEntries.every(e => e.serialNo.trim() !== "" && !e.serialNo.includes("Loading..."));
         });
-    }, [selectedRecords, entriesMap, isSerialEnabled]);
+    }, [selectedRecords, entriesMap]);
 
     const renderCell = useCallback((data: any, key: string) => {
         const val = data?.[key];

@@ -20,88 +20,19 @@ export async function GET(request: NextRequest) {
         // Retrieve Apps Script URL from environment for PDF upload (optional)
         const API_URI = process.env.NEXT_PUBLIC_IMS_API_URI;
 
-        // 2. Fetch all required tables from Supabase in parallel
-        const [
-            indentRes,
-            approvalRes,
-            negoRes,
-            poRes,
-            liftRes,
-            transporterRes,
-            cancelRes,
-            respRes
-        ] = await Promise.all([
-            supabase.from("pfms_indent-generation").select("*"),
-            supabase.from("pfms_indent-approval").select("*"),
-            supabase.from("pfms_negotiation").select("*"),
-            supabase.from("pfms_po-entry").select("*"),
-            supabase.from("pfms_lift").select("*"),
-            supabase.from("pfms_transporter-follow-up").select(`
-                id,
-                liftNo,
-                status,
-                expectedDeliveryDate,
-                nextFollowUpDate,
-                remarks,
-                lastFollowUpDate,
-                totalFollowUps,
-                lift:pfms_lift!inner (
-                  plannedTransporterFlwUp,
-                  liftingQty,
-                  transporterName,
-                  vehicleNo,
-                  contactNo,
-                  lrNo,
-                  biltyCopy,
-                  freightAmount,
-                  indent:pfms_indent-generation!inner (
-                    indentNo,
-                    itemName,
-                    negotiation:pfms_negotiation (
-                      selectedVendorName
-                    ),
-                    poEntry:pfms_po-entry (
-                      poNumber
-                    )
-                  )
-                )
-            `),
+        // 2. Fetch cancellation list and TAT responsible persons in parallel
+        const [cancelRes, respRes] = await Promise.all([
             supabase.from("pfms_order-cancellation").select("indentNo"),
             supabase.from("pfms_tat").select("stageName, responsibleNames")
         ]);
 
-        // Error validation
-        if (indentRes.error) throw indentRes.error;
-        if (approvalRes.error) throw approvalRes.error;
-        if (negoRes.error) throw negoRes.error;
-        if (poRes.error) throw poRes.error;
-        if (liftRes.error) throw liftRes.error;
-        if (transporterRes.error) throw transporterRes.error;
         if (cancelRes.error) throw cancelRes.error;
         if (respRes.error) throw respRes.error;
 
-        const indents = indentRes.data || [];
-        const approvals = approvalRes.data || [];
-        const negotiations = negoRes.data || [];
-        const poEntries = poRes.data || [];
-        const lifts = liftRes.data || [];
-        const transporterFollowups = transporterRes.data || [];
-        const cancellations = cancelRes.data || [];
+        const cancelledList = cancelRes.data || [];
         const responsibles = respRes.data || [];
 
-        // 3. Prepare lookups
-        const cancelledNos = new Set(cancellations.map((c: any) => c.indentNo));
-        const approvalMap = new Map(approvals.map((a: any) => [a.indentNo, a]));
-        const negoMap = new Map(negotiations.map((n: any) => [n.indentNo, n]));
-        const poMap = new Map(poEntries.map((p: any) => [p.indentNo, p]));
-        
-        // Group lifts by indentNo
-        const liftsByIndent = new Map<string, any[]>();
-        lifts.forEach((l: any) => {
-            const list = liftsByIndent.get(l.indentNo) || [];
-            list.push(l);
-            liftsByIndent.set(l.indentNo, list);
-        });
+        const cancelledNos = new Set(cancelledList.map((c: any) => c.indentNo));
 
         // Map responsible persons by stageName (lowercased for case-insensitive lookup)
         const respMap: Record<string, string> = {};
@@ -110,6 +41,43 @@ export async function GET(request: NextRequest) {
                 respMap[r.stageName.trim().toLowerCase()] = r.responsibleNames.trim();
             }
         });
+
+        // 3. Fetch indents and their stage relations using pagination to avoid 1,000-row truncation
+        const indents: any[] = [];
+        let page = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data: pageIndents, error: indentError } = await supabase
+                .from("pfms_indent-generation")
+                .select(`
+                    *,
+                    approval:"pfms_indent-approval"(*),
+                    update3Vendors:"pfms_update-3-vendors"(*),
+                    negotiation:pfms_negotiation(*),
+                    poEntry:"pfms_po-entry"(*),
+                    lifts:pfms_lift(
+                        *,
+                        transporterFollowUp:"pfms_transporter-follow-up"(*)
+                    )
+                `)
+                .order("timestamp", { ascending: false })
+                .range(page * pageSize, (page + 1) * pageSize - 1) as any;
+
+            if (indentError) throw indentError;
+
+            if (!pageIndents || pageIndents.length === 0) {
+                hasMore = false;
+            } else {
+                indents.push(...pageIndents);
+                if (pageIndents.length < pageSize) {
+                    hasMore = false;
+                } else {
+                    page++;
+                }
+            }
+        }
 
         // 4. Overdue Evaluation Setup
         const allowedStages = ["Indent Approval", "PO Entry", "Follow-Up Vendor", "Transporter Follow-Up"];
@@ -123,6 +91,7 @@ export async function GET(request: NextRequest) {
         const detailed: any[] = [];
         const now = new Date();
 
+<<<<<<< HEAD
         // Delay must be reported in HOURS (formatDelay() in report-pdf.tsx treats a
         // plain numeric delay value as hours), so compute it that way everywhere below.
         const getDelayHours = (plannedDateStr: string) => {
@@ -135,11 +104,19 @@ export async function GET(request: NextRequest) {
         // 5. Evaluate Indent Approval, PO Entry, and Follow-Up Vendor stages
         indents.forEach((row: any) => {
             if (cancelledNos.has(row.indentNo)) return;
+=======
+        const followUpVendorPOs = new Set<string>();
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
 
-            const approval = approvalMap.get(row.indentNo);
-            const poEntry = poMap.get(row.indentNo);
-            const nego = negoMap.get(row.indentNo);
-            const indentLifts = liftsByIndent.get(row.indentNo) || [];
+        // 5. Evaluate all stages per indent
+        indents.forEach((row: any) => {
+            const indentNo = row.indentNo;
+            if (cancelledNos.has(indentNo)) return;
+
+            const approval = Array.isArray(row.approval) ? row.approval[0] : row.approval;
+            const nego = Array.isArray(row.negotiation) ? row.negotiation[0] : row.negotiation;
+            const poEntry = Array.isArray(row.poEntry) ? row.poEntry[0] : row.poEntry;
+            const lifts = row.lifts || [];
 
             // A. Indent Approval Stage (Stage 2)
             if (!approval) {
@@ -148,13 +125,21 @@ export async function GET(request: NextRequest) {
                     const planned = new Date(row.plannedIndentApproval);
                     if (now > planned) {
                         overdueCounts["Indent Approval"]++;
+<<<<<<< HEAD
+=======
+                        const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
                         detailed.push({
-                            indent: row.indentNo,
+                            indent: indentNo,
                             party: row.createdBy || "-",
                             item: row.itemName || "-",
                             qty: row.quantity || 0,
                             stage: "Indent Approval",
+<<<<<<< HEAD
                             delay: getDelayHours(row.plannedIndentApproval),
+=======
+                            delay: Math.max(0, delayHours).toFixed(2),
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
                             poNumber: "-"
                         });
                     }
@@ -168,19 +153,28 @@ export async function GET(request: NextRequest) {
                     const planned = new Date(nego.plannedPOEntry);
                     if (now > planned) {
                         overdueCounts["PO Entry"]++;
+<<<<<<< HEAD
 
+=======
+                        const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
+                        
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
                         let party = row.createdBy || "-";
                         if (nego.selectedVendorName) {
                             party = nego.selectedVendorName;
                         }
 
                         detailed.push({
-                            indent: row.indentNo,
+                            indent: indentNo,
                             party: party,
                             item: row.itemName || "-",
                             qty: approval ? (approval.approvedQty || row.quantity) : row.quantity,
                             stage: "PO Entry",
+<<<<<<< HEAD
                             delay: getDelayHours(nego.plannedPOEntry),
+=======
+                            delay: Math.max(0, delayHours).toFixed(2),
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
                             poNumber: "-"
                         });
                     }
@@ -188,6 +182,7 @@ export async function GET(request: NextRequest) {
             }
 
             // C. Follow-Up Vendor Stage (Stage 6)
+<<<<<<< HEAD
             if (poEntry && indentLifts.length === 0) {
                 totalCounts["Follow-Up Vendor"]++;
                 if (poEntry.plannedFollowUpVendor) {
@@ -207,17 +202,48 @@ export async function GET(request: NextRequest) {
                             poNumber: poEntry.poNumber || "-",
                             plannedDate: poEntry.plannedFollowUpVendor ? new Date(poEntry.plannedFollowUpVendor).toISOString().split('T')[0] : "-"
                         });
+=======
+            if (poEntry) {
+                const approvedQty = approval?.approvedQty !== null && approval?.approvedQty !== undefined ? approval.approvedQty : row.quantity;
+                const totalLifted = lifts.reduce((sum: number, l: any) => sum + (parseFloat(l.liftingQty) || 0), 0);
+
+                if (totalLifted < approvedQty) {
+                    totalCounts["Follow-Up Vendor"]++;
+                    if (poEntry.plannedFollowUpVendor) {
+                        const planned = new Date(poEntry.plannedFollowUpVendor);
+                        if (now > planned) {
+                            overdueCounts["Follow-Up Vendor"]++;
+                            const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
+                            
+                            let party = nego ? (nego.selectedVendorName || row.createdBy) : (row.createdBy || "-");
+
+                            const poNumKey = (poEntry.poNumber || "").toUpperCase().replace(/\s+/g, '');
+                            if (poNumKey) {
+                                followUpVendorPOs.add(poNumKey);
+                            }
+
+                            detailed.push({
+                                indent: indentNo,
+                                party: party,
+                                item: row.itemName || "-",
+                                qty: approvedQty - totalLifted,
+                                stage: "Follow-Up Vendor",
+                                delay: Math.max(0, delayHours).toFixed(2),
+                                poNumber: poEntry.poNumber || "-",
+                                plannedDate: poEntry.plannedFollowUpVendor ? new Date(poEntry.plannedFollowUpVendor).toISOString().split('T')[0] : "-"
+                            });
+                        }
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
                     }
                 }
             }
-        });
 
-        // 6. Evaluate Transporter Follow-Up stage (Stage 7)
-        transporterFollowups.forEach((row: any) => {
-            const lift = row.lift || {};
-            const indent = lift.indent || {};
-            if (!indent.indentNo || cancelledNos.has(indent.indentNo)) return;
+            // D. Transporter Follow-Up Stage (Stage 6.1)
+            for (const lift of lifts) {
+                const tfuArray = lift.transporterFollowUp;
+                const tfu = Array.isArray(tfuArray) ? tfuArray[0] : tfuArray;
 
+<<<<<<< HEAD
             if (row.status !== "received") {
                 totalCounts["Transporter Follow-Up"]++;
                 if (lift.plannedTransporterFlwUp) {
@@ -243,14 +269,40 @@ export async function GET(request: NextRequest) {
                             transporterName: lift.transporterName || "-",
                             poNumber: poNumber
                         });
+=======
+                if (tfu && tfu.status === "intransit") {
+                    totalCounts["Transporter Follow-Up"]++;
+                    if (lift.plannedTransporterFlwUp) {
+                        const planned = new Date(lift.plannedTransporterFlwUp);
+                        if (now > planned) {
+                            overdueCounts["Transporter Follow-Up"]++;
+                            const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
+                            
+                            let expectedDate = tfu.nextFollowUpDate || tfu.expectedDeliveryDate || lift.plannedTransporterFlwUp || "-";
+                            if (expectedDate && expectedDate !== "-") {
+                                expectedDate = new Date(expectedDate).toISOString().split('T')[0];
+                            }
+
+                            detailed.push({
+                                indent: indentNo,
+                                liftNo: lift.liftNo || "-",
+                                party: lift.transporterName || nego?.selectedVendorName || "-",
+                                item: row.itemName || "-",
+                                qty: lift.liftingQty || 0,
+                                stage: "Transporter Follow-Up",
+                                delay: Math.max(0, delayHours).toFixed(2),
+                                expectedDate: expectedDate,
+                                transporterName: lift.transporterName || "-",
+                                poNumber: poEntry?.poNumber || "-"
+                            });
+                        }
+>>>>>>> 96e5b3b (daily pdf generation logic fixed)
                     }
                 }
             }
         });
 
         // 7. Format summary stats for the PDF generator
-        // Calculate follow-up vendor unique PO counts if relevant
-        const followUpVendorPOs = new Set<string>();
         detailed.forEach(d => {
             if (d.stage === "Follow-Up Vendor" && d.poNumber && d.poNumber !== "-") {
                 followUpVendorPOs.add(d.poNumber.toUpperCase().replace(/\s+/g, ''));
@@ -309,17 +361,23 @@ export async function GET(request: NextRequest) {
                 folderId: folderId
             };
 
-            const uploadRes = await fetch(API_URI, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-            const uploadResult = await uploadRes.json();
+            try {
+                const uploadRes = await fetch(API_URI, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const uploadResult = await uploadRes.json();
 
-            if (!uploadResult.success) {
-                throw new Error(`Google Apps Script Upload failed: ${uploadResult.error}`);
+                if (!uploadResult.success) {
+                    fileUrl = `Upload failed: ${uploadResult.error}`;
+                } else {
+                    fileUrl = uploadResult.fileUrl;
+                }
+            } catch (uploadErr: any) {
+                console.error("Google Apps Script upload error:", uploadErr);
+                fileUrl = `Upload failed: ${uploadErr.message}`;
             }
-            fileUrl = uploadResult.fileUrl;
         }
 
         return NextResponse.json({

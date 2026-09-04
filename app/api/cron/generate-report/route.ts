@@ -91,7 +91,6 @@ export async function GET(request: NextRequest) {
         const detailed: any[] = [];
         const now = new Date();
 
-<<<<<<< HEAD
         // Delay must be reported in HOURS (formatDelay() in report-pdf.tsx treats a
         // plain numeric delay value as hours), so compute it that way everywhere below.
         const getDelayHours = (plannedDateStr: string) => {
@@ -101,12 +100,7 @@ export async function GET(request: NextRequest) {
             return Math.max(0, diffMs / (1000 * 60 * 60));
         };
 
-        // 5. Evaluate Indent Approval, PO Entry, and Follow-Up Vendor stages
-        indents.forEach((row: any) => {
-            if (cancelledNos.has(row.indentNo)) return;
-=======
         const followUpVendorPOs = new Set<string>();
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
 
         // 5. Evaluate all stages per indent
         indents.forEach((row: any) => {
@@ -125,21 +119,13 @@ export async function GET(request: NextRequest) {
                     const planned = new Date(row.plannedIndentApproval);
                     if (now > planned) {
                         overdueCounts["Indent Approval"]++;
-<<<<<<< HEAD
-=======
-                        const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
                         detailed.push({
                             indent: indentNo,
                             party: row.createdBy || "-",
                             item: row.itemName || "-",
                             qty: row.quantity || 0,
                             stage: "Indent Approval",
-<<<<<<< HEAD
-                            delay: getDelayHours(row.plannedIndentApproval),
-=======
-                            delay: Math.max(0, delayHours).toFixed(2),
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
+                            delay: getDelayHours(row.plannedIndentApproval).toFixed(2),
                             poNumber: "-"
                         });
                     }
@@ -153,12 +139,6 @@ export async function GET(request: NextRequest) {
                     const planned = new Date(nego.plannedPOEntry);
                     if (now > planned) {
                         overdueCounts["PO Entry"]++;
-<<<<<<< HEAD
-
-=======
-                        const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
-                        
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
                         let party = row.createdBy || "-";
                         if (nego.selectedVendorName) {
                             party = nego.selectedVendorName;
@@ -170,11 +150,7 @@ export async function GET(request: NextRequest) {
                             item: row.itemName || "-",
                             qty: approval ? (approval.approvedQty || row.quantity) : row.quantity,
                             stage: "PO Entry",
-<<<<<<< HEAD
-                            delay: getDelayHours(nego.plannedPOEntry),
-=======
-                            delay: Math.max(0, delayHours).toFixed(2),
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
+                            delay: getDelayHours(nego.plannedPOEntry).toFixed(2),
                             poNumber: "-"
                         });
                     }
@@ -182,27 +158,6 @@ export async function GET(request: NextRequest) {
             }
 
             // C. Follow-Up Vendor Stage (Stage 6)
-<<<<<<< HEAD
-            if (poEntry && indentLifts.length === 0) {
-                totalCounts["Follow-Up Vendor"]++;
-                if (poEntry.plannedFollowUpVendor) {
-                    const planned = new Date(poEntry.plannedFollowUpVendor);
-                    if (now > planned) {
-                        overdueCounts["Follow-Up Vendor"]++;
-
-                        let party = nego ? (nego.selectedVendorName || row.createdBy) : (row.createdBy || "-");
-
-                        detailed.push({
-                            indent: row.indentNo,
-                            party: party,
-                            item: row.itemName || "-",
-                            qty: approval ? (approval.approvedQty || row.quantity) : row.quantity,
-                            stage: "Follow-Up Vendor",
-                            delay: getDelayHours(poEntry.plannedFollowUpVendor),
-                            poNumber: poEntry.poNumber || "-",
-                            plannedDate: poEntry.plannedFollowUpVendor ? new Date(poEntry.plannedFollowUpVendor).toISOString().split('T')[0] : "-"
-                        });
-=======
             if (poEntry) {
                 const approvedQty = approval?.approvedQty !== null && approval?.approvedQty !== undefined ? approval.approvedQty : row.quantity;
                 const totalLifted = lifts.reduce((sum: number, l: any) => sum + (parseFloat(l.liftingQty) || 0), 0);
@@ -213,8 +168,6 @@ export async function GET(request: NextRequest) {
                         const planned = new Date(poEntry.plannedFollowUpVendor);
                         if (now > planned) {
                             overdueCounts["Follow-Up Vendor"]++;
-                            const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
-                            
                             let party = nego ? (nego.selectedVendorName || row.createdBy) : (row.createdBy || "-");
 
                             const poNumKey = (poEntry.poNumber || "").toUpperCase().replace(/\s+/g, '');
@@ -228,12 +181,11 @@ export async function GET(request: NextRequest) {
                                 item: row.itemName || "-",
                                 qty: approvedQty - totalLifted,
                                 stage: "Follow-Up Vendor",
-                                delay: Math.max(0, delayHours).toFixed(2),
+                                delay: getDelayHours(poEntry.plannedFollowUpVendor).toFixed(2),
                                 poNumber: poEntry.poNumber || "-",
                                 plannedDate: poEntry.plannedFollowUpVendor ? new Date(poEntry.plannedFollowUpVendor).toISOString().split('T')[0] : "-"
                             });
                         }
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
                     }
                 }
             }
@@ -243,41 +195,12 @@ export async function GET(request: NextRequest) {
                 const tfuArray = lift.transporterFollowUp;
                 const tfu = Array.isArray(tfuArray) ? tfuArray[0] : tfuArray;
 
-<<<<<<< HEAD
-            if (row.status !== "received") {
-                totalCounts["Transporter Follow-Up"]++;
-                if (lift.plannedTransporterFlwUp) {
-                    const planned = new Date(lift.plannedTransporterFlwUp);
-                    if (now > planned) {
-                        overdueCounts["Transporter Follow-Up"]++;
-
-                        let expectedDate = row.nextFollowUpDate || row.expectedDeliveryDate || lift.plannedTransporterFlwUp || "-";
-                        if (expectedDate && expectedDate !== "-") {
-                            expectedDate = new Date(expectedDate).toISOString().split('T')[0];
-                        }
-
-                        const poNumber = (indent.poEntry && indent.poEntry.length > 0) ? (indent.poEntry[0].poNumber || "-") : "-";
-
-                        detailed.push({
-                            indent: indent.indentNo,
-                            party: lift.transporterName || "-",
-                            item: indent.itemName || "-",
-                            qty: lift.liftingQty || 0,
-                            stage: "Transporter Follow-Up",
-                            delay: getDelayHours(lift.plannedTransporterFlwUp),
-                            expectedDate: expectedDate,
-                            transporterName: lift.transporterName || "-",
-                            poNumber: poNumber
-                        });
-=======
                 if (tfu && tfu.status === "intransit") {
                     totalCounts["Transporter Follow-Up"]++;
                     if (lift.plannedTransporterFlwUp) {
                         const planned = new Date(lift.plannedTransporterFlwUp);
                         if (now > planned) {
                             overdueCounts["Transporter Follow-Up"]++;
-                            const delayHours = (now.getTime() - planned.getTime()) / (1000 * 60 * 60);
-                            
                             let expectedDate = tfu.nextFollowUpDate || tfu.expectedDeliveryDate || lift.plannedTransporterFlwUp || "-";
                             if (expectedDate && expectedDate !== "-") {
                                 expectedDate = new Date(expectedDate).toISOString().split('T')[0];
@@ -290,13 +213,12 @@ export async function GET(request: NextRequest) {
                                 item: row.itemName || "-",
                                 qty: lift.liftingQty || 0,
                                 stage: "Transporter Follow-Up",
-                                delay: Math.max(0, delayHours).toFixed(2),
+                                delay: getDelayHours(lift.plannedTransporterFlwUp).toFixed(2),
                                 expectedDate: expectedDate,
                                 transporterName: lift.transporterName || "-",
                                 poNumber: poEntry?.poNumber || "-"
                             });
                         }
->>>>>>> 96e5b3b (daily pdf generation logic fixed)
                     }
                 }
             }

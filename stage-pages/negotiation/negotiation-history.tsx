@@ -14,6 +14,29 @@ import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (dateStr: string) => formatDateTimeDash(dateStr);
 
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
+
 interface NegotiationHistoryProps {
   completed: any[];
   selectedColumns: string[];
@@ -67,17 +90,25 @@ export default function NegotiationHistory({
               <TableRow key={record.id} className="odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/30 transition-colors border-b border-indigo-50/80 last:border-0">
                 {baseColumns
                   .filter((c) => selectedColumns.includes(c.key))
-                  .map((col) => (
-                    <TableCell key={col.key} className={cn(
-                      "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
-                      col.key === "indentNumber" && "font-bold text-indigo-950",
-                      col.key !== "indentNumber" && "text-slate-600"
-                    )}>
-                      {col.key === "planned3" || col.key === "actual3"
-                        ? formatDateDash(record.data[col.key])
-                        : String(record.data[col.key] ?? "-")}
-                    </TableCell>
-                  ))}
+                  .map((col) => {
+                    const isDelay = col.key === "delay3" || col.key === "delay";
+                    const delayVal = isDelay ? calculateDelay(record.data.planned3 || record.data.plannedDate, record.data.actual3 || record.data.actualDate) : null;
+                    return (
+                      <TableCell key={col.key} className={cn(
+                        "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
+                        col.key === "indentNumber" && "font-bold text-indigo-950",
+                        isDelay && delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                        isDelay && delayVal === "0" && "text-emerald-700 font-semibold",
+                        col.key !== "indentNumber" && !isDelay && "text-slate-600"
+                      )}>
+                        {isDelay
+                          ? delayVal
+                          : (col.key === "planned3" || col.key === "actual3" || col.key === "plannedDate" || col.key === "actualDate")
+                            ? formatDateDash(record.data[col.key])
+                            : String(record.data[col.key] ?? "-")}
+                      </TableCell>
+                    );
+                  })}
                 <TableCell className="px-4 py-3 border-b border-indigo-50/80">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">

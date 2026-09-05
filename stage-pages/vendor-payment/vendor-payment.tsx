@@ -52,6 +52,7 @@ const HISTORY_COLUMNS = [
   { key: "vendor", label: "Vendor" },
   { key: "planned", label: "Planned" },
   { key: "actual", label: "Actual" },
+  { key: "delay", label: "Delay" },
   { key: "amountPaid", label: "Amount Paid" },
   { key: "mode", label: "Payment Mode" },
   { key: "status", label: "Status" },

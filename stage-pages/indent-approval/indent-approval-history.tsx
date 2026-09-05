@@ -19,6 +19,29 @@ import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
 
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
+
 interface IndentApprovalHistoryProps {
   history: any[];
   selectedColumns: string[];
@@ -74,7 +97,7 @@ export default function IndentApprovalHistory({
               <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
                 <TableHead className="w-12 text-center text-sm font-bold text-white sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 whitespace-nowrap">#</TableHead>
                 {columns
-                  .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
+                  .filter((c) => selectedColumns.includes(c.key))
                   .map((col) => (
                     <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-white font-bold whitespace-nowrap text-sm">
                       <div className="flex items-center gap-2 text-white">
@@ -92,22 +115,30 @@ export default function IndentApprovalHistory({
                     {index + 1}
                   </TableCell>
                   {columns
-                    .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
-                    .map((col) => (
-                      <TableCell key={col.key} className={cn(
-                        "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
-                        col.key === "indentNumber" && "font-bold text-indigo-950",
-                        col.key === "status" && record.data[col.key]?.toLowerCase() === "approved" && "text-emerald-700 font-extrabold uppercase text-xs tracking-wider",
-                        col.key === "status" && record.data[col.key]?.toLowerCase() === "rejected" && "text-rose-700 font-extrabold uppercase text-xs tracking-wider",
-                        col.key !== "status" && col.key !== "indentNumber" && "text-slate-600"
-                      )}>
-                        {col.key === "leadTime"
-                          ? `${record.data[col.key] || 0} days`
-                          : (col.key === "plannedDate" || col.key === "actualDate")
-                            ? formatDateDash(record.data[col.key])
-                            : record.data[col.key] || "-"}
-                      </TableCell>
-                    ))}
+                    .filter((c) => selectedColumns.includes(c.key))
+                    .map((col) => {
+                      const isDelay = col.key === "delay";
+                      const delayVal = isDelay ? calculateDelay(record.data.plannedDate, record.data.actualDate) : null;
+                      return (
+                        <TableCell key={col.key} className={cn(
+                          "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
+                          col.key === "indentNumber" && "font-bold text-indigo-950",
+                          col.key === "status" && record.data[col.key]?.toLowerCase() === "approved" && "text-emerald-700 font-extrabold uppercase text-xs tracking-wider",
+                          col.key === "status" && record.data[col.key]?.toLowerCase() === "rejected" && "text-rose-700 font-extrabold uppercase text-xs tracking-wider",
+                          col.key === "delay" && delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                          col.key === "delay" && delayVal === "0" && "text-emerald-700 font-semibold",
+                          col.key !== "status" && col.key !== "indentNumber" && col.key !== "delay" && "text-slate-600"
+                        )}>
+                          {col.key === "leadTime"
+                            ? `${record.data[col.key] || 0} days`
+                            : col.key === "delay"
+                              ? delayVal
+                              : (col.key === "plannedDate" || col.key === "actualDate")
+                                ? formatDateDash(record.data[col.key])
+                                : record.data[col.key] || "-"}
+                        </TableCell>
+                      );
+                    })}
                 </TableRow>
               ))}
             </TableBody>

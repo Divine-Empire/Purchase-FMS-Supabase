@@ -64,6 +64,7 @@ const columns = [
   { key: "indentNumber", label: "Indent", icon: Hash },
   { key: "plannedDate", label: "Planned", icon: Calendar },
   { key: "actualDate", label: "Actual", icon: Calendar },
+  { key: "delay", label: "Delay", icon: Clock },
   { key: "createdBy", label: "Created By", icon: User },
   { key: "category", label: "Category", icon: FileText },
   { key: "itemName", label: "Item", icon: Package },
@@ -72,7 +73,6 @@ const columns = [
   { key: "warehouseLocation", label: "Warehouse", icon: Warehouse },
   { key: "itemCode", label: "Item Code", icon: Hash },
   { key: "leadTime", label: "Lead Time", icon: Clock },
-  { key: "delay", label: "Delay", icon: Clock },
   { key: "status", label: "Status", icon: Tag },
   { key: "remarks", label: "Remarks", icon: FileText },
 ] as const;

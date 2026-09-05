@@ -158,6 +158,7 @@ export default function Stage4() {
     { key: "indentNumber", label: "Indent" },
     { key: "planned3", label: "Planned" },
     { key: "actual3", label: "Actual" },
+    { key: "delay3", label: "Delay" },
     { key: "itemName", label: "Item" },
     { key: "quantity", label: "Qty" },
   ];

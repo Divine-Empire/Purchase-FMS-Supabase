@@ -45,6 +45,7 @@ const COLUMNS = [
   { key: "actual1", label: "Actual" },
   { key: "planned", label: "Planned" },
   { key: "actual", label: "Actual" },
+  { key: "delay", label: "Delay" },
   { key: "amountPaid", label: "Amount Paid" },
   { key: "date", label: "Payment Date" },
   { key: "mode", label: "Mode" },
@@ -264,7 +265,7 @@ export default function FreightPayments() {
     [records, selectedRecordId]);
 
   const visibleHistoryColumns = useMemo(() => {
-    const historyKeys = ["lrNo", "transporter", "amountPaid", "date", "planned", "actual", "mode", "status", "proof"];
+    const historyKeys = ["lrNo", "transporter", "planned", "actual", "delay", "amountPaid", "date", "mode", "status", "proof"];
     return COLUMNS.filter(c => historyKeys.includes(c.key as string));
   }, []);
 

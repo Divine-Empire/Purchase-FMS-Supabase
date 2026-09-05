@@ -107,6 +107,7 @@ const HISTORY_COLUMNS = [
     { key: "indentNumber", label: "Indent No." },
     { key: "planned6", label: "Planned" },
     { key: "actual6", label: "Actual" },
+    { key: "delay6", label: "Delay" },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor Name" },

@@ -212,6 +212,7 @@ export default function TransporterFollowUp() {
         { key: "indentNumber", label: "Indent No" },
         { key: "plannedDate", label: "Planned" },
         { key: "actualDate", label: "Actual" },
+        { key: "delay", label: "Delay" },
         { key: "itemName", label: "Item Name" },
         { key: "expectedDeliveryDate", label: "Expected Date" },
         { key: "totalFollowUps", label: "Total Follow-Ups" },

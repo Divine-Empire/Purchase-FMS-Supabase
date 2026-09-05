@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Loader2, Search, ClipboardCheck, RefreshCw, Eye, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
+import { getFmsTimestamp, cn, formatDateTimeDash, parseSheetDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import MaterialTestingPending from "./material-testing-pending";
@@ -119,6 +119,7 @@ const HISTORY_COLUMNS = [
   { key: "indentNumber", label: "Indent No." },
   { key: "plan7", label: "Planned" },
   { key: "qcDate", label: "Actual" },
+  { key: "delay7", label: "Delay" },
   { key: "liftNo", label: "Lift No." },
   { key: "workingCondition", label: "Working Condition" },
   { key: "qcBy", label: "Checked By" },
@@ -398,7 +399,7 @@ export default function MaterialTesting() {
 
   const safeValue = useCallback((record: any, key: string) => {
     try {
-      const data = record?.data;
+      const data = record?.data || record;
       if (!data) return "-";
 
       if (FILE_FIELDS.has(key)) {
@@ -450,6 +451,24 @@ export default function MaterialTesting() {
       if (AMOUNT_FIELDS.has(key)) {
         const amount = data[key];
         return amount && amount !== "-" && amount !== "" ? `₹${amount}` : "-";
+      }
+
+      if (key === "delay7" || key === "delay") {
+        const pStr = data.plan7 || data.plannedMaterialTesting || data.plannedDate || data.planned7 || data.planned;
+        const aStr = data.qcDate || data.actual7 || data.timestamp || data.actualDate || data.actual;
+        const pDate = parseSheetDate(pStr);
+        const aDate = parseSheetDate(aStr);
+        if (!pDate || !aDate) return "-";
+        const diffMs = aDate.getTime() - pDate.getTime();
+        if (diffMs <= 0) return <span className="text-emerald-700 font-semibold">0</span>;
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const days = Math.floor(diffHours / 24);
+        const hours = Math.floor(diffHours % 24);
+        let str = "";
+        if (days > 0) str = hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+        else if (hours > 0) str = `${hours} hr${hours > 1 ? "s" : ""}`;
+        else str = `${Math.floor(diffMs / (1000 * 60))} mins`;
+        return <span className="text-amber-700 font-bold">{str}</span>;
       }
 
       const val = data[key];

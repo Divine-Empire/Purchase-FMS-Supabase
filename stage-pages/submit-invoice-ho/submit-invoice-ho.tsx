@@ -51,6 +51,7 @@ const historyColumns = [
     { key: "indentNumber", label: "Indent No." },
     { key: "planDate", label: "Planned" },
     { key: "actualDate", label: "Actual" },
+    { key: "delay", label: "Delay" },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
     { key: "quantity", label: "Qty" },
@@ -265,6 +266,22 @@ export default function SubmitInvoiceHO() {
                         <span className="truncate max-w-20">View</span>
                     </a>
                 );
+            }
+
+            if (key === "delay") {
+                const pDate = parseSheetDate(data.planDate || data.plannedDate || data.plan10);
+                const aDate = parseSheetDate(data.actualDate || data.actual10);
+                if (!pDate || !aDate) return "-";
+                const diffMs = aDate.getTime() - pDate.getTime();
+                if (diffMs <= 0) return <span className="text-emerald-700 font-semibold">0</span>;
+                const diffHours = diffMs / (1000 * 60 * 60);
+                const days = Math.floor(diffHours / 24);
+                const hours = Math.floor(diffHours % 24);
+                let str = "";
+                if (days > 0) str = hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+                else if (hours > 0) str = `${hours} hr${hours > 1 ? "s" : ""}`;
+                else str = `${Math.floor(diffMs / (1000 * 60))} mins`;
+                return <span className="text-amber-700 font-bold">{str}</span>;
             }
 
             const val = data[key];

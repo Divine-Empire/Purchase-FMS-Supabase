@@ -54,6 +54,7 @@ const historyColumns = [
   { key: "indentNumber", label: "Indent No." },
   { key: "plan8", label: "Planned" },
   { key: "actual8", label: "Actual" },
+  { key: "delay8", label: "Delay" },
   { key: "createdBy", label: "Created By" },
   { key: "category", label: "Category" },
   { key: "itemName", label: "Item" },
@@ -384,6 +385,22 @@ export default function TallyEntry() {
         const val = data[key];
         if (!val || val === "-") return "-";
         return String(val).charAt(0).toUpperCase() + String(val).slice(1);
+      }
+
+      if (key === "delay8" || key === "delay") {
+        const pDate = parseSheetDate(data.plan8 || data.planned8 || data.plannedDate);
+        const aDate = parseSheetDate(data.actual8 || data.actualDate);
+        if (!pDate || !aDate) return "-";
+        const diffMs = aDate.getTime() - pDate.getTime();
+        if (diffMs <= 0) return <span className="text-emerald-700 font-semibold">0</span>;
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const days = Math.floor(diffHours / 24);
+        const hours = Math.floor(diffHours % 24);
+        let str = "";
+        if (days > 0) str = hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+        else if (hours > 0) str = `${hours} hr${hours > 1 ? "s" : ""}`;
+        else str = `${Math.floor(diffMs / (1000 * 60))} mins`;
+        return <span className="text-amber-700 font-bold">{str}</span>;
       }
 
       const val = data[key];

@@ -13,6 +13,29 @@ import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
 
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
+
 interface Update3VendorsHistoryProps {
   completed: any[];
   selectedColumns: string[];
@@ -77,19 +100,27 @@ export default function Update3VendorsHistory({
                     </TableCell>
                     {baseColumns
                       .filter((c) => selectedColumns.includes(c.accessorKey))
-                      .map((col) => (
-                        <TableCell key={col.accessorKey} rowSpan={vendors.length} className={cn(
-                          "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
-                          col.accessorKey === "indentNumber" && "font-bold text-indigo-950",
-                          col.accessorKey !== "indentNumber" && "text-slate-600"
-                        )}>
-                          {col.accessorKey === "leadTime"
-                            ? `${record.data[col.accessorKey] || 0} days`
-                            : (col.accessorKey === "planned2" || col.accessorKey === "actual2")
-                              ? formatDateDash(record.data[col.accessorKey])
-                              : (col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-"))}
-                        </TableCell>
-                      ))}
+                      .map((col) => {
+                        const isDelay = col.accessorKey === "delay2" || col.accessorKey === "delay";
+                        const delayVal = isDelay ? calculateDelay(record.data.planned2 || record.data.plannedDate, record.data.actual2 || record.data.actualDate) : null;
+                        return (
+                          <TableCell key={col.accessorKey} rowSpan={vendors.length} className={cn(
+                            "text-sm font-medium border-b border-indigo-50/80 px-4 py-3",
+                            col.accessorKey === "indentNumber" && "font-bold text-indigo-950",
+                            isDelay && delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                            isDelay && delayVal === "0" && "text-emerald-700 font-semibold",
+                            col.accessorKey !== "indentNumber" && !isDelay && "text-slate-600"
+                          )}>
+                            {col.accessorKey === "leadTime"
+                              ? `${record.data[col.accessorKey] || 0} days`
+                              : isDelay
+                                ? delayVal
+                                : (col.accessorKey === "planned2" || col.accessorKey === "actual2" || col.accessorKey === "plannedDate" || col.accessorKey === "actualDate")
+                                  ? formatDateDash(record.data[col.accessorKey])
+                                  : (col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-"))}
+                          </TableCell>
+                        );
+                      })}
                   </>
                 )}
                 <TableCell className="text-sm font-semibold text-indigo-950 border-b border-indigo-50/80 px-4 py-3 whitespace-nowrap">{v.name}</TableCell>

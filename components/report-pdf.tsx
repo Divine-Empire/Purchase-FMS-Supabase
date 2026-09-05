@@ -215,7 +215,8 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
         if (stageName === "Follow-Up Vendor") {
           const summaryItem = summaryData.find(s => String(s.stage).trim() === String(stageName).trim());
           const totalOverdue = summaryItem ? summaryItem.pending : items.length;
-          headerText = `Detailed Report: ${String(stageName)} (Total Overdue: ${totalOverdue} | Unique PO: ${items.length})`;
+          const uniquePoCount = summaryItem?.uniquePoCount ?? items.length;
+          headerText = `Detailed Report: ${String(stageName)} (Total Overdue: ${totalOverdue} | Unique PO: ${uniquePoCount})`;
         }
 
         return (

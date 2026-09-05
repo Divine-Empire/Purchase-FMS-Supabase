@@ -633,9 +633,9 @@ export default function SerialGeneration() {
         try {
             const vendorCode = vendorCodes[vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(invoiceDate);
-            const prefix = `SN-${vendorCode}/${encodedDate}/`;
+            const prefix = `SN-DIR-${vendorCode}/${encodedDate}/`;
 
-            const res = await fetch(`/api/serial-generation?prefix=${encodeURIComponent(prefix)}`);
+            const res = await fetch(`/api/serial-generation?prefix=${encodeURIComponent(prefix)}&isDirect=true`);
             const json = await res.json();
             if (json.success) {
                 setDirectStartingSequence(json.nextSequence || 1);
@@ -657,7 +657,7 @@ export default function SerialGeneration() {
         if (!directFormOpen) return;
         const vendorCode = vendorCodes[directForm.vendorName] || "UNKNOWN";
         const encodedDate = encodeDateYYMMDD(directForm.invoiceDate);
-        const prefix = `SN-${vendorCode}/${encodedDate}/`;
+        const prefix = `SN-DIR-${vendorCode}/${encodedDate}/`;
 
         if (directIsAutoMode) {
             if (directIsCheckingSequence) {
@@ -672,7 +672,7 @@ export default function SerialGeneration() {
         } else {
             setDirectEntries((prev) => {
                 const arr = Array.from({ length: debouncedQuantity }, (_, idx) => {
-                    if (prev[idx] && prev[idx].serialNo.startsWith(`SN-`)) {
+                    if (prev[idx] && prev[idx].serialNo.startsWith(`SN-DIR-`)) {
                         return prev[idx];
                     }
                     return { serialNo: prefix };

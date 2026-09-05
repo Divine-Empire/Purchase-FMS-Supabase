@@ -62,7 +62,9 @@ export async function GET() {
         };
       })
       .filter((row: any) => {
-        // Only exclude if it is pending and is cancelled
+        if (row.data.indentNumber?.startsWith("IN-DIR-") || row.data.category === "Direct") {
+          return false;
+        }
         if (row.status === "pending" && cancelledNos.has(row.data.indentNumber)) {
           return false;
         }

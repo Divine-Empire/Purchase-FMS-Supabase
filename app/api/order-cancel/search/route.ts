@@ -51,6 +51,18 @@ export async function GET(request: NextRequest) {
     const { data: indents, error } = await queryBuilder;
     if (error) throw error;
 
+    // Fetch existing cancellations
+    const { data: cancelledRecords } = await supabase
+      .from("pfms_order-cancellation")
+      .select("indentNo, liftNo");
+
+    const cancelledLiftNos = new Set(
+      (cancelledRecords || []).map((c: any) => c.liftNo).filter(Boolean)
+    );
+    const cancelledIndentNos = new Set(
+      (cancelledRecords || []).filter((c: any) => !c.liftNo).map((c: any) => c.indentNo)
+    );
+
     const results: any[] = [];
 
     for (const row of (indents || [])) {
@@ -60,56 +72,66 @@ export async function GET(request: NextRequest) {
       const update3Vendors = Array.isArray(row.update3Vendors) ? row.update3Vendors[0] : row.update3Vendors;
       const negotiation = Array.isArray(row.negotiation) ? row.negotiation[0] : row.negotiation;
 
-      // 1. Skip any indents where ANY lift has a transporter follow-up record with status "received"
-      const hasCompletedDelivery = lifts.some((l: any) => {
+      const approvedQty = approval && approval.approvedQty !== null ? approval.approvedQty : row.quantity;
+
+      // 1. Add individual un-received, un-cancelled lift entries
+      for (const l of lifts) {
+        if (cancelledLiftNos.has(l.liftNo)) {
+          continue;
+        }
+
         const tfuArray = l.transporterFollowUp;
         const tfu = Array.isArray(tfuArray) ? tfuArray[0] : tfuArray;
-        return tfu && tfu.status === "received";
-      });
-      if (hasCompletedDelivery) {
-        continue;
+        const isReceived = (tfu && tfu.status === "received") || (Array.isArray(l.materialReceived) && l.materialReceived.length > 0);
+
+        if (isReceived) {
+          continue;
+        }
+
+        const isIntransit = tfu && tfu.status === "intransit";
+        const currentPendingStage = isIntransit ? "transporter-follow-up" : "follow-up-vendor";
+
+        results.push({
+          id: `${row.id}_${l.liftNo}`,
+          indentNumber: row.indentNo,
+          liftNo: l.liftNo,
+          poNumber: poEntry ? poEntry.poNumber : "—",
+          itemName: row.itemName,
+          remainingQty: parseFloat(l.liftingQty) || 0,
+          currentPendingStage: currentPendingStage
+        });
       }
 
-      // 2. Determine current pending stage
-      let currentPendingStage = "create-indent";
-      if (!approval) {
-        currentPendingStage = "indent-approval";
-      } else if (!update3Vendors) {
-        currentPendingStage = "update-3-vendors";
-      } else if (!negotiation) {
-        currentPendingStage = "negotiation";
-      } else if (!poEntry) {
-        currentPendingStage = "po-entry";
-      } else if (lifts.length === 0) {
-        currentPendingStage = "follow-up-vendor";
-      } else {
-        // Lifts exist; check if any lift has status 'intransit' in transporter follow-up
-        const hasIntransit = lifts.some((l: any) => {
-          const tfuArray = l.transporterFollowUp;
-          const tfu = Array.isArray(tfuArray) ? tfuArray[0] : tfuArray;
-          return tfu && tfu.status === "intransit";
-        });
+      // 2. Add un-lifted remaining balance entry if balance > 0 and indent is not fully cancelled
+      if (!cancelledIndentNos.has(row.indentNo)) {
+        const totalLifted = lifts.reduce((sum: number, l: any) => sum + (parseFloat(l.liftingQty) || 0), 0);
+        const remainingUnliftedQty = Math.max(0, approvedQty - totalLifted);
 
-        if (hasIntransit) {
-          currentPendingStage = "transporter-follow-up";
-        } else {
-          currentPendingStage = "follow-up-vendor";
+        if (remainingUnliftedQty > 0) {
+          let currentPendingStage = "create-indent";
+          if (!approval) {
+            currentPendingStage = "indent-approval";
+          } else if (!update3Vendors) {
+            currentPendingStage = "update-3-vendors";
+          } else if (!negotiation) {
+            currentPendingStage = "negotiation";
+          } else if (!poEntry) {
+            currentPendingStage = "po-entry";
+          } else {
+            currentPendingStage = "follow-up-vendor";
+          }
+
+          results.push({
+            id: row.id,
+            indentNumber: row.indentNo,
+            liftNo: null,
+            poNumber: poEntry ? poEntry.poNumber : "—",
+            itemName: row.itemName,
+            remainingQty: remainingUnliftedQty,
+            currentPendingStage: currentPendingStage
+          });
         }
       }
-
-      // Calculate remaining quantity that can be cancelled
-      const totalLifted = lifts.reduce((sum: number, l: any) => sum + (parseFloat(l.liftingQty) || 0), 0);
-      const approvedQty = approval && approval.approvedQty !== null ? approval.approvedQty : row.quantity;
-      const remainingQty = Math.max(0, approvedQty - totalLifted);
-
-      results.push({
-        id: row.id,
-        indentNumber: row.indentNo,
-        poNumber: poEntry ? poEntry.poNumber : "—",
-        itemName: row.itemName,
-        remainingQty: remainingQty,
-        currentPendingStage: currentPendingStage
-      });
     }
 
     return NextResponse.json({ success: true, data: results });

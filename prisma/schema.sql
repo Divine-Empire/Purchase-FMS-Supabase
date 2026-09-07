@@ -396,6 +396,7 @@ CREATE TABLE public.pfms_order-cancellation (
   cancelStage text NOT NULL,
   cancelReason text NOT NULL,
   qty double precision NOT NULL,
+  liftNo text,
   createdAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_order-cancellation_pkey PRIMARY KEY (id)

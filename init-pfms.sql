@@ -468,6 +468,7 @@ CREATE TABLE IF NOT EXISTS "pfms_order-cancellation" (
     "cancelStage" TEXT NOT NULL,
     "cancelReason" TEXT NOT NULL,
     "qty" DOUBLE PRECISION NOT NULL,
+    "liftNo" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

@@ -21,6 +21,7 @@ export async function GET() {
       id: row.id,
       timestamp: row.timestamp,
       indentNo: row.indentNo,
+      liftNo: row.liftNo || null,
       poNumber: row.poNumber || "—",
       itemName: row.itemName,
       cancelStage: row.cancelStage,
@@ -38,7 +39,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { indentNo, poNumber, itemName, cancelStage, cancelReason, qty } = body;
+    const { indentNo, liftNo, poNumber, itemName, cancelStage, cancelReason, qty } = body;
 
     if (!indentNo || !itemName || !cancelStage || !cancelReason || qty === undefined) {
       return NextResponse.json(
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       id: randomUUID(),
       timestamp: now,
       indentNo,
+      liftNo: liftNo || null,
       poNumber: poNumber || null,
       itemName,
       cancelStage,

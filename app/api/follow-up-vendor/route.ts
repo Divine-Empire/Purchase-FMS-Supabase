@@ -55,8 +55,9 @@ export async function GET() {
     // Fetch cancellations
     const { data: cancelledList } = await supabase
       .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+      .select("indentNo, liftNo");
+    const cancelledLiftNos = new Set((cancelledList || []).map((c: any) => c.liftNo).filter(Boolean));
+    const cancelledIndentNos = new Set((cancelledList || []).filter((c: any) => !c.liftNo).map((c: any) => c.indentNo));
 
     const sheetRecords = indents
       .map((row: any) => {
@@ -162,7 +163,7 @@ export async function GET() {
         };
       })
       .filter((row: any) => {
-        if (row.status === "pending" && cancelledNos.has(row.id)) {
+        if (row.status === "pending" && cancelledIndentNos.has(row.id)) {
           return false;
         }
         return true;
@@ -187,33 +188,35 @@ export async function GET() {
 
     if (liftError) throw liftError;
 
-    const receivingAccountsData = lifts.map((l: any) => {
-      const indent = l.indent || {};
-      const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
-      const poEntry = Array.isArray(indent.poEntry) ? (indent.poEntry[0] || {}) : (indent.poEntry || {});
+    const receivingAccountsData = lifts
+      .filter((l: any) => !cancelledLiftNos.has(l.liftNo))
+      .map((l: any) => {
+        const indent = l.indent || {};
+        const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
+        const poEntry = Array.isArray(indent.poEntry) ? (indent.poEntry[0] || {}) : (indent.poEntry || {});
 
-      return {
-        id: l.id,
-        indentNumber: l.indentNo,
-        liftNo: l.liftNo,
-        vendorName: negotiation.selectedVendorName || "-",
-        poNumber: poEntry.poNumber || "-",
-        nextFollowUpDate: l.followUpDate,
-        remarks: l.remarks || "",
-        itemName: indent.itemName || "",
-        liftingQty: l.liftingQty,
-        transporterName: l.transporterName || "",
-        vehicleNo: l.vehicleNo || "",
-        contactNo: l.contactNo || "",
-        lrNo: l.lrNo || "",
-        dispatchDate: l.dispatchDate,
-        freightAmount: l.freightAmount || "",
-        advanceAmount: l.advanceAmount || "",
-        paymentDate: l.paymentDate,
-        paymentStatus: l.paymentStatus || "",
-        biltyCopy: l.biltyCopy || "",
-      };
-    });
+        return {
+          id: l.id,
+          indentNumber: l.indentNo,
+          liftNo: l.liftNo,
+          vendorName: negotiation.selectedVendorName || "-",
+          poNumber: poEntry.poNumber || "-",
+          nextFollowUpDate: l.followUpDate,
+          remarks: l.remarks || "",
+          itemName: indent.itemName || "",
+          liftingQty: l.liftingQty,
+          transporterName: l.transporterName || "",
+          vehicleNo: l.vehicleNo || "",
+          contactNo: l.contactNo || "",
+          lrNo: l.lrNo || "",
+          dispatchDate: l.dispatchDate,
+          freightAmount: l.freightAmount || "",
+          advanceAmount: l.advanceAmount || "",
+          paymentDate: l.paymentDate,
+          paymentStatus: l.paymentStatus || "",
+          biltyCopy: l.biltyCopy || "",
+        };
+      });
 
     return NextResponse.json({
       success: true,

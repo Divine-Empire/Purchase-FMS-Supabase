@@ -49,8 +49,9 @@ export async function GET() {
     // Fetch cancellations
     const { data: cancelledList } = await supabase
       .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+      .select("indentNo, liftNo");
+    const cancelledLiftNos = new Set((cancelledList || []).map((c: any) => c.liftNo).filter(Boolean));
+    const cancelledIndentNos = new Set((cancelledList || []).filter((c: any) => !c.liftNo).map((c: any) => c.indentNo));
 
     const mappedData = (followUps || [])
       .map((row: any) => {
@@ -90,8 +91,10 @@ export async function GET() {
         };
       })
       .filter((row: any) => {
-        if (row.status === "pending" && cancelledNos.has(row.data.indentNumber)) {
-          return false;
+        if (row.status === "pending") {
+          if (cancelledLiftNos.has(row.data.liftNo) || cancelledIndentNos.has(row.data.indentNumber)) {
+            return false;
+          }
         }
         return true;
       });

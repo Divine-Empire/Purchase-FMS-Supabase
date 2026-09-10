@@ -27,7 +27,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn, formatDate as sharedFormatDate, getFmsTimestamp } from "@/lib/utils";
+import { cn, formatDate as sharedFormatDate, getFmsTimestamp, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import FreightPaymentsPending from "./freight-payments-pending";
 import FreightPaymentsHistory from "./freight-payments-history";
 
@@ -45,6 +46,7 @@ const COLUMNS = [
   { key: "actual1", label: "Actual" },
   { key: "planned", label: "Planned" },
   { key: "actual", label: "Actual" },
+  { key: "delay", label: "Delay" },
   { key: "amountPaid", label: "Amount Paid" },
   { key: "date", label: "Payment Date" },
   { key: "mode", label: "Mode" },
@@ -74,6 +76,7 @@ const defaultForm = () => ({
 });
 
 export default function FreightPayments() {
+  const { role, records: recordsAccess } = useAuth();
   const [records, setRecords] = useState<any[]>([]);
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -109,8 +112,18 @@ export default function FreightPayments() {
 
   const searchLower = useMemo(() => searchTerm.toLowerCase(), [searchTerm]);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => records.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [records, recordsAccess, role]
+  );
+  const visibleHistoryRecords = useMemo(
+    () => historyRecords.filter((r) => canViewPurchaserRecord(r.purchaser, recordsAccess, role)),
+    [historyRecords, recordsAccess, role]
+  );
+
   const filteredPending = useMemo(() =>
-    records.filter(r => {
+    visibleRecords.filter(r => {
       if (!searchLower) return true;
       return (
         String(r.data.lrNo || "").toLowerCase().includes(searchLower) ||
@@ -119,17 +132,17 @@ export default function FreightPayments() {
         String(r.data.contact || "").toLowerCase().includes(searchLower)
       );
     }),
-    [records, searchLower]);
+    [visibleRecords, searchLower]);
 
   const filteredHistory = useMemo(() =>
-    historyRecords.filter(r => {
+    visibleHistoryRecords.filter(r => {
       if (!searchLower) return true;
       return (
         String(r.lrNo || "").toLowerCase().includes(searchLower) ||
         String(r.transporter || "").toLowerCase().includes(searchLower)
       );
     }),
-    [historyRecords, searchLower]);
+    [visibleHistoryRecords, searchLower]);
 
   const visibleColumns = useMemo(() =>
     COLUMNS.filter(c => selectedColumns.includes(c.key)),
@@ -264,7 +277,7 @@ export default function FreightPayments() {
     [records, selectedRecordId]);
 
   const visibleHistoryColumns = useMemo(() => {
-    const historyKeys = ["lrNo", "transporter", "amountPaid", "date", "planned", "actual", "mode", "status", "proof"];
+    const historyKeys = ["lrNo", "transporter", "planned", "actual", "delay", "amountPaid", "date", "mode", "status", "proof"];
     return COLUMNS.filter(c => historyKeys.includes(c.key as string));
   }, []);
 

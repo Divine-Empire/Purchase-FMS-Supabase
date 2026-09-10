@@ -12,6 +12,29 @@ import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
 
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
+
 interface TransporterFollowUpHistoryProps {
   completed: any[];
   historyColumns: { key: string; label: string }[];
@@ -40,6 +63,19 @@ export default function TransporterFollowUpHistory({
             <TableRow key={rec.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
               {historyColumns.map((c) => {
                 const val = rec.data[c.key];
+
+                if (c.key === "delay") {
+                  const delayVal = calculateDelay(rec.data.plannedDate, rec.data.actualDate);
+                  return (
+                    <TableCell key={c.key} className={cn(
+                      "text-center border-b px-4 py-2 font-medium",
+                      delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                      delayVal === "0" && "text-emerald-700 font-semibold"
+                    )}>
+                      {delayVal}
+                    </TableCell>
+                  );
+                }
 
                 if (c.key === "lrCopy") {
                   return (

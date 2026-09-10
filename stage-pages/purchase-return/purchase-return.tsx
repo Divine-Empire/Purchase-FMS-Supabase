@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, RefreshCw, Search, Eye, ClipboardList, History } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { cn, formatDateTimeDash, canViewPurchaserRecord, parseSheetDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -46,6 +46,7 @@ const HISTORY_COLUMNS = [
   { key: "indentNumber", label: "Indent No" },
   { key: "plan6", label: "Planned" },
   { key: "actual6", label: "Actual" },
+  { key: "delay6", label: "Delay" },
   { key: "unitTrackingNo", label: "Unit Tracking No" },
   { key: "itemName", label: "Item" },
   { key: "vendor", label: "Vendor" },
@@ -116,6 +117,22 @@ export default function PurchaseReturn() {
             <Eye className="w-4 h-4" />
           </Button>
         );
+      }
+
+      if (key === "delay6" || key === "delay") {
+        const pDate = parseSheetDate(data.plan6 || data.planned6 || data.plannedDate);
+        const aDate = parseSheetDate(data.actual6 || data.actualDate || data.returnDate || data.timestamp);
+        if (!pDate || !aDate) return "-";
+        const diffMs = aDate.getTime() - pDate.getTime();
+        if (diffMs <= 0) return <span className="text-emerald-700 font-semibold">0</span>;
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const days = Math.floor(diffHours / 24);
+        const hours = Math.floor(diffHours % 24);
+        let str = "";
+        if (days > 0) str = hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+        else if (hours > 0) str = `${hours} hr${hours > 1 ? "s" : ""}`;
+        else str = `${Math.floor(diffMs / (1000 * 60))} mins`;
+        return <span className="text-amber-700 font-bold">{str}</span>;
       }
 
       if (!val || val === "-" || val === "") return "-";

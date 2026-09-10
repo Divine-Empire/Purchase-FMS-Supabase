@@ -12,9 +12,12 @@ function getLocalTimestamp(dateInput?: Date | string | number | null): string {
 export async function GET(request: NextRequest) {
   try {
     const prefix = request.nextUrl.searchParams.get("prefix");
+    const isDirectParam = request.nextUrl.searchParams.get("isDirect") === "true" || (prefix && prefix.startsWith("SN-DIR-"));
+
     if (prefix) {
+      const tableName = isDirectParam ? "pfms_direct_serial_numbers" : "pfms_serial-number";
       const { data: serials, error } = await supabase
-        .from("pfms_serial-number")
+        .from(tableName)
         .select("serialNo")
         .ilike("serialNo", `${prefix}%`);
       if (error) throw error;
@@ -165,6 +168,51 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 5. Fetch direct serial numbers from pfms_direct_serial_numbers and group by batchId
+    const { data: directSerials, error: directErr } = await supabase
+      .from("pfms_direct_serial_numbers")
+      .select("*")
+      .order("createdAt", { ascending: false });
+
+    if (!directErr && directSerials && directSerials.length > 0) {
+      const groupedDirectMap = new Map<string, any[]>();
+      for (const ds of directSerials) {
+        const key = ds.batchId || ds.id;
+        const list = groupedDirectMap.get(key) || [];
+        list.push(ds);
+        groupedDirectMap.set(key, list);
+      }
+
+      for (const [batchId, items] of groupedDirectMap.entries()) {
+        const first = items[0];
+        history.push({
+          id: `direct_${batchId}`,
+          raIndex: null,
+          isDirect: true,
+          data: {
+            indentNo: "DIRECT",
+            liftNo: "-",
+            vendorName: first.vendorName || "-",
+            poNumber: "-",
+            itemName: first.itemName || "",
+            receivedQty: items.length,
+            invoiceDate: first.invoiceDate || "",
+            invoiceNo: "Direct",
+            invoiceCopy: "-",
+            poCopy: "-",
+            warrantyExpiry: first.warrantyExpiry || "",
+            productExpiry: first.productExpiry || "",
+            planned: "-",
+            actual: first.timestamp || first.createdAt || null,
+            serials: items.map(s => ({
+              serialNo: s.serialNo,
+              qrLink: s.qrLink
+            }))
+          }
+        });
+      }
+    }
+
     const itemCodeMap: Record<string, string> = {};
     (itemsMaster || []).forEach((row: any) => {
       const name = row["ITEM NAME"]?.trim();
@@ -177,14 +225,14 @@ export async function GET(request: NextRequest) {
       (m: any) => m["Vendor Code"] && m["Vendor Code"] !== "null" && m["Vendor Code"] !== ""
     );
 
-    // 1. Populate exact matches
+    // Populate exact matches
     validMasters.forEach((row: any) => {
       const name = row["Vendor List"]?.trim();
       const code = row["Vendor Code"]?.trim();
       if (name && code) vendorCodeMap[name] = code;
     });
 
-    // 2. Helper functions for name cleaning and matching
+    // Helper functions for name cleaning and matching
     const cleanName = (name: string) => {
       if (!name) return "";
       return name
@@ -197,18 +245,15 @@ export async function GET(request: NextRequest) {
     const findBestMatch = (negName: string) => {
       const nameLower = negName.trim().toLowerCase();
       
-      // Exact case-insensitive match
       let best = validMasters.find((m: any) => m["Vendor List"]?.trim().toLowerCase() === nameLower);
       if (best) return best;
 
       const cleanNeg = cleanName(negName);
       if (!cleanNeg) return null;
 
-      // Exact clean match
       best = validMasters.find((m: any) => cleanName(m["Vendor List"]) === cleanNeg);
       if (best) return best;
 
-      // Substring containment match
       if (cleanNeg.length >= 6) {
         best = validMasters.find((m: any) => {
           const cleanMaster = cleanName(m["Vendor List"]);
@@ -218,7 +263,6 @@ export async function GET(request: NextRequest) {
         if (best) return best;
       }
 
-      // Shared prefix match (8 chars)
       best = validMasters.find((m: any) => {
         const cleanMaster = cleanName(m["Vendor List"]);
         if (!cleanMaster || cleanMaster.length < 8 || cleanNeg.length < 8) return false;
@@ -228,7 +272,6 @@ export async function GET(request: NextRequest) {
       return best || null;
     };
 
-    // 3. Match active negotiation vendors dynamically
     for (const receipt of (receipts || [])) {
       const lift = receipt.lift || {};
       const indent = lift.indent || {};
@@ -271,66 +314,12 @@ export async function POST(request: NextRequest) {
 
     const now = getLocalTimestamp();
 
-    // Calculate planned time for warranty-claim
-    const plannedWarrantyClaim = await calculatePlannedTime("warranty-claim");
-
-    const serialsToInsert = [];
-
     if (isDirect) {
-      if (!directForm || !serials) {
+      if (!directForm || !serials || serials.length === 0) {
         return NextResponse.json({ success: false, error: "Missing direct form data" }, { status: 400 });
       }
 
-      // Calculate next direct indent number
-      const { data: directIndents, error: indentError } = await supabase
-        .from("pfms_indent_generation")
-        .select("indentNo")
-        .like("indentNo", "IN-DIR-%");
-      if (indentError) throw indentError;
-
-      let maxIndentNum = 0;
-      (directIndents || []).forEach((row: any) => {
-        const match = row.indentNo.match(/^IN-DIR-(\d+)/i);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (num > maxIndentNum) maxIndentNum = num;
-        }
-      });
-      const nextIndentSeq = maxIndentNum + 1;
-      const nextIndentNo = `IN-DIR-${String(nextIndentSeq).padStart(4, "0")}`;
-      const nextLiftNo = `LIFT-DIR-${String(nextIndentSeq).padStart(4, "0")}`;
-
-      // 1. Insert placeholder indent
-      const { error: insIndentErr } = await supabase
-        .from("pfms_indent_generation")
-        .insert({
-          id: randomUUID(),
-          timestamp: now,
-          indentNo: nextIndentNo,
-          createdBy: "Direct",
-          category: "Direct",
-          itemName: directForm.itemName,
-          quantity: parseFloat(directForm.quantity) || 0,
-          warehouseLocation: "Main Warehouse",
-          status: "completed",
-          createdAt: now,
-          updatedAt: now
-        });
-      if (insIndentErr) throw insIndentErr;
-
-      // 2. Insert placeholder lift
-      const { error: insLiftErr } = await supabase
-        .from("pfms_lift")
-        .insert({
-          id: randomUUID(),
-          timestamp: now,
-          liftNo: nextLiftNo,
-          indentNo: nextIndentNo,
-          liftingQty: parseFloat(directForm.quantity) || 0,
-          createdAt: now,
-          updatedAt: now
-        });
-      if (insLiftErr) throw insLiftErr;
+      const batchId = `DIR-BATCH-${Date.now()}`;
 
       // Calculate warranty expiration
       let formattedWarrantyEnd = null;
@@ -343,75 +332,97 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 3. Insert placeholder material-received
-      const { error: insReceiptErr } = await supabase
-        .from("pfms_material-received")
-        .insert({
-          id: randomUUID(),
-          timestamp: now,
-          liftNo: nextLiftNo,
-          invoiceType: "direct",
-          invoiceNumber: "Direct",
-          invoiceDate: directForm.invoiceDate ? getLocalTimestamp(directForm.invoiceDate) : now,
-          receivedQty: parseFloat(directForm.quantity) || 0,
-          qcRequired: "no",
-          warranty: "yes",
-          warrantyDuration: parseInt(directForm.duration) || 12,
-          warrantyExpiry: formattedWarrantyEnd,
-          productExpiryDate: formattedWarrantyEnd,
-          createdAt: now,
-          updatedAt: now
-        });
-      if (insReceiptErr) throw insReceiptErr;
+      const invoiceDateTs = directForm.invoiceDate ? getLocalTimestamp(directForm.invoiceDate) : now;
 
-      // 4. Construct serial numbers list
-      for (const s of serials) {
+      const directSerialsToInsert = serials.map((s: any) => ({
+        id: randomUUID(),
+        batchId: batchId,
+        timestamp: now,
+        itemName: directForm.itemName,
+        vendorName: directForm.vendorName,
+        invoiceDate: invoiceDateTs,
+        warrantyDuration: parseInt(directForm.duration, 10) || 12,
+        serialNo: s.serialNo,
+        qrLink: s.qrLink || null,
+        warrantyExpiry: formattedWarrantyEnd,
+        productExpiry: null,
+        createdAt: now,
+        updatedAt: now
+      }));
+
+      // Check duplicates in both pfms_direct_serial_numbers and pfms_serial-number
+      const serialNosToCheck = directSerialsToInsert.map((s: any) => s.serialNo).filter(Boolean);
+      if (serialNosToCheck.length > 0) {
+        const { data: dupDirect } = await supabase
+          .from("pfms_direct_serial_numbers")
+          .select("serialNo")
+          .in("serialNo", serialNosToCheck);
+
+        const { data: dupStandard } = await supabase
+          .from("pfms_serial-number")
+          .select("serialNo")
+          .in("serialNo", serialNosToCheck);
+
+        const existingSerials = [...(dupDirect || []), ...(dupStandard || [])];
+        if (existingSerials.length > 0) {
+          const dupes = existingSerials.map(e => e.serialNo).join(", ");
+          return NextResponse.json({
+            success: false,
+            error: `Duplicate serial number(s) detected: ${dupes}. Please regenerate serial numbers.`
+          }, { status: 400 });
+        }
+      }
+
+      const { error: insertError } = await supabase
+        .from("pfms_direct_serial_numbers")
+        .insert(directSerialsToInsert);
+
+      if (insertError) throw insertError;
+
+      return NextResponse.json({ success: true });
+    }
+
+    // --- STANDARD PO SERIAL GENERATION ---
+    if (!records || records.length === 0) {
+      return NextResponse.json({ success: false, error: "No records to process" }, { status: 400 });
+    }
+
+    // Calculate planned time for warranty-claim
+    const plannedWarrantyClaim = await calculatePlannedTime("warranty-claim");
+    const serialsToInsert = [];
+
+    for (const record of records) {
+      const liftNo = record.liftNo;
+      for (const s of record.serials) {
         serialsToInsert.push({
           id: randomUUID(),
           timestamp: now,
-          liftNo: nextLiftNo,
+          liftNo: liftNo,
           serialNo: s.serialNo,
           qrLink: s.qrLink || null,
-          warrantyExpiry: formattedWarrantyEnd,
-          productExpiry: formattedWarrantyEnd,
+          warrantyExpiry: s.warrantyExpiry ? getLocalTimestamp(s.warrantyExpiry) : null,
+          productExpiry: s.productExpiry ? getLocalTimestamp(s.productExpiry) : null,
           plannedWarrantyClaim: plannedWarrantyClaim,
           createdAt: now,
           updatedAt: now
         });
       }
-    } else {
-      if (!records || records.length === 0) {
-        return NextResponse.json({ success: false, error: "No records to process" }, { status: 400 });
-      }
-
-      for (const record of records) {
-        const liftNo = record.liftNo;
-        for (const s of record.serials) {
-          serialsToInsert.push({
-            id: randomUUID(),
-            timestamp: now,
-            liftNo: liftNo,
-            serialNo: s.serialNo,
-            qrLink: s.qrLink || null,
-            warrantyExpiry: s.warrantyExpiry ? getLocalTimestamp(s.warrantyExpiry) : null,
-            productExpiry: s.productExpiry ? getLocalTimestamp(s.productExpiry) : null,
-            plannedWarrantyClaim: plannedWarrantyClaim,
-            createdAt: now,
-            updatedAt: now
-          });
-        }
-      }
     }
 
     const serialNosToCheck = serialsToInsert.map(s => s.serialNo).filter(Boolean);
     if (serialNosToCheck.length > 0) {
-      const { data: existingSerials, error: checkErr } = await supabase
+      const { data: dupDirect } = await supabase
+        .from("pfms_direct_serial_numbers")
+        .select("serialNo")
+        .in("serialNo", serialNosToCheck);
+
+      const { data: dupStandard } = await supabase
         .from("pfms_serial-number")
         .select("serialNo")
         .in("serialNo", serialNosToCheck);
 
-      if (checkErr) throw checkErr;
-      if (existingSerials && existingSerials.length > 0) {
+      const existingSerials = [...(dupDirect || []), ...(dupStandard || [])];
+      if (existingSerials.length > 0) {
         const dupes = existingSerials.map(e => e.serialNo).join(", ");
         return NextResponse.json({
           success: false,

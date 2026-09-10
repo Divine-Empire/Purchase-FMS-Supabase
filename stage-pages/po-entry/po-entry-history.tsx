@@ -13,6 +13,29 @@ import { parseSheetDate, formatDate, cn, formatDateTimeDash } from "@/lib/utils"
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
 
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
+
 const formatGSTDisplay = (gst: any) => {
   if (!gst || gst === "-" || gst === "") return "-";
   const s = String(gst);
@@ -45,6 +68,7 @@ export default function PoEntryHistory({
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase tracking-wider">Item Details</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Planned</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Actual</TableHead>
+            <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Delay</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase tracking-wider">Vendor Info</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Terms & Delivery</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Warranty/Quot.</TableHead>
@@ -57,6 +81,7 @@ export default function PoEntryHistory({
         <TableBody>
           {completed.map((record) => {
             const v = getVendorData(record);
+            const delayVal = calculateDelay(record.data.planned4 || record.data.plannedDate, record.data.actual4 || record.data.actualDate);
             return (
               <TableRow key={record.id} className="odd:bg-emerald-50/10 even:bg-white hover:bg-emerald-50/20 border-b border-indigo-50/80 last:border-0 transition-colors text-slate-700">
                 <TableCell className="max-w-[200px] px-4 py-3 border-b border-indigo-50/80">
@@ -71,6 +96,13 @@ export default function PoEntryHistory({
                 </TableCell>
                 <TableCell className="px-4 py-3 text-slate-650 font-medium whitespace-nowrap border-b border-indigo-50/80">
                   {formatDateDash(record.data.actual4)}
+                </TableCell>
+                <TableCell className={cn(
+                  "px-4 py-3 font-medium whitespace-nowrap border-b border-indigo-50/80",
+                  delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                  delayVal === "0" && "text-emerald-700 font-semibold"
+                )}>
+                  {delayVal}
                 </TableCell>
                 <TableCell className="px-4 py-3 border-b border-indigo-50/80">
                   <div className="space-y-1">

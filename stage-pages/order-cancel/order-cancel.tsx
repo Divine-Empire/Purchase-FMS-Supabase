@@ -208,13 +208,20 @@ export default function OrderCancelPage() {
     }
   }, [selectedSearchRowIds, searchResults])
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleCancelledOrders = useMemo(
+    () => cancelledOrders.filter((order) => canViewPurchaserRecord(order.purchaser, recordsAccess, role)),
+    [cancelledOrders, recordsAccess, role]
+  )
+
   // Filter orders based on search term
   const filteredCancelledOrders = useMemo(() => {
-    if (!searchTerm) return cancelledOrders
+    if (!searchTerm) return visibleCancelledOrders
 
-    return cancelledOrders.filter((order) => {
+    return visibleCancelledOrders.filter((order) => {
       return (
         (order.indentNo || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (order.liftNo || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order.poNumber || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order.itemName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order.cancelStage || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -222,7 +229,7 @@ export default function OrderCancelPage() {
         (order.qty || "").toString().toLowerCase().includes(searchTerm.toLowerCase())
       )
     })
-  }, [cancelledOrders, searchTerm])
+  }, [visibleCancelledOrders, searchTerm])
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
@@ -293,6 +300,7 @@ export default function OrderCancelPage() {
           },
           body: JSON.stringify({
             indentNo: row.indentNumber,
+            liftNo: row.liftNo || null,
             poNumber: row.poNumber === "—" ? null : row.poNumber,
             itemName: row.itemName,
             cancelStage: cancelStage,
@@ -433,6 +441,7 @@ export default function OrderCancelPage() {
                 <TableRow className="hover:bg-transparent border-b border-slate-200">
                   <TableHead className="font-bold text-slate-700 uppercase text-[10px]">Cancelled At</TableHead>
                   <TableHead className="font-bold text-slate-700 uppercase text-[10px]">Indent-No.</TableHead>
+                  <TableHead className="font-bold text-slate-700 uppercase text-[10px]">Lift No.</TableHead>
                   <TableHead className="font-bold text-slate-700 uppercase text-[10px]">PO Number</TableHead>
                   <TableHead className="font-bold text-slate-700 uppercase text-[10px]">Item-Name</TableHead>
                   <TableHead className="font-bold text-slate-700 uppercase text-[10px]">Cancel Stage</TableHead>
@@ -443,7 +452,7 @@ export default function OrderCancelPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-48 text-center">
+                    <TableCell colSpan={8} className="h-48 text-center">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Loader2 className="w-8 h-8 animate-spin text-red-600" />
                         <span className="text-slate-500 font-medium">Loading cancelled orders...</span>
@@ -458,6 +467,9 @@ export default function OrderCancelPage() {
                       </TableCell>
                       <TableCell className="font-medium text-slate-900 py-4">
                         {order.indentNo}
+                      </TableCell>
+                      <TableCell className="font-mono text-[12px] text-slate-600 py-4">
+                        {order.liftNo || "—"}
                       </TableCell>
                       <TableCell className="font-mono text-[12px] text-slate-600 py-4">
                         {order.poNumber}
@@ -490,7 +502,7 @@ export default function OrderCancelPage() {
                 {!loading && filteredCancelledOrders.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="text-center text-muted-foreground h-32"
                     >
                       {searchTerm
@@ -611,6 +623,7 @@ export default function OrderCancelPage() {
                           />
                         </TableHead>
                         <TableHead className="text-xs uppercase font-semibold text-slate-600">Indent No.</TableHead>
+                        <TableHead className="text-xs uppercase font-semibold text-slate-600">Lift No.</TableHead>
                         <TableHead className="text-xs uppercase font-semibold text-slate-600">PO Number</TableHead>
                         <TableHead className="text-xs uppercase font-semibold text-slate-600">Item Name</TableHead>
                         <TableHead className="w-[110px] text-center text-xs uppercase font-semibold text-slate-600">Remaining Qty</TableHead>
@@ -639,6 +652,7 @@ export default function OrderCancelPage() {
                             />
                           </TableCell>
                           <TableCell className="font-medium text-xs text-slate-900">{row.indentNumber}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-slate-600 font-semibold">{row.liftNo || "—"}</TableCell>
                           <TableCell className="font-mono text-[11px] text-slate-500">{row.poNumber}</TableCell>
                           <TableCell className="text-xs text-slate-700 max-w-[200px] truncate" title={row.itemName}>
                             {row.itemName}

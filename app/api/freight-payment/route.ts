@@ -24,6 +24,9 @@ export async function GET() {
           vehicleNo,
           contactNo,
           advanceAmount,
+          indent:pfms_indent_generation (
+            purchaser
+          ),
           materialReceived:"pfms_material-received" (
             invoiceNumber,
             billAttachment
@@ -49,7 +52,10 @@ export async function GET() {
           lift:pfms_lift!inner (
             liftNo,
             lrNo,
-            transporterName
+            transporterName,
+            indent:pfms_indent_generation (
+              purchaser
+            )
           )
         )
       `) as any;
@@ -73,6 +79,7 @@ export async function GET() {
       const pendingAmt = pd.totalAmount - (lift.advanceAmount || 0) - pd.paidAmount;
 
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
+      const indent = Array.isArray(lift.indent) ? (lift.indent[0] || {}) : (lift.indent || {});
 
       pending.push({
         id: pd.liftNo,
@@ -94,6 +101,7 @@ export async function GET() {
           invoiceCopy: matRecd.billAttachment || "",
           freightVal: pd.totalAmount,
           advanceVal: lift.advanceAmount || 0,
+          purchaser: indent.purchaser || null,
         }
       });
     }
@@ -102,6 +110,7 @@ export async function GET() {
     for (const log of (paidLogs || [])) {
       const freightInvoice = log.freightInvoice || {};
       const lift = freightInvoice.lift || {};
+      const indent = Array.isArray(lift.indent) ? (lift.indent[0] || {}) : (lift.indent || {});
 
       history.push({
         id: log.id,
@@ -114,6 +123,7 @@ export async function GET() {
         actual: getLocalTimestamp(log.paymentDate).split("T")[0],
         mode: log.paymentMode || "-",
         proof: log.proof || "",
+        purchaser: indent.purchaser || null,
       });
     }
 

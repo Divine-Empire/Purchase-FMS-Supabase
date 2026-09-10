@@ -13,6 +13,29 @@ import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
 
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
+
 interface MaterialReceivedHistoryProps {
   completed: any[];
   selectedHistoryColumns: string[];
@@ -54,6 +77,19 @@ export default function MaterialReceivedHistory({
                     historyData[col.key] !== undefined && historyData[col.key] !== ""
                       ? historyData[col.key]
                       : record.data[col.key];
+
+                  if (col.key === "delay6" || col.key === "delay") {
+                    const delayVal = calculateDelay(historyData.planned6 || record.data.planned6 || record.data.plannedDate, historyData.actual6 || record.data.actual6 || record.data.actualDate);
+                    return (
+                      <TableCell key={col.key} className={cn(
+                        "border-b px-4 py-2 text-center font-medium",
+                        delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                        delayVal === "0" && "text-emerald-700 font-semibold"
+                      )}>
+                        {delayVal}
+                      </TableCell>
+                    );
+                  }
 
                   if (
                     col.key === "dispatchDate" ||

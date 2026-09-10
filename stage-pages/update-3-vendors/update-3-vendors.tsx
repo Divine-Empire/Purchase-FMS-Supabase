@@ -215,6 +215,7 @@ export default function Stage3() {
     { header: "Indent", accessorKey: "indentNumber" },
     { header: "Planned", accessorKey: "planned2" },
     { header: "Actual", accessorKey: "actual2" },
+    { header: "Delay", accessorKey: "delay2" },
     { header: "Created By", accessorKey: "createdBy" },
     { header: "Category", accessorKey: "category" },
     { header: "Item", accessorKey: "itemName" },

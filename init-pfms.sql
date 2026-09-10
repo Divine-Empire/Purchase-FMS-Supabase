@@ -240,6 +240,25 @@ CREATE TABLE IF NOT EXISTS "pfms_serial-number" (
     CONSTRAINT "pfms_serial-number_pkey" PRIMARY KEY ("id")
 );
 
+-- 11.1 STAGE 7.5.1: DIRECT SERIAL NUMBER
+CREATE TABLE IF NOT EXISTS "pfms_direct_serial_numbers" (
+    "id" TEXT NOT NULL,
+    "batchId" TEXT NOT NULL,
+    "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "itemName" TEXT NOT NULL,
+    "vendorName" TEXT NOT NULL,
+    "invoiceDate" TIMESTAMP(3),
+    "warrantyDuration" INTEGER,
+    "serialNo" TEXT NOT NULL,
+    "qrLink" TEXT,
+    "warrantyExpiry" TIMESTAMP(3),
+    "productExpiry" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "pfms_direct_serial_numbers_pkey" PRIMARY KEY ("id")
+);
+
 -- 12. STAGE 7.6: WARRANTY CLAIM
 CREATE TABLE IF NOT EXISTS "pfms_warranty-claim" (
     "id" TEXT NOT NULL,
@@ -449,6 +468,7 @@ CREATE TABLE IF NOT EXISTS "pfms_order-cancellation" (
     "cancelStage" TEXT NOT NULL,
     "cancelReason" TEXT NOT NULL,
     "qty" DOUBLE PRECISION NOT NULL,
+    "liftNo" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

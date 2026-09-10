@@ -10,9 +10,32 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileText } from "lucide-react";
-import { parseSheetDate, formatDateTimeDash } from "@/lib/utils";
+import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
+
+const calculateDelay = (planned: any, actual: any) => {
+  if (!planned || !actual) return "-";
+  const pDate = parseSheetDate(planned);
+  const aDate = parseSheetDate(actual);
+  if (!pDate || !aDate) return "-";
+
+  const diffMs = aDate.getTime() - pDate.getTime();
+  if (diffMs <= 0) return "0";
+
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(diffHours / 24);
+  const hours = Math.floor(diffHours % 24);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours > 1 ? "s" : ""}`;
+  }
+  const mins = Math.floor(diffMs / (1000 * 60));
+  return `${mins} min${mins !== 1 ? "s" : ""}`;
+};
 
 interface FollowUpVendorHistoryProps {
   filteredHistoryData: any[];
@@ -31,6 +54,7 @@ export default function FollowUpVendorHistory({
             <TableHead>Indent No.</TableHead>
             <TableHead>Planned</TableHead>
             <TableHead>Actual</TableHead>
+            <TableHead>Delay</TableHead>
             <TableHead>Lift No.</TableHead>
             <TableHead>Vendor</TableHead>
             <TableHead>PO No.</TableHead>
@@ -64,11 +88,19 @@ export default function FollowUpVendorHistory({
               String(row.indentNumber).trim().toLowerCase()
             );
 
+            const delayVal = calculateDelay(indentRecord?.data?.planned5 || indentRecord?.data?.plannedDate, indentRecord?.data?.actual5 || indentRecord?.data?.actualDate);
+
             return (
               <TableRow key={row.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
                 <TableCell className="font-medium">{row.indentNumber || "-"}</TableCell>
                 <TableCell>{indentRecord ? formatDateDash(indentRecord.data.planned5) : "-"}</TableCell>
                 <TableCell>{indentRecord ? formatDateDash(indentRecord.data.actual5) : "-"}</TableCell>
+                <TableCell className={cn(
+                  delayVal !== "0" && delayVal !== "-" && "text-amber-700 font-bold",
+                  delayVal === "0" && "text-emerald-700 font-semibold"
+                )}>
+                  {delayVal}
+                </TableCell>
                 <TableCell>{row.liftNo || "-"}</TableCell>
                 <TableCell>{row.vendorName || "-"}</TableCell>
                 <TableCell className="font-mono">{row.poNumber || "-"}</TableCell>

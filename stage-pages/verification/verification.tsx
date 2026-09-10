@@ -55,6 +55,7 @@ const historyColumns = [
   { key: "indentNumber", label: "Indent No." },
   { key: "plan10", label: "Planned" },
   { key: "actual10", label: "Actual" },
+  { key: "delay10", label: "Delay" },
   { key: "liftNo", label: "Unit Tracking No." },
   { key: "category", label: "Category" },
   { key: "itemName", label: "Item" },
@@ -325,6 +326,22 @@ export default function Verification() {
             <span className="truncate max-w-20">View</span>
           </a>
         );
+      }
+
+      if (key === "delay10" || key === "delay") {
+        const pDate = parseSheetDate(data.plan10 || data.planned10 || data.plannedDate);
+        const aDate = parseSheetDate(data.actual10 || data.actualDate);
+        if (!pDate || !aDate) return "-";
+        const diffMs = aDate.getTime() - pDate.getTime();
+        if (diffMs <= 0) return <span className="text-emerald-700 font-semibold">0</span>;
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const days = Math.floor(diffHours / 24);
+        const hours = Math.floor(diffHours % 24);
+        let str = "";
+        if (days > 0) str = hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+        else if (hours > 0) str = `${hours} hr${hours > 1 ? "s" : ""}`;
+        else str = `${Math.floor(diffMs / (1000 * 60))} mins`;
+        return <span className="text-amber-700 font-bold">{str}</span>;
       }
 
       const val = data[key];

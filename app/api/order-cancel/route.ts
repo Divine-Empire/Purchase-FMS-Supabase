@@ -17,15 +17,31 @@ export async function GET() {
 
     if (error) throw error;
 
+    // Look up purchaser per indent (no FK relation exists between
+    // pfms_order-cancellation and pfms_indent_generation, so fetch separately).
+    const indentNos = Array.from(new Set((cancellations || []).map((c: any) => c.indentNo).filter(Boolean)));
+    const purchaserMap: Record<string, string | null> = {};
+    if (indentNos.length > 0) {
+      const { data: indentRows } = await supabase
+        .from("pfms_indent_generation")
+        .select("indentNo, purchaser")
+        .in("indentNo", indentNos);
+      for (const row of indentRows || []) {
+        purchaserMap[row.indentNo] = row.purchaser || null;
+      }
+    }
+
     const mappedData = (cancellations || []).map((row: any) => ({
       id: row.id,
       timestamp: row.timestamp,
       indentNo: row.indentNo,
+      liftNo: row.liftNo || null,
       poNumber: row.poNumber || "—",
       itemName: row.itemName,
       cancelStage: row.cancelStage,
       cancelReason: row.cancelReason,
-      qty: row.qty
+      qty: row.qty,
+      purchaser: purchaserMap[row.indentNo] || null
     }));
 
     return NextResponse.json({ success: true, data: mappedData });
@@ -38,7 +54,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { indentNo, poNumber, itemName, cancelStage, cancelReason, qty } = body;
+    const { indentNo, liftNo, poNumber, itemName, cancelStage, cancelReason, qty } = body;
 
     if (!indentNo || !itemName || !cancelStage || !cancelReason || qty === undefined) {
       return NextResponse.json(
@@ -53,6 +69,7 @@ export async function POST(request: NextRequest) {
       id: randomUUID(),
       timestamp: now,
       indentNo,
+      liftNo: liftNo || null,
       poNumber: poNumber || null,
       itemName,
       cancelStage,

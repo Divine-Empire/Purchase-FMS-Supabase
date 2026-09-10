@@ -12,60 +12,54 @@ export function parseSheetDate(dateStr: string | Date | null | undefined): Date 
   if (!dateStr || dateStr === "-" || dateStr === "—" || dateStr === "Invalid Date") return null;
   if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
   
-  // Try parsing YYYY-MM-DD first to avoid UTC timezone mismatch issues
-  const normalizedStr = typeof dateStr === 'string' ? dateStr.replace('T', ' ').replace('Z', '') : dateStr;
+  const normalizedStr = typeof dateStr === 'string' ? dateStr.replace('T', ' ').replace('Z', '').trim() : dateStr;
+  if (typeof normalizedStr !== 'string' || !normalizedStr) return null;
 
-  if (typeof normalizedStr === 'string' && normalizedStr.includes('-')) {
-    const parts = normalizedStr.trim().split(' ');
-    const dateParts = parts[0].split('-');
-    if (dateParts.length === 3 && dateParts[0].length === 4) {
-      const year = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const day = parseInt(dateParts[2], 10);
-      
-      let hours = 0, mins = 0, secs = 0;
-      if (parts[1]) {
-        const timeParts = parts[1].split(':');
-        if (timeParts.length >= 2) {
-          hours = parseInt(timeParts[0], 10);
-          mins = parseInt(timeParts[1], 10);
-          if (timeParts[2]) secs = parseFloat(timeParts[2]);
-        }
+  // Try parsing YYYY-MM-DD HH:mm:ss or DD-MM-YYYY HH:mm:ss (also supports / separator)
+  const parts = normalizedStr.includes(", ") ? normalizedStr.split(", ") : normalizedStr.split(' ');
+  const datePart = parts[0];
+  const separator = datePart.includes('-') ? '-' : datePart.includes('/') ? '/' : null;
+
+  if (separator) {
+    const dateParts = datePart.split(separator);
+    if (dateParts.length === 3) {
+      let year = 0, month = 0, day = 0;
+      if (dateParts[0].length === 4) {
+        // YYYY-MM-DD
+        year = parseInt(dateParts[0], 10);
+        month = parseInt(dateParts[1], 10) - 1;
+        day = parseInt(dateParts[2], 10);
+      } else if (dateParts[2].length === 4) {
+        // DD-MM-YYYY or DD/MM/YYYY
+        day = parseInt(dateParts[0], 10);
+        month = parseInt(dateParts[1], 10) - 1;
+        year = parseInt(dateParts[2], 10);
       }
-      
-      const parsed = new Date(year, month, day, hours, mins, secs);
-      if (!isNaN(parsed.getTime())) return parsed;
+
+      if (year > 0 && !isNaN(month) && !isNaN(day)) {
+        let hours = 0, mins = 0, secs = 0;
+        if (parts[1]) {
+          const timeParts = parts[1].split(':');
+          if (timeParts.length >= 2) {
+            hours = parseInt(timeParts[0], 10);
+            mins = parseInt(timeParts[1], 10);
+            if (timeParts[2]) secs = parseFloat(timeParts[2]);
+
+            if (parts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
+            if (parts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
+          }
+        }
+        
+        const parsed = new Date(year, month, day, hours, mins, secs);
+        if (!isNaN(parsed.getTime())) return parsed;
+      }
     }
   }
 
-  // Try standard parsing
+  // Fallback to standard JS Date parsing
   const d = new Date(dateStr);
   if (!isNaN(d.getTime())) return d;
 
-  // Try parsing DD/MM/YYYY
-  const dateTimeParts = dateStr.includes(", ") ? dateStr.split(", ") : dateStr.split(" ");
-  const dateParts = dateTimeParts[0].split("/");
-  if (dateParts.length === 3) {
-    const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
-    const year = parseInt(dateParts[2], 10);
-
-    let hours = 0, mins = 0, secs = 0;
-    if (dateTimeParts[1]) {
-      const timeParts = dateTimeParts[1].split(":");
-      if (timeParts.length >= 2) {
-        hours = parseInt(timeParts[0], 10);
-        mins = parseInt(timeParts[1], 10);
-        if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-
-        if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-        if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-      }
-    }
-
-    const parsed = new Date(year, month, day, hours, mins, secs);
-    return isNaN(parsed.getTime()) ? null : parsed;
-  }
   return null;
 }
 

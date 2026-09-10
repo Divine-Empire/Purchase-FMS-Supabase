@@ -119,6 +119,7 @@ const HISTORY_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
     { key: "planned", label: "Planned" },
     { key: "actual", label: "Actual" },
+    { key: "delay", label: "Delay" },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
@@ -619,9 +620,9 @@ export default function SerialGeneration() {
         try {
             const vendorCode = vendorCodes[vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(invoiceDate);
-            const prefix = `SN-${vendorCode}/${encodedDate}/`;
+            const prefix = `SN-DIR-${vendorCode}/${encodedDate}/`;
 
-            const res = await fetch(`/api/serial-generation?prefix=${encodeURIComponent(prefix)}`);
+            const res = await fetch(`/api/serial-generation?prefix=${encodeURIComponent(prefix)}&isDirect=true`);
             const json = await res.json();
             if (json.success) {
                 setDirectStartingSequence(json.nextSequence || 1);
@@ -643,7 +644,7 @@ export default function SerialGeneration() {
         if (!directFormOpen) return;
         const vendorCode = vendorCodes[directForm.vendorName] || "UNKNOWN";
         const encodedDate = encodeDateYYMMDD(directForm.invoiceDate);
-        const prefix = `SN-${vendorCode}/${encodedDate}/`;
+        const prefix = `SN-DIR-${vendorCode}/${encodedDate}/`;
 
         if (directIsAutoMode) {
             if (directIsCheckingSequence) {
@@ -658,7 +659,7 @@ export default function SerialGeneration() {
         } else {
             setDirectEntries((prev) => {
                 const arr = Array.from({ length: debouncedQuantity }, (_, idx) => {
-                    if (prev[idx] && prev[idx].serialNo.startsWith(`SN-`)) {
+                    if (prev[idx] && prev[idx].serialNo.startsWith(`SN-DIR-`)) {
                         return prev[idx];
                     }
                     return { serialNo: prefix };
@@ -1251,6 +1252,22 @@ export default function SerialGeneration() {
                     View
                 </a>
             );
+        }
+
+        if (key === "delay") {
+            const pDate = parseSheetDate(data?.planned || data?.plannedDate);
+            const aDate = parseSheetDate(data?.actual || data?.actualDate);
+            if (!pDate || !aDate) return "-";
+            const diffMs = aDate.getTime() - pDate.getTime();
+            if (diffMs <= 0) return <span className="text-emerald-700 font-semibold">0</span>;
+            const diffHours = diffMs / (1000 * 60 * 60);
+            const days = Math.floor(diffHours / 24);
+            const hours = Math.floor(diffHours % 24);
+            let str = "";
+            if (days > 0) str = hours > 0 ? `${days}d ${hours}h` : `${days} day${days > 1 ? "s" : ""}`;
+            else if (hours > 0) str = `${hours} hr${hours > 1 ? "s" : ""}`;
+            else str = `${Math.floor(diffMs / (1000 * 60))} mins`;
+            return <span className="text-amber-700 font-bold">{str}</span>;
         }
 
         if (key === "invoiceDate" || key === "planned" || key === "actual" || key === "warrantyEnd" || key === "warrantyExpiry" || key === "productExpiry") {

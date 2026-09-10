@@ -22,7 +22,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Loader2, Search, ClipboardCheck, RefreshCw, Eye, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
+import { getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import MaterialTestingPending from "./material-testing-pending";
@@ -136,6 +137,7 @@ const FILE_FIELDS = new Set(["poCopy", "receivedItemImage", "billAttachment", "r
 const AMOUNT_FIELDS = new Set(["freightAmount", "advanceAmount", "basicValue", "totalWithTax", "ratePerQty", "paymentAmountHydra", "paymentAmountLabour", "paymentAmountHamali"]);
 
 export default function MaterialTesting() {
+  const { role, records: recordsAccess } = useAuth();
   const [open, setOpen] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -188,7 +190,7 @@ export default function MaterialTesting() {
       const dataJson = await dataRes.json();
 
       if (dropJson.success && dropJson.data) {
-        setQcEngineerList(dropJson.data.checkedByOptions || []);
+        setQcEngineerList(dropJson.data.engineersOptions || []);
         setChecklistList(dropJson.data.qcChecklistOptions || []);
         setRejectTypeList(dropJson.data.rejectTypeQcOptions || []);
       }
@@ -214,9 +216,15 @@ export default function MaterialTesting() {
     [sheetRecords, selectedRecordId]
   );
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
     const searchLower = searchTerm.toLowerCase();
-    return sheetRecords.filter((r) => {
+    return visibleRecords.filter((r) => {
       if (r.status !== "pending") return false;
       if (!searchLower) return true;
       return (
@@ -227,11 +235,11 @@ export default function MaterialTesting() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  }, [sheetRecords, searchTerm]);
+  }, [visibleRecords, searchTerm]);
 
   const history = useMemo(() => {
     const searchLower = searchTerm.toLowerCase();
-    return sheetRecords.filter((r) => {
+    return visibleRecords.filter((r) => {
       if (r.status !== "completed") return false;
       if (!searchLower) return true;
       return (
@@ -242,7 +250,7 @@ export default function MaterialTesting() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  }, [sheetRecords, searchTerm]);
+  }, [visibleRecords, searchTerm]);
 
   const fetchSerialsForRecord = useCallback(async (indentNumber: string, liftNo: string) => {
     setIsSerialsLoading(true);

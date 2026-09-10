@@ -1,43 +1,43 @@
 -- SQL commands to apply ON UPDATE CASCADE and ON DELETE CASCADE on all foreign key constraints in pfms tables
 
--- 1. pfms_indent-approval -> pfms_indent-generation
+-- 1. pfms_indent-approval -> pfms_indent_generation
 ALTER TABLE public."pfms_indent-approval" 
   DROP CONSTRAINT IF EXISTS "pfms_indent-approval_indentNo_fkey";
 ALTER TABLE public."pfms_indent-approval" 
   ADD CONSTRAINT "pfms_indent-approval_indentNo_fkey" 
-  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent-generation"("indentNo") 
+  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent_generation"("indentNo") 
   ON UPDATE CASCADE ON DELETE CASCADE;
 
--- 2. pfms_update-3-vendors -> pfms_indent-generation
+-- 2. pfms_update-3-vendors -> pfms_indent_generation
 ALTER TABLE public."pfms_update-3-vendors" 
   DROP CONSTRAINT IF EXISTS "pfms_update-3-vendors_indentNo_fkey";
 ALTER TABLE public."pfms_update-3-vendors" 
   ADD CONSTRAINT "pfms_update-3-vendors_indentNo_fkey" 
-  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent-generation"("indentNo") 
+  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent_generation"("indentNo") 
   ON UPDATE CASCADE ON DELETE CASCADE;
 
--- 3. pfms_negotiation -> pfms_indent-generation
+-- 3. pfms_negotiation -> pfms_indent_generation
 ALTER TABLE public."pfms_negotiation" 
   DROP CONSTRAINT IF EXISTS "pfms_negotiation_indentNo_fkey";
 ALTER TABLE public."pfms_negotiation" 
   ADD CONSTRAINT "pfms_negotiation_indentNo_fkey" 
-  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent-generation"("indentNo") 
+  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent_generation"("indentNo") 
   ON UPDATE CASCADE ON DELETE CASCADE;
 
--- 4. pfms_po-entry -> pfms_indent-generation
+-- 4. pfms_po-entry -> pfms_indent_generation
 ALTER TABLE public."pfms_po-entry" 
   DROP CONSTRAINT IF EXISTS "pfms_po-entry_indentNo_fkey";
 ALTER TABLE public."pfms_po-entry" 
   ADD CONSTRAINT "pfms_po-entry_indentNo_fkey" 
-  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent-generation"("indentNo") 
+  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent_generation"("indentNo") 
   ON UPDATE CASCADE ON DELETE CASCADE;
 
--- 5. pfms_lift -> pfms_indent-generation
+-- 5. pfms_lift -> pfms_indent_generation
 ALTER TABLE public."pfms_lift" 
   DROP CONSTRAINT IF EXISTS "pfms_lift_indentNo_fkey";
 ALTER TABLE public."pfms_lift" 
   ADD CONSTRAINT "pfms_lift_indentNo_fkey" 
-  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent-generation"("indentNo") 
+  FOREIGN KEY ("indentNo") REFERENCES public."pfms_indent_generation"("indentNo") 
   ON UPDATE CASCADE ON DELETE CASCADE;
 
 -- 6. pfms_transporter-follow-up -> pfms_lift

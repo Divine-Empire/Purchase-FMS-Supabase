@@ -28,11 +28,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatDate, parseSheetDate, getFmsTimestamp, cn } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import PoEntryPending from "./po-entry-pending";
 import PoEntryHistory from "./po-entry-history";
 
 export default function Stage5() {
+  const { role, records: recordsAccess } = useAuth();
   const [open, setOpen] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -85,8 +87,14 @@ export default function Stage5() {
   const [searchTerm, setSearchTerm] = useState("");
   const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
-    let records = sheetRecords
+    const records = visibleRecords
       .filter((r) => r.status === "pending")
       .filter((r) => {
         const searchLower = searchTerm.toLowerCase();
@@ -102,24 +110,11 @@ export default function Stage5() {
         );
       });
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const completed = useMemo(() => {
-    let records = sheetRecords
+    const records = visibleRecords
       .filter((r) => r.status === "completed")
       .filter((r) => {
         const searchLower = searchTerm.toLowerCase();
@@ -136,21 +131,8 @@ export default function Stage5() {
         );
       });
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const poTotalMap = useMemo(() => {
     const totals = new Map<string, number>();

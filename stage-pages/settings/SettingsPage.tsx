@@ -32,6 +32,7 @@ export interface UserRecord {
   password: string;
   role: string;
   pageAccess: string;
+  records?: string;
   createdAt?: string;
 }
 
@@ -98,6 +99,7 @@ export default function SettingsPage() {
       password: user.password,
       role: user.role,
       pageAccess: accessList,
+      records: user.records || "ALL",
     });
     setShowModal(true);
   };
@@ -202,12 +204,13 @@ export default function SettingsPage() {
                   <TableHead className="font-bold text-slate-700">PASSWORD</TableHead>
                   <TableHead className="font-bold text-slate-700">ROLE</TableHead>
                   <TableHead className="font-bold text-slate-700">PAGE ACCESS</TableHead>
+                  <TableHead className="font-bold text-slate-700">RECORDS</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-40 text-center text-slate-500">
+                    <TableCell colSpan={7} className="h-40 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                         <span className="text-xs font-medium">Loading users...</span>
@@ -216,7 +219,7 @@ export default function SettingsPage() {
                   </TableRow>
                 ) : filteredUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-slate-500 text-sm">
+                    <TableCell colSpan={7} className="h-32 text-center text-slate-500 text-sm">
                       No user records found.
                     </TableCell>
                   </TableRow>
@@ -293,6 +296,16 @@ export default function SettingsPage() {
                           <span className="font-semibold text-slate-800">
                             {user.pageAccess || "ALL"}
                           </span>
+                        </TableCell>
+
+                        {/* Records Access */}
+                        <TableCell className="text-xs">
+                          <Badge
+                            variant="outline"
+                            className="bg-indigo-50/50 font-bold text-indigo-700 text-[10px] uppercase border-indigo-100 px-2 py-0.5 rounded-full"
+                          >
+                            {user.records || "ALL"}
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     );

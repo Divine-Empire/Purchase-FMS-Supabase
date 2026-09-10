@@ -15,8 +15,11 @@ import { Loader2, AlertCircle, RefreshCw, Search, ExternalLink, Image as ImageIc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 export default function DamagedRecords() {
+  const { role, records: recordsAccess } = useAuth();
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,17 +54,23 @@ export default function DamagedRecords() {
     fetchData();
   }, []);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleData = useMemo(
+    () => data.filter((r) => canViewPurchaserRecord(r.purchaser, recordsAccess, role)),
+    [data, recordsAccess, role]
+  );
+
   const uniqueVendors = useMemo(() =>
-    Array.from(new Set(data.map(r => r.vendorName).filter(Boolean))).sort()
-    , [data]);
+    Array.from(new Set(visibleData.map(r => r.vendorName).filter(Boolean))).sort()
+    , [visibleData]);
 
   const uniqueItems = useMemo(() =>
-    Array.from(new Set(data.map(r => r.itemName).filter(Boolean))).sort()
-    , [data]);
+    Array.from(new Set(visibleData.map(r => r.itemName).filter(Boolean))).sort()
+    , [visibleData]);
 
   const filteredData = useMemo(() => {
     const lower = searchTerm.toLowerCase();
-    return data.filter(row => {
+    return visibleData.filter(row => {
       const matchSearch =
         row.indentNo?.toLowerCase().includes(lower) ||
         row.vendorName?.toLowerCase().includes(lower) ||
@@ -73,7 +82,7 @@ export default function DamagedRecords() {
 
       return matchSearch && matchVendor && matchItem;
     });
-  }, [data, searchTerm, filters]);
+  }, [visibleData, searchTerm, filters]);
 
 
 

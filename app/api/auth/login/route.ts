@@ -75,6 +75,10 @@ export async function POST(req: NextRequest) {
       accessList = ["ALL"];
     }
 
+    // Records access: a single value (a Purchaser name, or "ALL"). Defaults to "ALL"
+    // when unset so existing users aren't suddenly restricted.
+    const records = foundUser.records?.trim() || "ALL";
+
     return NextResponse.json({
       success: true,
       user: {
@@ -83,6 +87,7 @@ export async function POST(req: NextRequest) {
         fullName: foundUser.fullName || foundUser.username,
         role: foundUser.role || "USER",
         pageAccess: accessList,
+        records,
       },
     });
   } catch (err: any) {

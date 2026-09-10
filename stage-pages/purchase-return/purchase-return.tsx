@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, RefreshCw, Search, Eye, ClipboardList, History } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, formatDateTimeDash } from "@/lib/utils";
+import { cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,7 @@ const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 });
 
 export default function PurchaseReturn() {
+  const { role, records: recordsAccess } = useAuth();
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [partialReturnRecords, setPartialReturnRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -173,8 +175,18 @@ export default function PurchaseReturn() {
     fetchData();
   }, [fetchData]);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleSheetRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+  const visiblePartialReturnRecords = useMemo(
+    () => partialReturnRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [partialReturnRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
-    return sheetRecords.filter((r) => {
+    return visibleSheetRecords.filter((r) => {
       const searchLower = searchTerm.toLowerCase();
       if (!searchLower) return true;
       return (
@@ -185,12 +197,12 @@ export default function PurchaseReturn() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  }, [sheetRecords, searchTerm]);
+  }, [visibleSheetRecords, searchTerm]);
 
   const completed = useMemo(() => {
     const searchLower = searchTerm.toLowerCase();
-    if (!searchLower) return partialReturnRecords;
-    return partialReturnRecords.filter((r) => {
+    if (!searchLower) return visiblePartialReturnRecords;
+    return visiblePartialReturnRecords.filter((r) => {
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
         r.data.itemName?.toLowerCase().includes(searchLower) ||
@@ -198,7 +210,7 @@ export default function PurchaseReturn() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  }, [partialReturnRecords, searchTerm]);
+  }, [visiblePartialReturnRecords, searchTerm]);
 
   const handleOpenForm = useCallback((recordId: string) => {
     const rec = sheetRecords.find((r) => r.id === recordId);

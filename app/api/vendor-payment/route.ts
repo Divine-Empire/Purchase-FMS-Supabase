@@ -28,11 +28,12 @@ export async function GET() {
           accountsVerification:pfms_accounts-verification (
             verificationDate
           ),
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
             category,
             warehouseLocation,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -67,9 +68,10 @@ export async function GET() {
             accountsVerification:pfms_accounts-verification (
               verificationDate
             ),
-            indent:pfms_indent-generation!inner (
+            indent:pfms_indent_generation!inner (
               indentNo,
               itemName,
+              purchaser,
               negotiation:pfms_negotiation (
                 selectedVendorName
               )
@@ -140,6 +142,7 @@ export async function GET() {
           totalPaid: pd.paidAmount,
           pendingAmount: pendingAmt,
           paymentStatus: pd.paidAmount > 0 ? "partial" : "pending",
+          purchaser: indent.purchaser || null,
         }
       });
     }
@@ -172,6 +175,7 @@ export async function GET() {
         status: log.paymentStatus || "paid",
         proof: log.proof || "",
         date: getLocalTimestamp(log.paymentDate).split("T")[0],
+        purchaser: indent.purchaser || null,
       });
     }
 

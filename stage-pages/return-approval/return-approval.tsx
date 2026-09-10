@@ -25,7 +25,8 @@ import { Loader2, RefreshCw, Upload, FileText, X, Search, ClipboardList, History
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
+import { getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import ReturnApprovalPending from "./return-approval-pending";
 import ReturnApprovalHistory from "./return-approval-history";
 
@@ -48,6 +49,7 @@ const uploadFileToDrive = async (file: File) => {
 };
 
 export default function ReturnApproval() {
+  const { role, records: recordsAccess } = useAuth();
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -97,9 +99,15 @@ export default function ReturnApproval() {
     fetchData();
   }, [fetchData]);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
     const lowerSearch = searchTerm.toLowerCase();
-    return sheetRecords
+    return visibleRecords
       .filter((r) => r.status === "pending")
       .filter((r) => {
         if (!lowerSearch) return true;
@@ -111,11 +119,11 @@ export default function ReturnApproval() {
           String(r.data.invoiceNumber || "").toLowerCase().includes(lowerSearch)
         );
       });
-  }, [sheetRecords, searchTerm]);
+  }, [visibleRecords, searchTerm]);
 
   const completed = useMemo(() => {
     const lowerSearch = searchTerm.toLowerCase();
-    return sheetRecords
+    return visibleRecords
       .filter((r) => r.status === "completed")
       .filter((r) => {
         if (!lowerSearch) return true;
@@ -126,7 +134,7 @@ export default function ReturnApproval() {
           String(r.data.invoiceNumber || "").toLowerCase().includes(lowerSearch)
         );
       });
-  }, [sheetRecords, searchTerm]);
+  }, [visibleRecords, searchTerm]);
 
   const selectedRecords = useMemo(() =>
     pending.filter((r) => selectedRows.has(r.id)),

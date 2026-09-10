@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch all indents and join with indent-approval
     const { data: indents, error } = await supabase
-      .from("pfms_indent-generation")
+      .from("pfms_indent_generation")
       .select("*, approval:pfms_indent-approval(*)")
       .order("timestamp", { ascending: false });
 
@@ -61,7 +61,8 @@ export async function GET(request: NextRequest) {
             approvedQty: hasApproval ? approvalData.approvedQty : null,
             vendorType: hasApproval ? approvalData.vendorType : null,
             remarks: hasApproval ? approvalData.remarks : null,
-            attachment: hasApproval ? approvalData.imgOptional : null
+            attachment: hasApproval ? approvalData.imgOptional : null,
+            purchaser: row.purchaser || null
           }
         };
       })
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
         const finalStatus = itemLineData.status || approvalData.status || "approved";
 
         await supabase
-          .from("pfms_indent-generation")
+          .from("pfms_indent_generation")
           .update({
             status: finalStatus,
             updatedAt: now

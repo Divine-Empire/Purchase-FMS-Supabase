@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Search, ShieldAlert, ClipboardList, History, AlertCircle } from "lucide-react";
-import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon, formatDateTimeDash } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon, formatDateTimeDash, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ const HISTORY_COLUMNS = [
 ] as const;
 
 export default function WarrantyClaim() {
+    const { role, records: recordsAccess } = useAuth();
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
     const [closurePendingRecords, setClosurePendingRecords] = useState<any[]>([]);
     const [historyRecords, setHistoryRecords] = useState<any[]>([]);
@@ -123,63 +125,38 @@ export default function WarrantyClaim() {
         );
     }, [searchTerm]);
 
+    // Purchaser-based record access: only show records this user is allowed to see.
+    const visiblePendingRecords = useMemo(
+        () => pendingRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [pendingRecords, recordsAccess, role]
+    );
+    const visibleClosurePendingRecords = useMemo(
+        () => closurePendingRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [closurePendingRecords, recordsAccess, role]
+    );
+    const visibleHistoryRecords = useMemo(
+        () => historyRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [historyRecords, recordsAccess, role]
+    );
+
     const pending = useMemo(() => {
-        let filtered = applySearch(pendingRecords);
+        let filtered = applySearch(visiblePendingRecords);
         if (showExpiringOnly) {
             filtered = filtered.filter(r => isWarrantyExpiringSoon(r.data.warrantyEnd));
         }
 
-        if (indentFilter === "increasing") {
-            filtered = [...filtered].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            filtered = [...filtered].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return filtered;
-    }, [pendingRecords, applySearch, showExpiringOnly, indentFilter]);
+        return sortByIndentNumber(filtered, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visiblePendingRecords, applySearch, showExpiringOnly, indentFilter]);
 
     const closurePending = useMemo(() => {
-        let items = applySearch(closurePendingRecords);
-        if (indentFilter === "increasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return items;
-    }, [closurePendingRecords, applySearch, indentFilter]);
+        const items = applySearch(visibleClosurePendingRecords);
+        return sortByIndentNumber(items, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visibleClosurePendingRecords, applySearch, indentFilter]);
 
     const history = useMemo(() => {
-        let items = applySearch(historyRecords);
-        if (indentFilter === "increasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return items;
-    }, [historyRecords, applySearch, indentFilter]);
+        const items = applySearch(visibleHistoryRecords);
+        return sortByIndentNumber(items, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visibleHistoryRecords, applySearch, indentFilter]);
 
     const uploadFile = useCallback(async (file: File) => {
         const formDataUpload = new FormData();

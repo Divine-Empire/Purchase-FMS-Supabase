@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
       accessList = ["ALL"];
     }
 
+    const records = foundUser.records?.trim() || "ALL";
+
     return NextResponse.json({
       success: true,
       user: {
@@ -71,6 +73,7 @@ export async function GET(req: NextRequest) {
         fullName: foundUser.fullName || foundUser.username,
         role: foundUser.role || "USER",
         pageAccess: accessList,
+        records,
       },
     });
   } catch (err: any) {

@@ -35,11 +35,12 @@ export async function GET() {
           timestamp,
           remarks
         ),
-        indent:"pfms_indent-generation"!inner (
+        indent:"pfms_indent_generation"!inner (
           indentNo,
           itemName,
           category,
           warehouseLocation,
+          purchaser,
           negotiation:pfms_negotiation (
             selectedVendorName
           ),
@@ -92,7 +93,8 @@ export async function GET() {
         actual10: ver ? ver.timestamp : "",
         verifiedCheckedBy: ver ? ver.verifiedCheckedBy : "",
         verificationDate: ver ? ver.verificationDate : "",
-        verificationRemarks: ver ? ver.remarks : ""
+        verificationRemarks: ver ? ver.remarks : "",
+        purchaser: indent.purchaser || null,
       };
 
       const mappedRecord = {

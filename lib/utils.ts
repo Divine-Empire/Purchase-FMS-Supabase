@@ -108,6 +108,56 @@ export function getFmsTimestamp(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 }
 /**
+ * Purchaser-based record access check. `records` (on pfms_User) holds a single value —
+ * a Purchaser name (e.g. "HARISH") or "ALL" — controlling which purchaser's indents a
+ * user may see across the app. Mirrors the existing `pageAccess` pattern (client-side
+ * enforcement only, see lib/auth-context.tsx / components/sidebar.tsx).
+ *
+ * Rules:
+ * - ADMIN always sees everything, regardless of their `records` value.
+ * - `records` of "ALL" (or unset) sees everything.
+ * - A record with no purchaser set (null/empty) is visible ONLY to "ALL"-access users —
+ *   it should never silently show to a restricted user just because it has no owner yet.
+ * - Otherwise, the record's purchaser must case-insensitively match the user's `records`.
+ */
+export function canViewPurchaserRecord(
+  recordPurchaser: string | null | undefined,
+  userRecords: string | null | undefined,
+  role: string | null | undefined
+): boolean {
+  if (role?.toUpperCase() === "ADMIN") return true;
+
+  const access = (userRecords || "ALL").trim().toUpperCase();
+  if (access === "ALL") return true;
+
+  const purchaser = recordPurchaser?.trim();
+  if (!purchaser) return false;
+
+  return purchaser.toUpperCase() === access;
+}
+
+export type IndentSortDirection = "asc" | "desc";
+
+/**
+ * Sorts records by their indent number field (`indentNumber` on most stage pages,
+ * `indentNo` on a few) using a natural (numeric-aware) comparison, so IN-9 sorts before
+ * IN-10, and multi-item batches (IN-123A, IN-123B, IN-123C...) stay grouped together in
+ * order. Used as the default ordering across all stage pages, so indent groups stay
+ * together regardless of which "Indent Wise Filter" option is active — "asc"/"desc" only
+ * flip the direction, they never fall back to unsorted/raw order.
+ */
+export function sortByIndentNumber<T extends { data?: { indentNumber?: string; indentNo?: string } }>(
+  records: T[],
+  direction: IndentSortDirection = "asc"
+): T[] {
+  const getValue = (r: T) => r.data?.indentNumber || r.data?.indentNo || "";
+  const sorted = [...records].sort((a, b) =>
+    getValue(a).localeCompare(getValue(b), undefined, { numeric: true, sensitivity: "base" })
+  );
+  return direction === "desc" ? sorted.reverse() : sorted;
+}
+
+/**
  * Checks if a warranty expiry date is within one month from today.
  */
 export function isWarrantyExpiringSoon(expiryDate: string | Date | null | undefined): boolean {

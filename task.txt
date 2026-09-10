@@ -1,0 +1,2 @@
+3. tat hours ka logic samajhna hai and usko office hours ke hisab se configure karna hai
+4. stages ka flow change hoga, Material Received -> Material Testing -> Receipt in Tally for Received Qty only.

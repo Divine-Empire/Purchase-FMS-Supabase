@@ -16,7 +16,7 @@ export async function GET() {
       .from("pfms_indent-approval")
       .select(`
         *,
-        indent:pfms_indent-generation (
+        indent:pfms_indent_generation (
           *,
           update3Vendors:pfms_update-3-vendors(*)
         )
@@ -90,6 +90,7 @@ export async function GET() {
             vendor3Terms: hasVendorData ? (vendorData.vendor3Terms || "") : "",
             vendor3DeliveryDate: hasVendorData ? (vendorData.vendor3DeliveryDate || "") : "",
             vendor3Attachment: hasVendorData ? (vendorData.vendor3Attachment || "") : "",
+            purchaser: row.purchaser || null
           }
         };
       })

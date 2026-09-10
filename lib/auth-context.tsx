@@ -9,6 +9,7 @@ interface AuthContextType {
   fullName: string | null;
   role: string | null;
   pageAccess: string[];
+  records: string;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
@@ -22,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [fullName, setFullName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [pageAccess, setPageAccess] = useState<string[]>([]);
+  const [records, setRecords] = useState<string>("ALL");
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedRole = localStorage.getItem("role");
         const storedAuth = localStorage.getItem("isAuthenticated");
         const storedAccess = localStorage.getItem("pageAccess");
+        const storedRecords = localStorage.getItem("records");
 
         if (storedAuth === "true" && storedUser) {
           // 1. Instant Restore from LocalStorage
@@ -48,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setPageAccess([]);
             }
           }
+          setRecords(storedRecords || "ALL");
 
           // 2. Background Refresh from Supabase API
           try {
@@ -63,16 +67,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const newAccessList = Array.isArray(u.pageAccess)
                   ? u.pageAccess
                   : [];
+                const newRecords = u.records || "ALL";
 
                 // Update State
                 setFullName(newFullName);
                 setRole(newRole);
                 setPageAccess(newAccessList);
+                setRecords(newRecords);
 
                 // Update Storage
                 localStorage.setItem("fullName", newFullName);
                 localStorage.setItem("role", newRole);
                 localStorage.setItem("pageAccess", JSON.stringify(newAccessList));
+                localStorage.setItem("records", newRecords);
               }
             }
           } catch (fetchErr) {
@@ -102,18 +109,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok && data.success && data.user) {
         const u = data.user;
         const accessList = Array.isArray(u.pageAccess) ? u.pageAccess : ["ALL"];
+        const recordsValue = u.records || "ALL";
 
         setIsAuthenticated(true);
         setUser(u.username);
         setFullName(u.fullName || u.username);
         setRole(u.role || "User");
         setPageAccess(accessList);
+        setRecords(recordsValue);
 
         localStorage.setItem("isAuthenticated", "true");
         localStorage.setItem("user", u.username);
         localStorage.setItem("fullName", u.fullName || u.username);
         localStorage.setItem("role", u.role || "User");
         localStorage.setItem("pageAccess", JSON.stringify(accessList));
+        localStorage.setItem("records", recordsValue);
 
         router.push("/");
         return true;
@@ -132,12 +142,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFullName(null);
     setRole(null);
     setPageAccess([]);
+    setRecords("ALL");
 
     localStorage.removeItem("isAuthenticated");
     localStorage.removeItem("user");
     localStorage.removeItem("fullName");
     localStorage.removeItem("role");
     localStorage.removeItem("pageAccess");
+    localStorage.removeItem("records");
 
     router.push("/login");
   };
@@ -150,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fullName,
         role,
         pageAccess,
+        records,
         isLoading,
         login,
         logout,

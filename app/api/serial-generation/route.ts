@@ -61,9 +61,10 @@ export async function GET(request: NextRequest) {
         lift:pfms_lift!inner (
           liftNo,
           plannedSerialGen,
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     // 3. Fetch item codes
     const { data: itemsMaster } = await supabase
-      .from("pfms_item-master")
+      .from("pfms_item_master")
       .select('"ITEM CODE", "ITEM NAME"');
 
     // 4. Fetch vendor codes
@@ -152,7 +153,8 @@ export async function GET(request: NextRequest) {
           serials: liftSerials.map(s => ({
             serialNo: s.serialNo,
             qrLink: s.qrLink
-          }))
+          })),
+          purchaser: indent.purchaser || null,
         }
       };
 
@@ -281,7 +283,7 @@ export async function POST(request: NextRequest) {
 
       // Calculate next direct indent number
       const { data: directIndents, error: indentError } = await supabase
-        .from("pfms_indent-generation")
+        .from("pfms_indent_generation")
         .select("indentNo")
         .like("indentNo", "IN-DIR-%");
       if (indentError) throw indentError;
@@ -300,7 +302,7 @@ export async function POST(request: NextRequest) {
 
       // 1. Insert placeholder indent
       const { error: insIndentErr } = await supabase
-        .from("pfms_indent-generation")
+        .from("pfms_indent_generation")
         .insert({
           id: randomUUID(),
           timestamp: now,

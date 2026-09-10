@@ -13,7 +13,7 @@ export async function GET() {
   try {
     // Fetch parent indents with inner join on update-3-vendors to ensure they completed Stage 3
     const { data: indents, error } = await supabase
-      .from("pfms_indent-generation")
+      .from("pfms_indent_generation")
       .select(`
         *,
         approval:pfms_indent-approval (
@@ -86,7 +86,8 @@ export async function GET() {
             selectedVendor: hasNegotiation ? (negotiationData.selectedVendorName || "") : "",
             selectedVendorName: hasNegotiation ? (negotiationData.selectedVendorName || "") : "",
             finalApprovedBy: hasNegotiation ? (negotiationData.finalApprovedBy || "") : "",
-            negotiationRemarks: hasNegotiation ? (negotiationData.negotiationRemarks || "") : ""
+            negotiationRemarks: hasNegotiation ? (negotiationData.negotiationRemarks || "") : "",
+            purchaser: row.purchaser || null
           }
         };
       })

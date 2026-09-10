@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
             cancelRes,
             respRes
         ] = await Promise.all([
-            supabase.from("pfms_indent-generation").select("*"),
+            supabase.from("pfms_indent_generation").select("*"),
             supabase.from("pfms_indent-approval").select("*"),
             supabase.from("pfms_negotiation").select("*"),
             supabase.from("pfms_po-entry").select("*"),
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
                   lrNo,
                   biltyCopy,
                   freightAmount,
-                  indent:pfms_indent-generation!inner (
+                  indent:pfms_indent_generation!inner (
                     indentNo,
                     itemName,
                     negotiation:pfms_negotiation (

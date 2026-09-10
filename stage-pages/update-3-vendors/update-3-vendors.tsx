@@ -50,8 +50,11 @@ import {
   formatDate,
   parseSheetDate,
   getFmsTimestamp,
-  cn
+  cn,
+  sortByIndentNumber,
+  canViewPurchaserRecord
 } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import Update3VendorsPending from "./update-3-vendors-pending";
 import Update3VendorsHistory from "./update-3-vendors-history";
 
@@ -68,6 +71,7 @@ export default function Stage3() {
     moveToNextStage,
     updateRecord,
   } = useWorkflow();
+  const { role, records: recordsAccess } = useAuth();
 
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -132,9 +136,15 @@ export default function Stage3() {
   const [searchTerm, setSearchTerm] = useState("");
   const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
     const lower = searchTerm.toLowerCase();
-    let records = sheetRecords.filter((r) => {
+    const records = visibleRecords.filter((r) => {
       if (r.status !== "pending") return false;
       if (!lower) return true;
       return (
@@ -148,25 +158,12 @@ export default function Stage3() {
       );
     });
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const completed = useMemo(() => {
     const lower = searchTerm.toLowerCase();
-    let records = sheetRecords.filter((r) => {
+    const records = visibleRecords.filter((r) => {
       if (r.status !== "completed") return false;
       if (!lower) return true;
       return (
@@ -180,21 +177,8 @@ export default function Stage3() {
       );
     });
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const fetchData = async () => {
     setIsLoading(true);

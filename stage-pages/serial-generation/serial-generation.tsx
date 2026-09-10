@@ -21,7 +21,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, ShieldAlert, Eye, Printer, PlusCircle, Check, ChevronsUpDown, Download, X, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { cn, formatDate, parseSheetDate, getFmsTimestamp, formatDateTimeDash } from "@/lib/utils";
+import { cn, formatDate, parseSheetDate, getFmsTimestamp, formatDateTimeDash, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { Label } from "@/components/ui/label";
 import {
     Command,
@@ -420,6 +421,7 @@ const Combobox = ({
 };
 
 export default function SerialGeneration() {
+    const { role, records: recordsAccess } = useAuth();
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
     const [historyRecords, setHistoryRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -511,41 +513,25 @@ export default function SerialGeneration() {
         );
     }, [searchTerm]);
 
+    // Purchaser-based record access: only show records this user is allowed to see.
+    const visiblePendingRecords = useMemo(
+        () => pendingRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [pendingRecords, recordsAccess, role]
+    );
+    const visibleHistoryRecords = useMemo(
+        () => historyRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [historyRecords, recordsAccess, role]
+    );
+
     const pending = useMemo(() => {
-        let items = applySearch(pendingRecords);
-        if (indentFilter === "increasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return items;
-    }, [pendingRecords, applySearch, indentFilter]);
+        const items = applySearch(visiblePendingRecords);
+        return sortByIndentNumber(items, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visiblePendingRecords, applySearch, indentFilter]);
 
     const history = useMemo(() => {
-        let items = applySearch(historyRecords);
-        if (indentFilter === "increasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNo || "";
-                const valB = b.data?.indentNo || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return items;
-    }, [historyRecords, applySearch, indentFilter]);
+        const items = applySearch(visibleHistoryRecords);
+        return sortByIndentNumber(items, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visibleHistoryRecords, applySearch, indentFilter]);
 
     const pendingGroups = useMemo(() => {
         const groups: Record<string, {

@@ -46,9 +46,9 @@ const DROPDOWN_COLUMNS = [
   { key: "Payment Terms (Stage3)", label: "Payment Terms (Stage 3)", fieldName: "paymentTermsOptions" },
   { key: "Approved By", label: "Approved By", fieldName: "approvedByOptions" },
   { key: "Transporter", label: "Transporter", fieldName: "transporterOptions" },
-  { key: "Checked By", label: "Checked By", fieldName: "checkedByOptions" },
-  { key: "Tally Done By", label: "Tally Done By", fieldName: "tallyDoneByOptions" },
-  { key: "Checkers (Verification)", label: "Checkers (Verification)", fieldName: "checkersVerificationOptions" },
+  { key: "Purchaser", label: "Purchaser", fieldName: "purchaserOptions" },
+  { key: "Accounts", label: "Accounts", fieldName: "accountsOptions" },
+  { key: "Engineers", label: "Engineers", fieldName: "engineersOptions" },
   { key: "QC-Checklist", label: "QC Checklist", fieldName: "qcChecklistOptions" },
   { key: "Reject Type (QC)", label: "Reject Type (QC)", fieldName: "rejectTypeQcOptions" },
 ];
@@ -60,6 +60,7 @@ interface ItemRecord {
   itemCode: string;
   category: string;
   itemName: string;
+  purchaser?: string;
 }
 
 interface VendorRecord {
@@ -102,9 +103,16 @@ export default function DropdownsMaster() {
 
   // Modals for Items & Vendors
   const [openItemModal, setOpenItemModal] = useState(false);
-  const [newItem, setNewItem] = useState({ itemCode: "", category: "", itemName: "" });
+  const [newItem, setNewItem] = useState({ itemCode: "", category: "", itemName: "", purchaser: "" });
   const [selectedCategory, setSelectedCategory] = useState("");
   const [manualCategory, setManualCategory] = useState("");
+
+  // Edit Item Modal
+  const [openEditItemModal, setOpenEditItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState({ id: "", itemCode: "", category: "", itemName: "", purchaser: "" });
+  const [editSelectedCategory, setEditSelectedCategory] = useState("");
+  const [editManualCategory, setEditManualCategory] = useState("");
+  const [isSavingItem, setIsSavingItem] = useState(false);
 
   const [openVendorModal, setOpenVendorModal] = useState(false);
   const [newVendor, setNewVendor] = useState({ vendorCode: "", vendorName: "" });
@@ -315,12 +323,13 @@ export default function DropdownsMaster() {
           itemCode: newItem.itemCode,
           category: finalCategory,
           itemName: newItem.itemName,
+          purchaser: newItem.purchaser,
         }),
       });
       const json = await res.json();
       if (json.success) {
         toast.success("Item added successfully");
-        setNewItem({ itemCode: "", category: "", itemName: "" });
+        setNewItem({ itemCode: "", category: "", itemName: "", purchaser: "" });
         setSelectedCategory("");
         setManualCategory("");
         setOpenItemModal(false);
@@ -333,6 +342,63 @@ export default function DropdownsMaster() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to add item");
+    }
+  };
+
+  const handleOpenEditItem = (item: ItemRecord) => {
+    setEditingItem({
+      id: item.id,
+      itemCode: item.itemCode || "",
+      category: item.category || "",
+      itemName: item.itemName || "",
+      purchaser: item.purchaser || "",
+    });
+    // Pre-select the existing category if it's a known one, else fall back to manual entry
+    if (item.category && existingCategories.includes(item.category)) {
+      setEditSelectedCategory(item.category);
+      setEditManualCategory("");
+    } else {
+      setEditSelectedCategory("OTHER");
+      setEditManualCategory(item.category || "");
+    }
+    setOpenEditItemModal(true);
+  };
+
+  const handleSaveEditItem = async () => {
+    const finalCategory = editSelectedCategory === "OTHER" ? editManualCategory.trim() : editSelectedCategory.trim();
+
+    if (!finalCategory || !editingItem.itemName.trim()) {
+      toast.error("Category and Item Name are required");
+      return;
+    }
+
+    setIsSavingItem(true);
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "updateItem",
+          id: editingItem.id,
+          itemCode: editingItem.itemCode,
+          category: finalCategory,
+          itemName: editingItem.itemName,
+          purchaser: editingItem.purchaser,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Item updated successfully");
+        setOpenEditItemModal(false);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to update item");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update item");
+    } finally {
+      setIsSavingItem(false);
     }
   };
 
@@ -734,7 +800,7 @@ export default function DropdownsMaster() {
 
                 <Button
                   onClick={() => {
-                    setNewItem({ itemCode: "", category: "", itemName: "" });
+                    setNewItem({ itemCode: "", category: "", itemName: "", purchaser: "" });
                     setSelectedCategory("");
                     setManualCategory("");
                     setOpenItemModal(true);
@@ -751,16 +817,17 @@ export default function DropdownsMaster() {
                 <Table className="border-collapse">
                   <TableHeader>
                     <TableRow className="bg-slate-100 hover:bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-755 border-b border-slate-350">
-                      <TableHead className="w-[100px] text-center font-bold text-slate-900">Actions</TableHead>
+                      <TableHead className="w-[130px] text-center font-bold text-slate-900">Actions</TableHead>
                       <TableHead className="font-bold text-slate-900">Item Code</TableHead>
                       <TableHead className="font-bold text-slate-900">Item Category</TableHead>
                       <TableHead className="font-bold text-slate-900">Item Name</TableHead>
+                      <TableHead className="font-bold text-slate-900">Purchaser</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-12 text-slate-600 text-sm font-bold">
+                        <TableCell colSpan={5} className="text-center py-12 text-slate-600 text-sm font-bold">
                           No items catalogued.
                         </TableCell>
                       </TableRow>
@@ -768,14 +835,24 @@ export default function DropdownsMaster() {
                       paginatedItems.map((item) => (
                         <TableRow key={item.id} className="hover:bg-slate-50 border-b border-slate-200 transition-colors">
                           <TableCell className="text-center">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-md cursor-pointer border border-transparent hover:border-red-200"
-                              onClick={() => handleDeleteItem(item.id, item.itemName)}
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-[11px] text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 font-bold rounded-md cursor-pointer"
+                                onClick={() => handleOpenEditItem(item)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-md cursor-pointer border border-transparent hover:border-red-200"
+                                onClick={() => handleDeleteItem(item.id, item.itemName)}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </div>
                           </TableCell>
                           <TableCell className="font-mono text-xs font-bold text-slate-800">
                             {item.itemCode || "N/A"}
@@ -786,6 +863,9 @@ export default function DropdownsMaster() {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-bold text-slate-900">{item.itemName}</TableCell>
+                          <TableCell className="font-semibold text-slate-700">
+                            {item.purchaser || <span className="text-slate-400 italic font-medium">Not set</span>}
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -1135,6 +1215,23 @@ export default function DropdownsMaster() {
                 className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
               />
             </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="purchaserSelect" className="text-xs font-bold text-slate-900">Purchaser</Label>
+              <select
+                id="purchaserSelect"
+                value={newItem.purchaser}
+                onChange={(e) => setNewItem((prev) => ({ ...prev, purchaser: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-slate-350 bg-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-slate-950 cursor-pointer"
+              >
+                <option value="">Select Purchaser...</option>
+                {(data.purchaserOptions || []).map((p: string) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
             <Button
@@ -1149,6 +1246,103 @@ export default function DropdownsMaster() {
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold"
             >
               Add Item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Item Modal */}
+      <Dialog open={openEditItemModal} onOpenChange={setOpenEditItemModal}>
+        <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
+          <DialogHeader className="border-b border-slate-200 pb-2">
+            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Edit Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 my-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="editItemCode" className="text-xs font-bold text-slate-900">Item Code (Optional)</Label>
+              <Input
+                id="editItemCode"
+                placeholder="e.g. ITM-001"
+                value={editingItem.itemCode}
+                onChange={(e) => setEditingItem((prev) => ({ ...prev, itemCode: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="editCategorySelect" className="text-xs font-bold text-slate-900">Item Category</Label>
+              <select
+                id="editCategorySelect"
+                value={editSelectedCategory}
+                onChange={(e) => setEditSelectedCategory(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-slate-350 bg-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-slate-950 cursor-pointer"
+              >
+                <option value="">Select Category...</option>
+                <option value="OTHER">OTHER (ENTER MANUALLY)</option>
+                {existingCategories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {editSelectedCategory === "OTHER" && (
+              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                <Label htmlFor="editCategoryManual" className="text-xs font-bold text-slate-900">Enter Category Manually</Label>
+                <Input
+                  id="editCategoryManual"
+                  placeholder="e.g. Cables"
+                  value={editManualCategory}
+                  onChange={(e) => setEditManualCategory(e.target.value)}
+                  className="h-9 text-xs border-slate-355 focus-visible:ring-slate-900 font-semibold text-slate-905"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="editItemName" className="text-xs font-bold text-slate-900">Item Name</Label>
+              <Input
+                id="editItemName"
+                placeholder="e.g. 3 Core Copper Cable"
+                value={editingItem.itemName}
+                onChange={(e) => setEditingItem((prev) => ({ ...prev, itemName: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="editPurchaserSelect" className="text-xs font-bold text-slate-900">Purchaser</Label>
+              <select
+                id="editPurchaserSelect"
+                value={editingItem.purchaser}
+                onChange={(e) => setEditingItem((prev) => ({ ...prev, purchaser: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-slate-350 bg-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-slate-950 cursor-pointer"
+              >
+                <option value="">Select Purchaser...</option>
+                {(data.purchaserOptions || []).map((p: string) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setOpenEditItemModal(false)}
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEditItem}
+              disabled={isSavingItem}
+              className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold gap-2"
+            >
+              {isSavingItem && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

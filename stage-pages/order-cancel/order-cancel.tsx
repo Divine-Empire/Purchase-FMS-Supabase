@@ -14,7 +14,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Checkbox } from "@/components/ui/checkbox"
 import { RefreshCw, Search, Plus, Loader2, AlertCircle, XCircle, Check, ChevronsUpDown } from "lucide-react"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
+import { cn, canViewPurchaserRecord } from "@/lib/utils"
+import { useAuth } from "@/lib/auth-context"
 
 const ItemCombobox = ({
   value,
@@ -85,6 +86,7 @@ const ItemCombobox = ({
 };
 
 export default function OrderCancelPage() {
+  const { role, records: recordsAccess } = useAuth();
   const [orderNumber, setOrderNumber] = useState("")
   const [cancelStage, setCancelStage] = useState("")
   const [cancelReason, setCancelReason] = useState("")
@@ -240,8 +242,10 @@ export default function OrderCancelPage() {
 
       const json = await response.json()
       if (json.success && Array.isArray(json.data)) {
-        setSearchResults(json.data)
-        if (json.data.length === 0) {
+        // Purchaser-based record access: only show records this user is allowed to see.
+        const visibleResults = json.data.filter((r: any) => canViewPurchaserRecord(r.purchaser, recordsAccess, role))
+        setSearchResults(visibleResults)
+        if (visibleResults.length === 0) {
           toast.info("No matching records found")
         }
       } else {

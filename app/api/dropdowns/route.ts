@@ -2,13 +2,21 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 
-// Helper function to safely quote column names for PostgREST filters (especially containing spaces or parentheses)
-function quoteColumn(col: string) {
-  if (col.startsWith('"') && col.endsWith('"')) {
-    return col;
-  }
-  return `"${col}"`;
-}
+// Maps the "column" key used by the frontend (DROPDOWN_COLUMNS in dropdownsMaster.tsx)
+// to the `category` value stored in the normalized pfms_dropdown (id, category, value) table.
+const DROPDOWN_CATEGORIES = [
+  "Created By",
+  "Wharehouse",
+  "UOM",
+  "Payment Terms (Stage3)",
+  "Approved By",
+  "Transporter",
+  "Purchaser",
+  "Accounts",
+  "Engineers",
+  "QC-Checklist",
+  "Reject Type (QC)",
+] as const;
 
 async function fetchAllRows(tableName: string, selectQuery: string) {
   let allRows: any[] = [];
@@ -31,16 +39,13 @@ async function fetchAllRows(tableName: string, selectQuery: string) {
 
 export async function GET() {
   try {
-    // 1. Fetch dropdown options (createdBy, warehouse, uom, paymentTerms, approvedBy, etc.)
-    const dropdownRows = await fetchAllRows(
-      "pfms_dropdown",
-      '"Created By", "Wharehouse", "UOM", "Payment Terms (Stage3)", "Approved By", "Transporter", "Checked By", "Tally Done By", "Checkers (Verification)", "QC-Checklist", "Reject Type (QC)"'
-    );
+    // 1. Fetch all dropdown options (normalized category/value pairs)
+    const dropdownRows = await fetchAllRows("pfms_dropdown", "category, value");
 
     // 2. Fetch all catalog items using the batching loop
     const itemRows = await fetchAllRows(
-      "pfms_item-master",
-      'id, "ITEM CODE", "ITEM CATEGORY", "ITEM NAME"'
+      "pfms_item_master",
+      'id, "ITEM CODE", "ITEM CATEGORY", "ITEM NAME", purchaser'
     );
 
     // 3. Fetch all vendors using the batching loop
@@ -55,97 +60,33 @@ export async function GET() {
       "id, stageName, actionTime, responsibleNames"
     );
 
-    // 4. Process lists to extract unique non-empty options
-    const createdByOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Created By"]?.trim())
-          .filter(Boolean)
-      )
-    );
+    // 4. Group dropdown rows by category -> unique, non-empty option lists
+    const optionsByCategory: Record<string, string[]> = {};
+    for (const row of dropdownRows as any[]) {
+      const cat = row.category?.trim();
+      const val = row.value?.trim();
+      if (!cat || !val) continue;
+      if (!optionsByCategory[cat]) optionsByCategory[cat] = [];
+      if (!optionsByCategory[cat].includes(val)) optionsByCategory[cat].push(val);
+    }
+    const getOptions = (category: string) => optionsByCategory[category] || [];
 
-    const warehouseOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Wharehouse"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const uomOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["UOM"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const paymentTermsOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Payment Terms (Stage3)"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const approvedByOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Approved By"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const transporterOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Transporter"]?.trim())
-          .filter(Boolean)
-      )
-    );
+    const createdByOptions = getOptions("Created By");
+    const warehouseOptions = getOptions("Wharehouse");
+    const uomOptions = getOptions("UOM");
+    const paymentTermsOptions = getOptions("Payment Terms (Stage3)");
+    const approvedByOptions = getOptions("Approved By");
+    const transporterOptions = getOptions("Transporter");
+    const purchaserOptions = getOptions("Purchaser");
+    const accountsOptions = getOptions("Accounts");
+    const engineersOptions = getOptions("Engineers");
+    const qcChecklistOptions = getOptions("QC-Checklist");
+    const rejectTypeQcOptions = getOptions("Reject Type (QC)");
 
     const vendorListOptions = Array.from(
       new Set(
         vendorRows
           .map((r: any) => r["Vendor List"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const checkedByOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Checked By"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const tallyDoneByOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Tally Done By"]?.trim())
-          .filter(Boolean)
-      )
-    );
-    const checkersVerificationOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Checkers (Verification)"]?.trim())
-          .filter(Boolean)
-      )
-    );
-    const qcChecklistOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["QC-Checklist"]?.trim())
-          .filter(Boolean)
-      )
-    );
-
-    const rejectTypeQcOptions = Array.from(
-      new Set(
-        dropdownRows
-          .map((r: any) => r["Reject Type (QC)"]?.trim())
           .filter(Boolean)
       )
     );
@@ -164,6 +105,7 @@ export async function GET() {
       itemCode: r["ITEM CODE"]?.trim() || "",
       category: r["ITEM CATEGORY"]?.trim() || "",
       itemName: r["ITEM NAME"]?.trim() || "",
+      purchaser: r.purchaser?.trim() || "",
     }));
 
     const vendors = (vendorRows || []).map((r: any) => ({
@@ -189,9 +131,9 @@ export async function GET() {
         approvedByOptions,
         transporterOptions,
         vendorListOptions,
-        checkedByOptions,
-        tallyDoneByOptions,
-        checkersVerificationOptions,
+        purchaserOptions,
+        accountsOptions,
+        engineersOptions,
         qcChecklistOptions,
         rejectTypeQcOptions,
         dropdownData,
@@ -216,12 +158,16 @@ export async function POST(request: Request) {
       if (!column || !value) {
         return NextResponse.json({ success: false, error: "Missing column or value" }, { status: 400 });
       }
+      if (!DROPDOWN_CATEGORIES.includes(column)) {
+        return NextResponse.json({ success: false, error: `Unknown dropdown category "${column}"` }, { status: 400 });
+      }
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("pfms_dropdown")
         .insert({
           id: randomUUID(),
-          [column]: value.trim()
+          category: column,
+          value: value.trim(),
         });
 
       if (error) throw error;
@@ -284,19 +230,43 @@ export async function POST(request: Request) {
     }
 
     if (action === "addItem") {
-      const { itemCode, category, itemName } = body;
+      const { itemCode, category, itemName, purchaser } = body;
       if (!category || !itemName) {
         return NextResponse.json({ success: false, error: "Missing category or itemName" }, { status: 400 });
       }
 
-      const { data, error } = await supabase
-        .from("pfms_item-master")
+      const { error } = await supabase
+        .from("pfms_item_master")
         .insert({
           id: randomUUID(),
           "ITEM CODE": itemCode?.trim() || null,
           "ITEM CATEGORY": category.trim(),
-          "ITEM NAME": itemName.trim()
+          "ITEM NAME": itemName.trim(),
+          purchaser: purchaser?.trim() || null,
         });
+
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "updateItem") {
+      const { id, itemCode, category, itemName, purchaser } = body;
+      if (!id) {
+        return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
+      }
+      if (!category || !itemName) {
+        return NextResponse.json({ success: false, error: "Missing category or itemName" }, { status: 400 });
+      }
+
+      const { error } = await supabase
+        .from("pfms_item_master")
+        .update({
+          "ITEM CODE": itemCode?.trim() || null,
+          "ITEM CATEGORY": category.trim(),
+          "ITEM NAME": itemName.trim(),
+          purchaser: purchaser?.trim() || null,
+        })
+        .eq("id", id);
 
       if (error) throw error;
       return NextResponse.json({ success: true });
@@ -308,7 +278,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: "Missing vendorName" }, { status: 400 });
       }
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("pfms_vendor-master")
         .insert({
           id: randomUUID(),
@@ -340,33 +310,13 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ success: false, error: "Missing column or value" }, { status: 400 });
       }
 
-      // Update matching column fields to NULL
-      const { error: updateError } = await supabase
-        .from("pfms_dropdown")
-        .update({ [column]: null })
-        .eq(quoteColumn(column), value);
-
-      if (updateError) throw updateError;
-
-      // Clean up records where all dropdown fields are null
-      const { error: cleanupError } = await supabase
+      const { error } = await supabase
         .from("pfms_dropdown")
         .delete()
-        .is('"Created By"', null)
-        .is('"Wharehouse"', null)
-        .is('"Payment Terms (Stage3)"', null)
-        .is('"Approved By"', null)
-        .is('"Checkers (Verification)"', null)
-        .is('"Transporter"', null)
-        .is('"Checked By"', null)
-        .is('"Tally Done By"', null)
-        .is('"UOM"', null)
-        .is('"Location-Update"', null)
-        .is('"QC-Checklist"', null)
-        .is('"Reject Type (QC)"', null);
+        .eq("category", column)
+        .eq("value", value);
 
-      if (cleanupError) throw cleanupError;
-
+      if (error) throw error;
       return NextResponse.json({ success: true });
     }
 
@@ -377,7 +327,7 @@ export async function DELETE(request: Request) {
       }
 
       const { error } = await supabase
-        .from("pfms_item-master")
+        .from("pfms_item_master")
         .delete()
         .eq("id", id);
 

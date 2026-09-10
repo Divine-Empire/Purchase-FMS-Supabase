@@ -18,12 +18,13 @@ export async function GET() {
         *,
         materialReceived:pfms_material-received (*),
         transporterFollowUp:pfms_transporter-follow-up(status),
-        indent:pfms_indent-generation!inner (
+        indent:pfms_indent_generation!inner (
           indentNo,
           warehouseLocation,
           itemName,
           itemCode,
           quantity,
+          purchaser,
           negotiation:pfms_negotiation (
             selectedVendorName
           ),
@@ -114,6 +115,7 @@ export async function GET() {
             duration: matRecd ? (matRecd.warrantyDuration || "") : "",
             warrantyExpiry: matRecd ? (matRecd.warrantyExpiry || "") : "",
             productExpiry: matRecd ? (matRecd.productExpiryDate || "") : "",
+            purchaser: indent.purchaser || null,
           }
         };
       })
@@ -235,7 +237,7 @@ export async function POST(request: NextRequest) {
           .from("pfms_lift")
           .select(`
             indentNo,
-            indent:"pfms_indent-generation"!inner (
+            indent:"pfms_indent_generation"!inner (
               negotiation:pfms_negotiation (
                 selectedVendorName
               ),

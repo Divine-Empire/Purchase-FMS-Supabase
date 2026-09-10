@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     let hasMore = true;
     while (hasMore) {
       const { data: pageIndents, error: indentError } = await supabase
-        .from("pfms_indent-generation")
+        .from("pfms_indent_generation")
         .select(`
           *,
           approval:"pfms_indent-approval"(*),

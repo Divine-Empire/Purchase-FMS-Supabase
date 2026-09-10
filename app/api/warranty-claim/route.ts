@@ -26,9 +26,10 @@ export async function GET() {
           ),
           lift:pfms_lift!inner (
             liftNo,
-            indent:pfms_indent-generation!inner (
+            indent:pfms_indent_generation!inner (
               indentNo,
               itemName,
+              purchaser,
               negotiation:pfms_negotiation (
                 selectedVendorName
               )
@@ -81,7 +82,8 @@ export async function GET() {
             invoiceCopy: matRecd.billAttachment || "",
             warrantyEnd: s.warrantyExpiry || "",
             planned: s.plannedWarrantyClaim || "",
-            actual: null
+            actual: null,
+            purchaser: indent.purchaser || null,
           }
         });
       }
@@ -97,8 +99,9 @@ export async function GET() {
           qrLink,
           warrantyExpiry,
           lift:pfms_lift!inner (
-            indent:pfms_indent-generation!inner (
+            indent:pfms_indent_generation!inner (
               itemName,
+              purchaser,
               negotiation:pfms_negotiation (
                 selectedVendorName
               )
@@ -147,7 +150,8 @@ export async function GET() {
         warrantyEnd: serial.warrantyExpiry || "",
         invoiceDate: matRecd.invoiceDate || "",
         planned: claim.plannedClosure || "",
-        actual: claim.closureDate || ""
+        actual: claim.closureDate || "",
+        purchaser: indent.purchaser || null,
       };
 
       const mappedRecord = {

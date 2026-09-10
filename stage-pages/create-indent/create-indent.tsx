@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LayoutGrid, Search, PlusCircle, ClipboardList, History as HistoryIcon, Loader2 } from "lucide-react";
-import { parseSheetDate, cn } from "@/lib/utils";
+import { parseSheetDate, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import {
   Select,
   SelectContent,
@@ -20,6 +21,7 @@ import CreateIndentHistory from "./create-indent-history";
 
 export default function Stage1() {
   const { setIndentCounter } = useWorkflow();
+  const { role, records: recordsAccess } = useAuth();
 
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -61,47 +63,27 @@ export default function Stage1() {
     );
   };
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
-    let records = sheetRecords
+    const records = visibleRecords
       .filter((r) => r.status === "pending")
       .filter(matchesSearch);
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const history = useMemo(() => {
-    let records = sheetRecords
+    const records = visibleRecords
       .filter((r) => r.status === "completed")
       .filter(matchesSearch);
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   return (
     <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">

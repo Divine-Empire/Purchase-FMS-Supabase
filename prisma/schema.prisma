@@ -60,7 +60,7 @@ model IndentGeneration {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("pfms_indent-generation")
+  @@map("pfms_indent_generation")
 }
 
 //-------------------------------------------
@@ -682,8 +682,9 @@ model ItemMaster {
   itemCode     String? @map("ITEM CODE")
   itemCategory String? @map("ITEM CATEGORY")
   itemName     String? @map("ITEM NAME")
+  purchaser    String?
 
-  @@map("pfms_item-master")
+  @@map("pfms_item_master")
 }
 
 //-------------------------------------------
@@ -701,22 +702,20 @@ model VendorMaster {
 //-------------------------------------------
 //* DROPDOWN OPTIONS
 //-------------------------------------------
+// Normalized category/value pairs (was previously one sparse column per
+// category with one new mostly-null row per added option). Categories in use:
+// Created By, Wharehouse, UOM, Payment Terms (Stage3), Approved By,
+// Transporter, Purchaser, Accounts, Engineers, QC-Checklist, Reject Type (QC).
+// ("Checked By", "Tally Done By" and "Checkers (Verification)" were retired
+// in favor of "Accounts" / "Engineers" — see sql-queries/DB_CONTEXT.md §7.)
 model Dropdown {
   id String @id @default(uuid())
 
-  createdBy      String? @map("Created By")
-  warehouse      String? @map("Wharehouse")
-  paymentTerms   String? @map("Payment Terms (Stage3)")
-  approvedBy     String? @map("Approved By")
-  checkers       String? @map("Checkers (Verification)")
-  transporter    String? @map("Transporter")
-  checkedBy      String? @map("Checked By")
-  tallyDoneBy    String? @map("Tally Done By")
-  uom            String? @map("UOM")
-  locationUpdate String? @map("Location-Update")
-  qcChecklist    String? @map("QC-Checklist")
-  rejectType     String? @map("Reject Type (QC)")
+  category  String
+  value     String
+  createdAt DateTime? @default(now()) @map("createdAt")
 
+  @@unique([category, value])
   @@map("pfms_dropdown")
 }
 

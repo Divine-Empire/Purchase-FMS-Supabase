@@ -49,7 +49,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { cn, parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
+import { cn, parseSheetDate, formatDate, getFmsTimestamp, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -176,6 +177,7 @@ const TransporterCombobox = ({
 };
 
 export default function Stage6() {
+  const { role, records: recordsAccess } = useAuth();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
@@ -256,8 +258,18 @@ export default function Stage6() {
   const [searchTerm, setSearchTerm] = useState("");
   const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+  const visibleReceivingAccountsData = useMemo(
+    () => receivingAccountsData.filter((r) => canViewPurchaserRecord(r.purchaser, recordsAccess, role)),
+    [receivingAccountsData, recordsAccess, role]
+  );
+
   const pending = useMemo(() => {
-    let records = sheetRecords
+    const records = visibleRecords
       .filter((r) => r.status === "pending")
       .filter((r) => {
         const searchLower = searchTerm.toLowerCase();
@@ -271,24 +283,11 @@ export default function Stage6() {
         );
       });
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const completed = useMemo(() => {
-    let records = sheetRecords
+    const records = visibleRecords
       .filter((r) => r.status === "completed")
       .filter((r) => {
         const searchLower = searchTerm.toLowerCase();
@@ -302,24 +301,11 @@ export default function Stage6() {
         );
       });
 
-    if (indentFilter === "increasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (indentFilter === "decreasing") {
-      records = [...records].sort((a, b) => {
-        const valA = a.data?.indentNumber || "";
-        const valB = b.data?.indentNumber || "";
-        return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    }
-    return records;
-  }, [sheetRecords, searchTerm, indentFilter]);
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [visibleRecords, searchTerm, indentFilter]);
 
   const filteredHistoryData = useMemo(() => {
-    return receivingAccountsData.filter((row) => {
+    return visibleReceivingAccountsData.filter((row) => {
       const searchLower = searchTerm.toLowerCase();
       if (!searchLower) return true;
       return (
@@ -330,7 +316,7 @@ export default function Stage6() {
         row.liftNo?.toLowerCase().includes(searchLower)
       );
     });
-  }, [receivingAccountsData, searchTerm]);
+  }, [visibleReceivingAccountsData, searchTerm]);
 
   const getVendorData = (record: any) => {
     const selectedId = String(record.data.selectedVendor || "vendor1");

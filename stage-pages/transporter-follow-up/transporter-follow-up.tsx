@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
-import { getFmsTimestamp, cn } from "@/lib/utils";
+import { getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import TransporterFollowUpPending from "./transporter-follow-up-pending";
 import TransporterFollowUpHistory from "./transporter-follow-up-history";
 
@@ -43,6 +44,7 @@ const formatDateDash = (date: any) => {
 };
 
 export default function TransporterFollowUp() {
+    const { role, records: recordsAccess } = useAuth();
     const [records, setRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,9 +105,15 @@ export default function TransporterFollowUp() {
         setSortConfig({ key, direction });
     };
 
+    // Purchaser-based record access: only show records this user is allowed to see.
+    const visibleRecords = useMemo(
+        () => records.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [records, recordsAccess, role]
+    );
+
     const sortedPending = useMemo(() => {
         const searchLower = searchTerm.toLowerCase();
-        const pendingItems = records
+        const pendingItems = visibleRecords
             .filter(r => r.status === "pending")
             .filter((r) => {
                 return (
@@ -120,21 +128,13 @@ export default function TransporterFollowUp() {
                 );
             });
 
-        if (indentFilter === "increasing") {
-            return [...pendingItems].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            return [...pendingItems].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
+        if (indentFilter === "increasing" || indentFilter === "decreasing") {
+            return sortByIndentNumber(pendingItems, indentFilter === "decreasing" ? "desc" : "asc");
         }
 
-        if (!sortConfig) return pendingItems;
+        // Default (no explicit column sort clicked): keep multi-item indent batches
+        // (IN-123A, IN-123B, ...) grouped together instead of falling back to raw order.
+        if (!sortConfig) return sortByIndentNumber(pendingItems, "asc");
 
         return [...pendingItems].sort((a, b) => {
             const aValue = a.data[sortConfig.key] || "";
@@ -152,11 +152,11 @@ export default function TransporterFollowUp() {
             if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
             return 0;
         });
-    }, [records, sortConfig, searchTerm, indentFilter]);
+    }, [visibleRecords, sortConfig, searchTerm, indentFilter]);
 
     const completed = useMemo(() => {
         const searchLower = searchTerm.toLowerCase();
-        let items = records.filter(r => {
+        const items = visibleRecords.filter(r => {
             if (r.status !== "history") return false;
             return (
                 r.data.indentNumber?.toLowerCase().includes(searchLower) ||
@@ -170,21 +170,8 @@ export default function TransporterFollowUp() {
             );
         });
 
-        if (indentFilter === "increasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            items = [...items].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return items;
-    }, [records, searchTerm, indentFilter]);
+        return sortByIndentNumber(items, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visibleRecords, searchTerm, indentFilter]);
     const pending = sortedPending;
 
     const pendingColumns = [

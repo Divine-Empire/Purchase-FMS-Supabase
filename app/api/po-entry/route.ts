@@ -13,7 +13,7 @@ export async function GET() {
   try {
     // Fetch parent indents with inner join on negotiation to ensure Stage 4 completed
     const { data: indents, error } = await supabase
-      .from("pfms_indent-generation")
+      .from("pfms_indent_generation")
       .select(`
         *,
         approval:pfms_indent-approval (
@@ -105,7 +105,8 @@ export async function GET() {
             pkgAmount: hasPOEntry ? (poData.pkgAmount || "") : "",
             pkgGST: hasPOEntry ? (poData.pkgGST || "") : "",
             estimatedFollowUpVendor: hasPOEntry ? (poData.estimatedFollowUpVendor || null) : null,
-            remarksFollowUpVendor: hasPOEntry ? (poData.remarksFollowUpVendor || "") : ""
+            remarksFollowUpVendor: hasPOEntry ? (poData.remarksFollowUpVendor || "") : "",
+            purchaser: row.purchaser || null
           }
         };
       })
@@ -174,7 +175,7 @@ export async function POST(request: NextRequest) {
         const recordId = item.recordId;
         const recordIndentNo = recordId.length > 36 ? recordId.substring(0, recordId.length - 37) : recordId;
         await supabase
-          .from("pfms_indent-generation")
+          .from("pfms_indent_generation")
           .update({
             remarks: `PO Entry done: ${poNumber}`, // or keep legacy column PO No. sync if needed
             updatedAt: now

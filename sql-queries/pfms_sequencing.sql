@@ -8,10 +8,10 @@ CREATE SEQUENCE IF NOT EXISTS pfms_lift_no_seq START WITH 1;
 -- 2. AUTOMATIC SYNCHRONIZATION WITH CURRENT DATA
 -- =========================================================================
 
--- Sync Indent sequence with the highest current number in the "pfms_indent-generation" table
+-- Sync Indent sequence with the highest current number in the "pfms_indent_generation" table
 SELECT setval('pfms_indent_no_seq', COALESCE((
   SELECT MAX(substring("indentNo" from 'IN-([0-9]+)')::integer)
-  FROM "pfms_indent-generation"
+  FROM "pfms_indent_generation"
   WHERE "indentNo" ~ '^IN-[0-9]+'
 ), 0) + 1, false);
 

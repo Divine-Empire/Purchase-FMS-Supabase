@@ -27,13 +27,14 @@ export async function GET() {
             checkedStatus,
             checkedByAcc
           ),
-          indent:"pfms_indent-generation"!inner (
+          indent:"pfms_indent_generation"!inner (
             indentNo,
             itemName,
             category,
             warehouseLocation,
             quantity,
             createdBy,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -114,7 +115,8 @@ export async function GET() {
         warehouse: indent.warehouseLocation || "-",
         basicValue: basicValue,
         totalWithTax: totalWithTax,
-        poCopy: poEntry.poCopy || ""
+        poCopy: poEntry.poCopy || "",
+        purchaser: indent.purchaser || null,
       };
 
       const mappedRecord = {

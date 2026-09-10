@@ -16,9 +16,10 @@ export async function GET() {
         lift:pfms_lift!inner (
           liftNo,
           liftingQty,
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
+            purchaser,
             poEntry:pfms_po-entry (
               poNumber
             ),
@@ -54,6 +55,7 @@ export async function GET() {
         damagedQty: matRecd.damagedQty || 0,
         reason: matRecd.damageReason || "-",
         image: matRecd.damageImage || "",
+        purchaser: indent.purchaser || null,
       };
     });
 

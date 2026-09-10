@@ -13,7 +13,7 @@ export async function GET() {
   try {
     // 1. Fetch indents that have POs (Stage 5 completed)
     const { data: indents, error: indentError } = await supabase
-      .from("pfms_indent-generation")
+      .from("pfms_indent_generation")
       .select(`
         *,
         approval:pfms_indent-approval (
@@ -157,7 +157,8 @@ export async function GET() {
               advanceAmount: "",
               paymentDate: "",
               biltyCopy: null,
-            }
+            },
+            purchaser: row.purchaser || null
           }
         };
       })
@@ -173,8 +174,9 @@ export async function GET() {
       .from("pfms_lift")
       .select(`
         *,
-        indent:pfms_indent-generation!inner (
+        indent:pfms_indent_generation!inner (
           itemName,
+          purchaser,
           negotiation:pfms_negotiation (
             selectedVendorName
           ),
@@ -212,6 +214,7 @@ export async function GET() {
         paymentDate: l.paymentDate,
         paymentStatus: l.paymentStatus || "",
         biltyCopy: l.biltyCopy || "",
+        purchaser: indent.purchaser || null,
       };
     });
 

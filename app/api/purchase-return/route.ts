@@ -18,11 +18,12 @@ export async function GET() {
         *,
         lift:pfms_lift!inner (
           liftNo,
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
             category,
             warehouseLocation,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -50,11 +51,12 @@ export async function GET() {
         *,
         lift:pfms_lift!inner (
           liftNo,
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
             category,
             warehouseLocation,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -107,6 +109,7 @@ export async function GET() {
           serialPhoto: (testing.images || []).join(","),
           images: (testing.images || []).join(","),
           plan6: testing.plannedPurchaseReturns || "",
+          purchaser: indent.purchaser || null,
         }
       });
     }
@@ -150,6 +153,7 @@ export async function GET() {
           returnStatus: ret.returnStatus || "-",
           returnItemImage: ret.returnItemImage || "",
           creditNoteImage: ret.creditNoteImage || "",
+          purchaser: indent.purchaser || null,
         }
       });
     }

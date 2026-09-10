@@ -13,7 +13,7 @@ CREATE TABLE public.pfms_User (
   updatedAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_User_pkey PRIMARY KEY (id)
 );
-CREATE TABLE public.pfms_indent-generation (
+CREATE TABLE public.pfms_indent_generation (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   timestamp timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   indentNo text,
@@ -31,7 +31,7 @@ CREATE TABLE public.pfms_indent-generation (
   plannedIndentApproval timestamp without time zone,
   createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT pfms_indent-generation_pkey PRIMARY KEY (id)
+  CONSTRAINT pfms_indent_generation_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.pfms_indent-approval (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -47,7 +47,7 @@ CREATE TABLE public.pfms_indent-approval (
   createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_indent-approval_pkey PRIMARY KEY (id),
-  CONSTRAINT pfms_indent-approval_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent-generation(indentNo)
+  CONSTRAINT pfms_indent-approval_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent_generation(indentNo)
 );
 CREATE TABLE public.pfms_update-3-vendors (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -81,7 +81,7 @@ CREATE TABLE public.pfms_update-3-vendors (
   createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_update-3-vendors_pkey PRIMARY KEY (id),
-  CONSTRAINT pfms_update-3-vendors_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent-generation(indentNo)
+  CONSTRAINT pfms_update-3-vendors_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent_generation(indentNo)
 );
 CREATE TABLE public.pfms_negotiation (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -94,7 +94,7 @@ CREATE TABLE public.pfms_negotiation (
   createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_negotiation_pkey PRIMARY KEY (id),
-  CONSTRAINT pfms_negotiation_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent-generation(indentNo)
+  CONSTRAINT pfms_negotiation_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent_generation(indentNo)
 );
 CREATE TABLE public.pfms_po-entry (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -114,7 +114,7 @@ CREATE TABLE public.pfms_po-entry (
   createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_po-entry_pkey PRIMARY KEY (id),
-  CONSTRAINT pfms_po-entry_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent-generation(indentNo)
+  CONSTRAINT pfms_po-entry_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent_generation(indentNo)
 );
 CREATE TABLE public.pfms_lift (
   id text NOT NULL,
@@ -142,7 +142,7 @@ CREATE TABLE public.pfms_lift (
   createdAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pfms_lift_pkey PRIMARY KEY (id),
-  CONSTRAINT pfms_lift_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent-generation(indentNo)
+  CONSTRAINT pfms_lift_indentNo_fkey FOREIGN KEY (indentNo) REFERENCES public.pfms_indent_generation(indentNo)
 );
 CREATE TABLE public.pfms_transporter-follow-up (
   id text NOT NULL,
@@ -409,12 +409,13 @@ CREATE TABLE public.pfms_tat (
   responsibleNames text,
   CONSTRAINT pfms_tat_pkey PRIMARY KEY (id)
 );
-CREATE TABLE public.pfms_item-master (
+CREATE TABLE public.pfms_item_master (
   id text NOT NULL,
   ITEM CODE text,
   ITEM CATEGORY text,
   ITEM NAME text,
-  CONSTRAINT pfms_item-master_pkey PRIMARY KEY (id)
+  purchaser text,
+  CONSTRAINT pfms_item_master_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.pfms_vendor-master (
   id text NOT NULL,
@@ -422,21 +423,17 @@ CREATE TABLE public.pfms_vendor-master (
   Vendor List text,
   CONSTRAINT pfms_vendor-master_pkey PRIMARY KEY (id)
 );
+-- Normalized category/value pairs (replaces the old sparse one-column-per-category
+-- table). Categories: Created By, Wharehouse, UOM, Payment Terms (Stage3),
+-- Approved By, Transporter, Purchaser, Accounts, Engineers, QC-Checklist,
+-- Reject Type (QC). See sql-queries/DB_CONTEXT.md for the full migration notes.
 CREATE TABLE public.pfms_dropdown (
   id text NOT NULL,
-  Created By text,
-  Wharehouse text,
-  Payment Terms (Stage3) text,
-  Approved By text,
-  Checkers (Verification) text,
-  Transporter text,
-  Checked By text,
-  Tally Done By text,
-  UOM text,
-  Location-Update text,
-  QC-Checklist text,
-  Reject Type (QC) text,
-  CONSTRAINT pfms_dropdown_pkey PRIMARY KEY (id)
+  category text NOT NULL,
+  value text NOT NULL,
+  createdAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT pfms_dropdown_pkey PRIMARY KEY (id),
+  CONSTRAINT pfms_dropdown_category_value_key UNIQUE (category, value)
 );
 CREATE TABLE public.pfms_for_ims (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -534,7 +531,7 @@ SELECT
         ORDER BY l."timestamp" DESC
         LIMIT 1
     ) AS "remarks_follow_up"
-FROM public."pfms_indent-generation" ig
+FROM public."pfms_indent_generation" ig
 LEFT JOIN public."pfms_indent-approval" ia ON ig."indentNo" = ia."indentNo"
 LEFT JOIN public."pfms_update-3-vendors" uv ON ig."indentNo" = uv."indentNo"
 LEFT JOIN public."pfms_negotiation" neg ON ig."indentNo" = neg."indentNo"
@@ -607,7 +604,7 @@ SELECT
     GREATEST(0, COALESCE(EXTRACT(EPOCH FROM (ra."timestamp" - pr."plannedReturnApproval")) / 86400, 0)) AS "delay_stage12",
     vpd."paidAmount" AS "paid_amount"
 FROM public."pfms_lift" l
-LEFT JOIN public."pfms_indent-generation" ig ON l."indentNo" = ig."indentNo"
+LEFT JOIN public."pfms_indent_generation" ig ON l."indentNo" = ig."indentNo"
 LEFT JOIN public."pfms_indent-approval" ia ON ig."indentNo" = ia."indentNo"
 LEFT JOIN public."pfms_negotiation" neg ON ig."indentNo" = neg."indentNo"
 LEFT JOIN public."pfms_po-entry" po ON ig."indentNo" = po."indentNo"

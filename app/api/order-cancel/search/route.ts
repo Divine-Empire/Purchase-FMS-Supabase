@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     }
 
     let queryBuilder = supabase
-      .from("pfms_indent-generation")
+      .from("pfms_indent_generation")
       .select(`
         *,
         approval:"pfms_indent-approval"(approvedQty),
@@ -108,7 +108,8 @@ export async function GET(request: NextRequest) {
         poNumber: poEntry ? poEntry.poNumber : "—",
         itemName: row.itemName,
         remainingQty: remainingQty,
-        currentPendingStage: currentPendingStage
+        currentPendingStage: currentPendingStage,
+        purchaser: row.purchaser || null
       });
     }
 

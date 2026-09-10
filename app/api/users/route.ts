@@ -33,7 +33,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fullName, username, password, role, pageAccess } = body;
+    const { fullName, username, password, role, pageAccess, records } = body;
 
     if (!username || !fullName || !password) {
       return NextResponse.json(
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       password: password.trim(),
       role: role || "USER",
       pageAccess: pageAccessStr,
+      records: String(records || "ALL").trim(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, fullName, username, password, role, pageAccess } = body;
+    const { id, fullName, username, password, role, pageAccess, records } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: "User ID is required for update." }, { status: 400 });
@@ -115,6 +116,7 @@ export async function PUT(req: NextRequest) {
     if (password !== undefined) updatePayload.password = password.trim();
     if (role !== undefined) updatePayload.role = role;
     if (pageAccess !== undefined) updatePayload.pageAccess = pageAccessStr;
+    if (records !== undefined) updatePayload.records = String(records || "ALL").trim();
 
     const { data, error } = await supabase
       .from(tableName)

@@ -9,11 +9,38 @@ function getLocalTimestamp(dateInput?: Date | string | number | null): string {
   return new Date(date.getTime() - offset).toISOString().replace("Z", "");
 }
 
+// Looks up each item's purchaser from the catalog (pfms_item_master.purchaser) so it
+// can be copied onto the indent row at creation time. Falls back to null when the
+// item isn't in the catalog yet, or its purchaser hasn't been set there.
+async function getPurchaserMap(itemNames: string[]): Promise<Record<string, string | null>> {
+  const uniqueNames = Array.from(new Set(itemNames.filter(Boolean)));
+  const map: Record<string, string | null> = {};
+  if (uniqueNames.length === 0) return map;
+
+  const { data, error } = await supabase
+    .from("pfms_item_master")
+    .select('"ITEM NAME", purchaser')
+    .in("ITEM NAME", uniqueNames);
+
+  if (error) {
+    console.error("Error fetching purchaser map:", error);
+    return map;
+  }
+
+  for (const row of data || []) {
+    const name = (row as any)["ITEM NAME"]?.trim();
+    if (name && !(name in map)) {
+      map[name] = (row as any).purchaser?.trim() || null;
+    }
+  }
+  return map;
+}
+
 export async function GET() {
   try {
     // Fetch all indents and join with indent-approval (1-to-1 relation)
     const { data: indents, error } = await supabase
-      .from("pfms_indent-generation")
+      .from("pfms_indent_generation")
       .select("*, approval:pfms_indent-approval(*)")
       .order("timestamp", { ascending: false });
 
@@ -57,7 +84,8 @@ export async function GET() {
             // If approved, use status from approval, else use generation status
             status: hasApproval ? (approvalData.status || "approved") : "pending",
             remarks: hasApproval && approvalData.remarks ? approvalData.remarks : row.remarks,
-            attachment: hasApproval && approvalData.imgOptional ? approvalData.imgOptional : (row.attachment || "")
+            attachment: hasApproval && approvalData.imgOptional ? approvalData.imgOptional : (row.attachment || ""),
+            purchaser: row.purchaser || null
           }
         };
       })
@@ -102,6 +130,10 @@ export async function POST(request: NextRequest) {
       const plannedIndentApproval = await calculatePlannedTime("indent-approval");
       const now = getLocalTimestamp();
 
+      // 2b. Look up each item's purchaser from the catalog (one indent-creation batch
+      // can contain multiple items with different purchasers, e.g. IN-123A/B/C).
+      const purchaserMap = await getPurchaserMap(items.map((item: any) => item.itemName));
+
       // 3. Prepare generation rows with generated UUIDs and required timestamps
       const rowsToInsert = items.map((item: any, idx: number) => ({
         id: randomUUID(),
@@ -119,11 +151,12 @@ export async function POST(request: NextRequest) {
         uom: item.uom || null,
         attachment: attachment || null,
         status: "pending",
-        plannedIndentApproval
+        plannedIndentApproval,
+        purchaser: purchaserMap[item.itemName?.trim()] ?? null
       }));
 
       const { error: insertError } = await supabase
-        .from("pfms_indent-generation")
+        .from("pfms_indent_generation")
         .insert(rowsToInsert);
 
       if (insertError) throw insertError;
@@ -135,8 +168,11 @@ export async function POST(request: NextRequest) {
     if (action === "updateIndent") {
       const { id, createdBy, warehouseLocation, leadTime, category, itemName, quantity, uom, itemCode, attachment } = body;
 
+      // Re-resolve the purchaser in case the item was changed during edit.
+      const purchaserMap = await getPurchaserMap([itemName]);
+
       const { error: updateError } = await supabase
-        .from("pfms_indent-generation")
+        .from("pfms_indent_generation")
         .update({
           createdBy,
           warehouseLocation,
@@ -147,6 +183,7 @@ export async function POST(request: NextRequest) {
           uom: uom || null,
           itemCode: itemCode || null,
           attachment: attachment || null,
+          purchaser: purchaserMap[itemName?.trim()] ?? null,
           updatedAt: getLocalTimestamp()
         })
         .eq("id", id);
@@ -171,7 +208,7 @@ export async function POST(request: NextRequest) {
       }));
 
       const { error: itemError } = await supabase
-        .from("pfms_item-master")
+        .from("pfms_item_master")
         .insert(itemsToInsert);
 
       if (itemError) {

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, Search, RefreshCw, ClipboardList, History } from "lucide-react";
-import { parseSheetDate, getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -80,6 +81,7 @@ const historyColumns = [
 ] as const;
 
 export default function TallyEntry() {
+  const { role, records: recordsAccess } = useAuth();
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -219,8 +221,8 @@ export default function TallyEntry() {
       }
 
       if (dropJson.success && dropJson.data) {
-        setAccountantList(dropJson.data.tallyDoneByOptions || []);
-        setCheckerList(dropJson.data.checkedByOptions || []);
+        setAccountantList(dropJson.data.accountsOptions || []);
+        setCheckerList(dropJson.data.accountsOptions || []);
       }
     } catch (e) {
       console.error("Fetch error:", e);
@@ -233,9 +235,15 @@ export default function TallyEntry() {
     fetchData();
   }, []);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(
     () =>
-      sheetRecords
+      visibleRecords
         .filter((r: any) => r.status === "pending")
         .filter((r) => {
           if (
@@ -260,12 +268,12 @@ export default function TallyEntry() {
               .includes(searchLower)
           );
         }),
-    [sheetRecords, searchTerm, warehouseFilter]
+    [visibleRecords, searchTerm, warehouseFilter]
   );
 
   const completed = useMemo(
     () =>
-      sheetRecords
+      visibleRecords
         .filter((r: any) => r.status === "completed")
         .filter((r: any) => {
           if (
@@ -291,7 +299,7 @@ export default function TallyEntry() {
               .includes(searchLower)
           );
         }),
-    [sheetRecords, searchTerm, warehouseFilter]
+    [visibleRecords, searchTerm, warehouseFilter]
   );
 
   const toggleRow = useCallback((id: string) => {

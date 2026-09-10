@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS "pfms_User" (
 );
 
 -- 2. STAGE 1: INDENT GENERATION
-CREATE TABLE IF NOT EXISTS "pfms_indent-generation" (
+CREATE TABLE IF NOT EXISTS "pfms_indent_generation" (
     "id" TEXT NOT NULL,
     "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "indentNo" TEXT NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS "pfms_indent-generation" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "pfms_indent-generation_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "pfms_indent_generation_pkey" PRIMARY KEY ("id")
 );
 
 -- 3. STAGE 2: INDENT APPROVAL
@@ -467,13 +467,14 @@ CREATE TABLE IF NOT EXISTS "pfms_tat" (
 );
 
 -- 26. ITEM MASTER
-CREATE TABLE IF NOT EXISTS "pfms_item-master" (
+CREATE TABLE IF NOT EXISTS "pfms_item_master" (
     "id" TEXT NOT NULL,
     "ITEM CODE" TEXT,
     "ITEM CATEGORY" TEXT,
     "ITEM NAME" TEXT,
+    "purchaser" TEXT,
 
-    CONSTRAINT "pfms_item-master_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "pfms_item_master_pkey" PRIMARY KEY ("id")
 );
 
 -- 27. VENDOR MASTER
@@ -486,29 +487,26 @@ CREATE TABLE IF NOT EXISTS "pfms_vendor-master" (
 );
 
 -- 28. DROPDOWN OPTIONS
+-- Normalized category/value pairs. Categories in use: Created By, Wharehouse,
+-- UOM, Payment Terms (Stage3), Approved By, Transporter, Purchaser, Accounts,
+-- Engineers, QC-Checklist, Reject Type (QC). ("Checked By" / "Tally Done By" /
+-- "Checkers (Verification)" were retired in favor of "Accounts" / "Engineers" —
+-- see sql-queries/DB_CONTEXT.md.)
 CREATE TABLE IF NOT EXISTS "pfms_dropdown" (
     "id" TEXT NOT NULL,
-    "Created By" TEXT,
-    "Wharehouse" TEXT,
-    "Payment Terms (Stage3)" TEXT,
-    "Approved By" TEXT,
-    "Checkers (Verification)" TEXT,
-    "Transporter" TEXT,
-    "Checked By" TEXT,
-    "Tally Done By" TEXT,
-    "UOM" TEXT,
-    "Location-Update" TEXT,
-    "QC-Checklist" TEXT,
-    "Reject Type (QC)" TEXT,
+    "category" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "createdAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "pfms_dropdown_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "pfms_dropdown_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "pfms_dropdown_category_value_key" UNIQUE ("category", "value")
 );
 
 -- =========================================================================
 -- UNIQUE INDEXES
 -- =========================================================================
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_User_username_key" ON "pfms_User"("username");
-CREATE UNIQUE INDEX IF NOT EXISTS "pfms_indent-generation_indentNo_key" ON "pfms_indent-generation"("indentNo");
+CREATE UNIQUE INDEX IF NOT EXISTS "pfms_indent_generation_indentNo_key" ON "pfms_indent_generation"("indentNo");
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_indent-approval_indentNo_key" ON "pfms_indent-approval"("indentNo");
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_update-3-vendors_indentNo_key" ON "pfms_update-3-vendors"("indentNo");
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_negotiation_indentNo_key" ON "pfms_negotiation"("indentNo");
@@ -531,19 +529,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS "pfms_tat_stageName_key" ON "pfms_tat"("stageN
 -- FOREIGN KEY CONSTRAINTS
 -- =========================================================================
 ALTER TABLE "pfms_indent-approval" DROP CONSTRAINT IF EXISTS "pfms_indent-approval_indentNo_fkey";
-ALTER TABLE "pfms_indent-approval" ADD CONSTRAINT "pfms_indent-approval_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent-generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pfms_indent-approval" ADD CONSTRAINT "pfms_indent-approval_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent_generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "pfms_update-3-vendors" DROP CONSTRAINT IF EXISTS "pfms_update-3-vendors_indentNo_fkey";
-ALTER TABLE "pfms_update-3-vendors" ADD CONSTRAINT "pfms_update-3-vendors_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent-generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pfms_update-3-vendors" ADD CONSTRAINT "pfms_update-3-vendors_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent_generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "pfms_negotiation" DROP CONSTRAINT IF EXISTS "pfms_negotiation_indentNo_fkey";
-ALTER TABLE "pfms_negotiation" ADD CONSTRAINT "pfms_negotiation_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent-generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pfms_negotiation" ADD CONSTRAINT "pfms_negotiation_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent_generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "pfms_po-entry" DROP CONSTRAINT IF EXISTS "pfms_po-entry_indentNo_fkey";
-ALTER TABLE "pfms_po-entry" ADD CONSTRAINT "pfms_po-entry_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent-generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pfms_po-entry" ADD CONSTRAINT "pfms_po-entry_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent_generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "pfms_lift" DROP CONSTRAINT IF EXISTS "pfms_lift_indentNo_fkey";
-ALTER TABLE "pfms_lift" ADD CONSTRAINT "pfms_lift_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent-generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pfms_lift" ADD CONSTRAINT "pfms_lift_indentNo_fkey" FOREIGN KEY ("indentNo") REFERENCES "pfms_indent_generation"("indentNo") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "pfms_transporter-follow-up" DROP CONSTRAINT IF EXISTS "pfms_transporter-follow-up_liftNo_fkey";
 ALTER TABLE "pfms_transporter-follow-up" ADD CONSTRAINT "pfms_transporter-follow-up_liftNo_fkey" FOREIGN KEY ("liftNo") REFERENCES "pfms_lift"("liftNo") ON DELETE CASCADE ON UPDATE CASCADE;

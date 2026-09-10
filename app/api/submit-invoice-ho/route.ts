@@ -27,11 +27,12 @@ export async function GET() {
           hardcopySubmitted,
           submissionDate
         ),
-        indent:"pfms_indent-generation"!inner (
+        indent:"pfms_indent_generation"!inner (
           indentNo,
           itemName,
           category,
           warehouseLocation,
+          purchaser,
           negotiation:pfms_negotiation (
             selectedVendorName
           ),
@@ -81,7 +82,8 @@ export async function GET() {
         warehouse: indent.warehouseLocation || "-",
         basicValue: poEntry.basicValue || "-",
         totalWithTax: poEntry.totalWithTax || "-",
-        vendorName: negotiation.selectedVendorName || "-"
+        vendorName: negotiation.selectedVendorName || "-",
+        purchaser: indent.purchaser || null,
       };
 
       const mappedRecord = {

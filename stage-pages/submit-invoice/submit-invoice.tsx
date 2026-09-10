@@ -24,7 +24,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { parseSheetDate, getFmsTimestamp, formatDateTimeDash } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -73,6 +74,7 @@ const historyColumns = [
 ] as const;
 
 export default function SubmitInvoice() {
+  const { role, records: recordsAccess } = useAuth();
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -117,9 +119,15 @@ export default function SubmitInvoice() {
     fetchData();
   }, []);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [sheetRecords, recordsAccess, role]
+  );
+
   const pending = useMemo(
     () =>
-      sheetRecords
+      visibleRecords
         .filter((r) => r.status === "pending")
         .filter((r) => {
           if (
@@ -144,12 +152,12 @@ export default function SubmitInvoice() {
               .includes(searchLower)
           );
         }),
-    [sheetRecords, searchTerm, warehouseFilter]
+    [visibleRecords, searchTerm, warehouseFilter]
   );
 
   const completed = useMemo(
     () =>
-      sheetRecords
+      visibleRecords
         .filter((r) => r.status === "completed")
         .filter((r) => {
           if (
@@ -175,7 +183,7 @@ export default function SubmitInvoice() {
               .includes(searchLower)
           );
         }),
-    [sheetRecords, searchTerm, warehouseFilter]
+    [visibleRecords, searchTerm, warehouseFilter]
   );
 
   const toggleRow = useCallback((id: string) => {

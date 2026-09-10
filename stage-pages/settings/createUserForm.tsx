@@ -30,6 +30,7 @@ export interface UserFormData {
   password: string;
   role: string;
   pageAccess: string[];
+  records?: string;
 }
 
 interface CreateUserFormProps {
@@ -51,7 +52,22 @@ export default function CreateUserForm({
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("USER");
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
+  const [recordsAccess, setRecordsAccess] = useState("ALL");
+  const [purchaserOptions, setPurchaserOptions] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Fetch the current Purchaser list (from the Master > Dropdown Fields config)
+    // so "Records Access" always reflects whatever purchasers exist right now.
+    fetch("/api/dropdowns")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setPurchaserOptions(json.data.purchaserOptions || []);
+        }
+      })
+      .catch((err) => console.error("Failed to load purchaser options:", err));
+  }, []);
 
   useEffect(() => {
     setShowPassword(false);
@@ -60,6 +76,7 @@ export default function CreateUserForm({
       setUsername(initialData.username || "");
       setPassword(initialData.password || "");
       setRole(initialData.role || "USER");
+      setRecordsAccess(initialData.records || "ALL");
 
       // Extract raw page access items
       let rawAccess: string[] = [];
@@ -93,6 +110,7 @@ export default function CreateUserForm({
       setPassword("");
       setRole("USER");
       setSelectedPages([]);
+      setRecordsAccess("ALL");
     }
   }, [initialData, open]);
 
@@ -144,6 +162,7 @@ export default function CreateUserForm({
         password: password.trim(),
         role: role.toUpperCase(),
         pageAccess: pageAccessPayload,
+        records: recordsAccess,
       };
 
       const method = initialData?.id ? "PUT" : "POST";
@@ -296,6 +315,29 @@ export default function CreateUserForm({
                 );
               })}
             </div>
+          </div>
+
+          {/* RECORDS ACCESS Section */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <div className="text-xs font-bold tracking-wider text-slate-700 uppercase">
+              Records Access *
+            </div>
+            <p className="text-[11px] text-slate-500 -mt-1">
+              Controls which purchaser's records this user can see across the app.
+            </p>
+            <Select value={recordsAccess} onValueChange={(val) => setRecordsAccess(val)}>
+              <SelectTrigger className="h-10 border-slate-300 focus:ring-blue-500 rounded-md bg-white sm:w-64">
+                <SelectValue placeholder="Select Records Access" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">ALL</SelectItem>
+                {purchaserOptions.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Modal Footer Actions */}

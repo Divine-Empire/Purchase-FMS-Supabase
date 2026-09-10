@@ -32,7 +32,8 @@ import { FileText, Upload, X, Loader2, Search, Package } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
-import { parseSheetDate, getFmsTimestamp, cn } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import MaterialReceivedPending from "./material-received-pending";
 import MaterialReceivedHistory from "./material-received-history";
 
@@ -144,6 +145,7 @@ const HISTORY_COLUMNS = [
 ] as const;
 
 export default function MaterialReceived() {
+    const { role, records: recordsAccess } = useAuth();
     const [open, setOpen] = useState(false);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -558,9 +560,15 @@ export default function MaterialReceived() {
             form.damageReason
         ]);
 
+    // Purchaser-based record access: only show records this user is allowed to see.
+    const visibleRecords = useMemo(
+        () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+        [sheetRecords, recordsAccess, role]
+    );
+
     const pending = useMemo(() => {
         const lower = searchTerm.toLowerCase();
-        let records = sheetRecords.filter((r) => {
+        const records = visibleRecords.filter((r) => {
             if (!r?.data || r.status !== "pending") return false;
 
             if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -576,25 +584,12 @@ export default function MaterialReceived() {
             );
         });
 
-        if (indentFilter === "increasing") {
-            records = [...records].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            records = [...records].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return records;
-    }, [sheetRecords, searchTerm, warehouseFilter, indentFilter]);
+        return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visibleRecords, searchTerm, warehouseFilter, indentFilter]);
 
     const completed = useMemo(() => {
         const lower = searchTerm.toLowerCase();
-        let records = sheetRecords.filter((r) => {
+        const records = visibleRecords.filter((r) => {
             if (!r?.data || r.status !== "completed") return false;
 
             if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -610,21 +605,8 @@ export default function MaterialReceived() {
             );
         });
 
-        if (indentFilter === "increasing") {
-            records = [...records].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        } else if (indentFilter === "decreasing") {
-            records = [...records].sort((a, b) => {
-                const valA = a.data?.indentNumber || "";
-                const valB = b.data?.indentNumber || "";
-                return valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
-            });
-        }
-        return records;
-    }, [sheetRecords, searchTerm, warehouseFilter, indentFilter]);
+        return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+    }, [visibleRecords, searchTerm, warehouseFilter, indentFilter]);
 
     const qcField = (
         <div className="space-y-1.5">

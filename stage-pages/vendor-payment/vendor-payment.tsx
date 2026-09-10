@@ -25,7 +25,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn, formatDate, getFmsTimestamp } from "@/lib/utils";
+import { cn, formatDate, getFmsTimestamp, canViewPurchaserRecord } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import VendorPaymentPending from "./vendor-payment-pending";
 import VendorPaymentHistory from "./vendor-payment-history";
@@ -149,6 +150,7 @@ const defaultBulkForm = () => ({
 });
 
 export default function VendorPayment() {
+  const { role, records: recordsAccess } = useAuth();
   const [records, setRecords] = useState<any[]>([]);
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -190,8 +192,18 @@ export default function VendorPayment() {
 
   const searchLower = useMemo(() => searchTerm.toLowerCase(), [searchTerm]);
 
+  // Purchaser-based record access: only show records this user is allowed to see.
+  const visibleRecords = useMemo(
+    () => records.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
+    [records, recordsAccess, role]
+  );
+  const visibleHistoryRecords = useMemo(
+    () => historyRecords.filter((r) => canViewPurchaserRecord(r.purchaser, recordsAccess, role)),
+    [historyRecords, recordsAccess, role]
+  );
+
   const filteredRecords = useMemo(() => {
-    let result = records.filter(r => {
+    let result = visibleRecords.filter(r => {
       if (!searchLower) return true;
       return (
         String(r.data.invoiceNo || "").toLowerCase().includes(searchLower) ||
@@ -220,20 +232,20 @@ export default function VendorPayment() {
       });
     }
     return result;
-  }, [records, searchLower, sortConfig, showOverdueOnly]);
+  }, [visibleRecords, searchLower, sortConfig, showOverdueOnly]);
 
   const filteredHistoryRecords = useMemo(() => {
-    if (!searchLower) return historyRecords;
-    return historyRecords.filter(rec =>
+    if (!searchLower) return visibleHistoryRecords;
+    return visibleHistoryRecords.filter(rec =>
       String(rec.invoiceNo || "").toLowerCase().includes(searchLower) ||
       String(rec.vendor || "").toLowerCase().includes(searchLower)
     );
-  }, [historyRecords, searchLower]);
+  }, [visibleHistoryRecords, searchLower]);
 
   const uniqueVendors = useMemo(() => {
-    const names = Array.from(new Set(records.map(r => r.data.vendor).filter(Boolean)));
+    const names = Array.from(new Set(visibleRecords.map(r => r.data.vendor).filter(Boolean)));
     return (names as string[]).sort();
-  }, [records]);
+  }, [visibleRecords]);
 
   const filteredVendors = useMemo(() => {
     if (!vendorSearch) return uniqueVendors;

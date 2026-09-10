@@ -31,9 +31,10 @@ export async function GET() {
           lrNo,
           biltyCopy,
           freightAmount,
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -86,6 +87,7 @@ export async function GET() {
             totalFollowUps: row.totalFollowUps || 0,
             lrNo: lift.lrNo || "",
             lrCopy: lift.biltyCopy || "",
+            purchaser: indent.purchaser || null,
           }
         };
       })

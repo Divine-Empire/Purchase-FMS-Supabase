@@ -17,11 +17,12 @@ export async function GET() {
         *,
         lift:pfms_lift!inner (
           liftNo,
-          indent:pfms_indent-generation!inner (
+          indent:pfms_indent_generation!inner (
             indentNo,
             itemName,
             category,
             warehouseLocation,
+            purchaser,
             negotiation:pfms_negotiation (
               selectedVendorName
             ),
@@ -93,6 +94,7 @@ export async function GET() {
         rejectType: testing.rejectType || "",
         partName: testing.partName || "",
         remarks: testing.remarks || "",
+        purchaser: indent.purchaser || null,
       };
 
       const mappedRecord = {

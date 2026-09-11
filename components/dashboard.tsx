@@ -115,6 +115,11 @@ export default function PurchaseDashboard() {
   // Filter states
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Stage-wise export (Create Indent -> Material Received), independent of the Smart Filters above
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [isExportingStagewise, setIsExportingStagewise] = useState(false);
   const [selectedParty, setSelectedParty] = useState("all");
   const [selectedMaterial, setSelectedMaterial] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
@@ -478,6 +483,68 @@ export default function PurchaseDashboard() {
     }
   };
 
+  // Builds one CSV string from an array of flat row objects (headers = keys of the first row).
+  const buildCsvString = (rows: any[]) => {
+    if (!rows || rows.length === 0) return "";
+    const headers = Object.keys(rows[0]);
+    return [
+      headers.join(","),
+      ...rows.map((row) =>
+        headers
+          .map((h) => `"${String(row[h] ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+  };
+
+  // Cohort funnel export: the date range picks which indents were CREATED in that window;
+  // that fixed set of indents is then sliced across PO Entry / Follow-Up Vendor /
+  // Transporter Follow-Up / Material Received regardless of when those stages happened —
+  // "of the indents created in this window, how many reached stage X". One CSV per stage,
+  // bundled into a single ZIP download. Deliberately separate lists per stage (not one
+  // merged pipeline row) since lifts multiply an indent into several rows from Follow-Up
+  // Vendor onward.
+  const handleExportStagewise = async () => {
+    if (!exportStartDate || !exportEndDate) {
+      toast.error("Please select both a start date and an end date");
+      return;
+    }
+
+    setIsExportingStagewise(true);
+    try {
+      const res = await fetch(
+        `/api/dashboard/export-stagewise?startDate=${exportStartDate}&endDate=${exportEndDate}`
+      );
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || "Failed to fetch export data");
+      }
+
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+
+      Object.entries(json.stages as Record<string, any[]>).forEach(([stageName, rows], idx) => {
+        const csv = buildCsvString(rows);
+        const fileName = `${idx + 1}-${stageName.replace(/[\s/]+/g, "-")}.csv`;
+        zip.file(fileName, csv || "No records in this date range\n");
+      });
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Stagewise_Export_${exportStartDate}_to_${exportEndDate}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Export downloaded — ${json.cohortSize} indent(s) created in this range`);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to export stage-wise data");
+    } finally {
+      setIsExportingStagewise(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6 bg-gray-50 min-h-screen">
       {/* Header with Forms Button */}
@@ -687,15 +754,40 @@ export default function PurchaseDashboard() {
                   Track all pending items across different purchase stages
                 </p>
               </div>
-              <Button
-                variant="default"
-                className="bg-blue-600 hover:bg-blue-700 h-8 text-xs flex items-center"
-                onClick={handleGenerateReport}
-                disabled={isGeneratingReport}
-              >
-                {isGeneratingReport ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1.5" />}
-                {isGeneratingReport ? "Generating..." : "Generate Report"}
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input
+                  type="date"
+                  value={exportStartDate}
+                  onChange={(e) => setExportStartDate(e.target.value)}
+                  className="h-8 text-xs w-[130px]"
+                  title="Export start date"
+                />
+                <Input
+                  type="date"
+                  value={exportEndDate}
+                  onChange={(e) => setExportEndDate(e.target.value)}
+                  className="h-8 text-xs w-[130px]"
+                  title="Export end date"
+                />
+                <Button
+                  variant="outline"
+                  className="h-8 text-xs flex items-center border-blue-200 text-blue-700 hover:bg-blue-50"
+                  onClick={handleExportStagewise}
+                  disabled={isExportingStagewise}
+                >
+                  {isExportingStagewise ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
+                  {isExportingStagewise ? "Exporting..." : "Export Stage-wise (CSV)"}
+                </Button>
+                <Button
+                  variant="default"
+                  className="bg-blue-600 hover:bg-blue-700 h-8 text-xs flex items-center"
+                  onClick={handleGenerateReport}
+                  disabled={isGeneratingReport}
+                >
+                  {isGeneratingReport ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1.5" />}
+                  {isGeneratingReport ? "Generating..." : "Generate Report"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>

@@ -43,7 +43,7 @@ const pendingColumns = [
   { key: "totalWithTax", label: "Total w/Tax" },
   { key: "poCopy", label: "PO Copy" },
   { key: "receiptLiftNumber", label: "Unit Tracking No." },
-  { key: "receivedQty", label: "Rec. Qty" },
+  { key: "readyQty", label: "Ready Qty" },
   { key: "invoiceNumber", label: "Invoice No." },
   { key: "invoiceDate", label: "Invoice Date" },
   { key: "qcRequirement", label: "QC Required" },

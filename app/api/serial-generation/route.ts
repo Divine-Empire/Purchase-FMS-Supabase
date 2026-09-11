@@ -117,6 +117,15 @@ export async function GET(request: NextRequest) {
       serialsByLift.set(s.liftNo, list);
     }
 
+    // Qty-resolution ledger, only relevant for lifts where QC was required. A QC=Yes lift
+    // stays locked out of this stage entirely until Material Testing (and Repair Process,
+    // if any qty was routed there) fully resolve it.
+    const { data: ledgerRows, error: ledgerError } = await supabase
+      .from("pfms_lift_qc_resolution")
+      .select("liftNo, passedQty, repairedQty, isFullyResolved, releasedAt");
+    if (ledgerError) throw ledgerError;
+    const ledgerMap = new Map((ledgerRows || []).map((l: any) => [l.liftNo, l]));
+
     const pending: any[] = [];
     const history: any[] = [];
 
@@ -129,6 +138,18 @@ export async function GET(request: NextRequest) {
       const liftNo = lift.liftNo;
       const liftSerials = serialsByLift.get(liftNo) || [];
 
+      // If QC was required for this lift, it isn't ready for Serial Generation until Material
+      // Testing/Repair Process have fully resolved it (ledger released). Skip it entirely
+      // (not pending, not history) until then.
+      let readyQty = receipt.receivedQty || 0;
+      if (receipt.qcRequired === "yes") {
+        const ledger: any = ledgerMap.get(liftNo);
+        if (!ledger || !ledger.isFullyResolved || !ledger.releasedAt) {
+          continue;
+        }
+        readyQty = (ledger.passedQty || 0) + (ledger.repairedQty || 0);
+      }
+
       const record = {
         id: `${indent.indentNo || ""}_${liftNo || ""}`,
         raIndex: null,
@@ -139,6 +160,7 @@ export async function GET(request: NextRequest) {
           poNumber: poEntry.poNumber || "-",
           itemName: indent.itemName || "",
           receivedQty: receipt.receivedQty || 0,
+          readyQty: readyQty,
           invoiceDate: receipt.invoiceDate || "",
           invoiceNo: receipt.invoiceNumber || "",
           invoiceCopy: receipt.billAttachment || "",

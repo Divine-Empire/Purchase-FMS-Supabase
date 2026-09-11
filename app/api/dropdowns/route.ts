@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
+import { OFFICE_HOURS } from "@/app/api/helper/plannedCalculator";
 
 // Maps the "column" key used by the frontend (DROPDOWN_COLUMNS in dropdownsMaster.tsx)
 // to the `category` value stored in the normalized pfms_dropdown (id, category, value) table.
@@ -60,6 +61,15 @@ export async function GET() {
       "pfms_tat",
       "id, stage_name, duration_in_minutes, responsible_persons"
     );
+
+    // Fetch holidays from pfms_holidays (fully managed from this Master page — a standalone
+    // table with no triggers/links to any other system).
+    let holidayRows: any[] = [];
+    try {
+      holidayRows = await fetchAllRows("pfms_holidays", "id, holiday_date, day, holiday_name");
+    } catch (err) {
+      console.error("Error fetching holidays in dropdowns GET:", err);
+    }
 
     // 4. Group dropdown rows by category -> unique, non-empty option lists
     const optionsByCategory: Record<string, string[]> = {};
@@ -123,6 +133,15 @@ export async function GET() {
       responsibleNames: Array.isArray(r.responsible_persons) ? r.responsible_persons : [],
     }));
 
+    const holidays = (holidayRows || [])
+      .map((r: any) => ({
+        id: r.id,
+        date: r.holiday_date,
+        day: r.day || "",
+        name: r.holiday_name || "",
+      }))
+      .sort((a: any, b: any) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -143,6 +162,8 @@ export async function GET() {
         items,
         vendors,
         responsiblePersons,
+        officeHours: OFFICE_HOURS,
+        holidays,
       },
     });
   } catch (error: any) {
@@ -277,6 +298,61 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === "addHoliday") {
+      const { date, name } = body;
+      if (!date || !name) {
+        return NextResponse.json({ success: false, error: "Missing date or name" }, { status: 400 });
+      }
+
+      const day = new Date(date).toLocaleDateString("en-US", { weekday: "long" });
+
+      const { error } = await supabase
+        .from("pfms_holidays")
+        .insert({
+          holiday_date: date,
+          day,
+          holiday_name: name.trim(),
+        });
+
+      if (error) {
+        if ((error as any).code === "23505") {
+          return NextResponse.json({ success: false, error: "A holiday is already set for this date" }, { status: 400 });
+        }
+        throw error;
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "updateHoliday") {
+      const { id, date, name } = body;
+      if (!id) {
+        return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
+      }
+      if (!date || !name) {
+        return NextResponse.json({ success: false, error: "Missing date or name" }, { status: 400 });
+      }
+
+      const day = new Date(date).toLocaleDateString("en-US", { weekday: "long" });
+
+      const { error } = await supabase
+        .from("pfms_holidays")
+        .update({
+          holiday_date: date,
+          day,
+          holiday_name: name.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+
+      if (error) {
+        if ((error as any).code === "23505") {
+          return NextResponse.json({ success: false, error: "A holiday is already set for this date" }, { status: 400 });
+        }
+        throw error;
+      }
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "addVendor") {
       const { vendorCode, vendorName } = body;
       if (!vendorName) {
@@ -333,6 +409,21 @@ export async function DELETE(request: Request) {
 
       const { error } = await supabase
         .from("pfms_item_master")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "deleteHoliday") {
+      const id = searchParams.get("id");
+      if (!id) {
+        return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
+      }
+
+      const { error } = await supabase
+        .from("pfms_holidays")
         .delete()
         .eq("id", id);
 

@@ -10,6 +10,7 @@ import FollowUpVendor from "@/stage-pages/follow-up-vendor/follow-up-vendor";
 import TransporterFollowUp from "@/stage-pages/transporter-follow-up/transporter-follow-up";
 import MaterialReceived from "@/stage-pages/material-received/material-received";
 import QCRequirement from "@/stage-pages/material-testing/material-testing";
+import RepairProcess from "@/stage-pages/repair-process/repair-process";
 import ReceiptInTally from "@/stage-pages/tally-entry/tally-entry";
 import SubmitInvoice from "@/stage-pages/submit-invoice/submit-invoice";
 import Verification from "@/stage-pages/verification/verification";
@@ -38,6 +39,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "transporter-follow-up": TransporterFollowUp,
     "material-received": MaterialReceived,
     "material-testing": QCRequirement,
+    "repair-process": RepairProcess,
     "receipt-in-tally": ReceiptInTally,
     "submit-invoice-ho": SubmitInvoiceHO,
     "submit-invoice": SubmitInvoice,

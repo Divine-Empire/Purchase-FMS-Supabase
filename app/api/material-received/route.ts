@@ -203,9 +203,14 @@ export async function POST(request: NextRequest) {
           .eq("liftNo", liftNo);
         if (delDamageError) throw delDamageError;
 
+        // Clean up any leftover QC-resolution ledger / repair-process rows for this liftNo
+        await supabase.from("pfms_lift_qc_resolution").delete().eq("liftNo", liftNo);
+        await supabase.from("pfms_repair_process").delete().eq("liftNo", liftNo);
+
+        const receivedQtyVal = parseFloat(form.receivedQty) || 0;
+
         // Populate initial record in material-testing table if QC is required
         if (form.qcRequirement === "yes") {
-          const receivedQtyVal = parseFloat(form.receivedQty) || 0;
           const { error: testingError } = await supabase
             .from("pfms_material-testing")
             .insert({
@@ -224,7 +229,30 @@ export async function POST(request: NextRequest) {
             });
 
           if (testingError) throw testingError;
+
+          // QC required: create the qty-resolution ledger row. Serial Generation / Receipt in
+          // Tally will stay locked for this lift until Material Testing (and, if applicable,
+          // Repair Process) fully resolve pendingQcQty/repairPendingQty to 0.
+          const { error: ledgerError } = await supabase
+            .from("pfms_lift_qc_resolution")
+            .insert({
+              id: randomUUID(),
+              liftNo: liftNo,
+              receivedQty: receivedQtyVal,
+              pendingQcQty: receivedQtyVal,
+              passedQty: 0,
+              repairPendingQty: 0,
+              repairedQty: 0,
+              repairFailedQty: 0,
+              isFullyResolved: false,
+              createdAt: now,
+              updatedAt: now
+            });
+
+          if (ledgerError) throw ledgerError;
         }
+        // QC not required: no ledger row is created — Serial Generation / Receipt in Tally
+        // treat the absence of a ledger row as "unlocked immediately" (unchanged behavior).
 
         // Populate initial record in vendor-payment-details table
         const { data: liftData, error: liftFetchError } = await supabase

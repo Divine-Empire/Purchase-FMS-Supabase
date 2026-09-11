@@ -38,7 +38,9 @@ import {
   UserCheck,
   Clock,
   Timer,
-  UserCircle2
+  UserCircle2,
+  CalendarOff,
+  Pencil
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn, minutesToDHM, dhmToMinutes, formatDurationShort } from "@/lib/utils";
@@ -87,6 +89,7 @@ export default function DropdownsMaster() {
   const [itemsSearch, setItemsSearch] = useState("");
   const [vendorsSearch, setVendorsSearch] = useState("");
   const [responsibleSearch, setResponsibleSearch] = useState("");
+  const [holidaySearch, setHolidaySearch] = useState("");
 
   // Modals for Responsible Persons, Items & Vendors
   const [openRespModal, setOpenRespModal] = useState(false);
@@ -122,6 +125,11 @@ export default function DropdownsMaster() {
 
   const [openVendorModal, setOpenVendorModal] = useState(false);
   const [newVendor, setNewVendor] = useState({ vendorCode: "", vendorName: "" });
+
+  // Modal for Holidays (add/edit)
+  const [openHolidayModal, setOpenHolidayModal] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState({ id: "", date: "", name: "" });
+  const [isSavingHoliday, setIsSavingHoliday] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -192,6 +200,18 @@ export default function DropdownsMaster() {
         (vendor.vendorName || "").toLowerCase().includes(lower)
     );
   }, [data.vendors, vendorsSearch]);
+
+  const filteredHolidays = useMemo(() => {
+    const list = data.holidays || [];
+    const search = holidaySearch.toLowerCase().trim();
+    if (!search) return list;
+    return list.filter(
+      (h: any) =>
+        (h.name || "").toLowerCase().includes(search) ||
+        (h.day || "").toLowerCase().includes(search) ||
+        (h.date || "").toLowerCase().includes(search)
+    );
+  }, [data.holidays, holidaySearch]);
 
   const getFilteredOptions = (fieldName: string, colKey: string) => {
     const list: string[] = data[fieldName] || [];
@@ -510,6 +530,73 @@ export default function DropdownsMaster() {
     }
   };
 
+  // Holidays Handlers
+  const openAddHolidayModal = () => {
+    setEditingHoliday({ id: "", date: "", name: "" });
+    setOpenHolidayModal(true);
+  };
+
+  const openEditHolidayModal = (h: any) => {
+    setEditingHoliday({ id: String(h.id), date: h.date || "", name: h.name || "" });
+    setOpenHolidayModal(true);
+  };
+
+  const handleSaveHoliday = async () => {
+    if (!editingHoliday.date || !editingHoliday.name.trim()) {
+      toast.error("Date and Holiday Name are required");
+      return;
+    }
+
+    setIsSavingHoliday(true);
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: editingHoliday.id ? "updateHoliday" : "addHoliday",
+          id: editingHoliday.id || undefined,
+          date: editingHoliday.date,
+          name: editingHoliday.name.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(editingHoliday.id ? "Holiday updated successfully" : "Holiday added successfully");
+        setOpenHolidayModal(false);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to save holiday");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save holiday");
+    } finally {
+      setIsSavingHoliday(false);
+    }
+  };
+
+  const handleDeleteHoliday = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete holiday "${name}"?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/dropdowns?action=deleteHoliday&id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Holiday deleted successfully");
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to delete holiday");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete holiday");
+    }
+  };
+
   // Responsible Persons Handlers (dynamic from database TAT rows)
   const filteredStages = useMemo(() => {
     const list = data.responsiblePersons || [];
@@ -640,7 +727,7 @@ export default function DropdownsMaster() {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-4 gap-1 border border-indigo-100/50 shrink-0">
+          <TabsList className="bg-indigo-50/50 p-1 rounded-xl h-auto grid grid-cols-5 gap-1 border border-indigo-100/50 shrink-0">
             <TabsTrigger
               value="dropdowns"
               className="text-xs py-2.5 px-3 rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-transparent data-[state=active]:border-indigo-600 text-slate-755 font-bold"
@@ -668,6 +755,13 @@ export default function DropdownsMaster() {
             >
               <UserCheck className="w-4 h-4" />
               <span>Stage Master</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="holidays"
+              className="text-xs py-2.5 px-3 rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-transparent data-[state=active]:border-indigo-600 text-slate-755 font-bold"
+            >
+              <CalendarOff className="w-4 h-4" />
+              <span>Holidays</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1026,7 +1120,20 @@ export default function DropdownsMaster() {
           </TabsContent>
 
           {/* TAB 4: STAGE-WISE RESPONSIBLE PERSONS TABLE */}
-          <TabsContent value="responsible" className="mt-4 outline-none flex-grow flex flex-col overflow-hidden">
+          <TabsContent value="responsible" className="mt-4 outline-none flex-grow flex flex-col overflow-hidden space-y-4">
+            {/* Office Hours info strip */}
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-violet-50/70 border border-violet-100">
+                <div className="p-1.5 bg-violet-600 rounded-lg text-white shrink-0">
+                  <Clock className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-violet-500 uppercase tracking-wider leading-none">Office Hours</p>
+                  <p className="text-xs font-extrabold text-violet-900 mt-0.5">{data.officeHours?.label || "9:30 AM – 6:30 PM"}</p>
+                </div>
+              </div>
+            </div>
+
             <Card className="border border-indigo-100 shadow-xs flex-grow flex flex-col overflow-hidden min-h-0 bg-white">
               <div className="p-4 bg-slate-100/70 border-b border-indigo-100 flex items-center justify-between gap-3 shrink-0">
                 <div className="flex items-center gap-3">
@@ -1095,8 +1202,140 @@ export default function DropdownsMaster() {
               </div>
             </Card>
           </TabsContent>
+
+          {/* TAB 5: HOLIDAYS MASTER */}
+          <TabsContent value="holidays" className="mt-4 outline-none flex-grow flex flex-col overflow-hidden">
+            <Card className="border border-amber-100 shadow-xs flex-grow flex flex-col overflow-hidden min-h-0 bg-white">
+              <div className="p-4 bg-slate-100/70 border-b border-amber-100 flex items-center justify-between gap-3 shrink-0 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary" className="bg-amber-50/60 border-amber-100 text-amber-700 font-bold px-3 py-1 text-xs">
+                    Holidays ({(data.holidays || []).length})
+                  </Badge>
+                  <div className="relative w-64 sm:w-80">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-655" />
+                    <Input
+                      placeholder="Search holiday name, day or date..."
+                      value={holidaySearch}
+                      onChange={(e) => setHolidaySearch(e.target.value)}
+                      className="pl-9 h-9 text-xs border-amber-100 bg-white rounded-lg focus-visible:ring-amber-500 placeholder-slate-600 font-semibold text-slate-900"
+                    />
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={openAddHolidayModal}
+                  className="h-9 px-3.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 mr-1.5" /> Add Holiday
+                </Button>
+              </div>
+
+              {/* Table Container */}
+              <div className="flex-grow overflow-y-auto min-h-0">
+                <Table className="border-collapse">
+                  <TableHeader>
+                    <TableRow className="bg-slate-100 hover:bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-755 border-b border-amber-100">
+                      <TableHead className="w-[100px] text-center font-bold text-slate-900">Actions</TableHead>
+                      <TableHead className="w-[130px] font-bold text-slate-900">Date</TableHead>
+                      <TableHead className="w-[120px] font-bold text-slate-900">Day</TableHead>
+                      <TableHead className="font-bold text-slate-900">Holiday Name</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredHolidays.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-12 text-slate-600 text-sm font-bold">
+                          No holidays configured.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredHolidays.map((h: any, i: number) => (
+                        <TableRow key={h.id ?? i} className="hover:bg-slate-50 border-b border-amber-50/60 transition-colors">
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 px-2.5 text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 font-bold rounded-lg cursor-pointer"
+                                onClick={() => openEditHolidayModal(h)}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 px-2.5 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 font-bold rounded-lg cursor-pointer"
+                                onClick={() => handleDeleteHoliday(String(h.id), h.name || "this holiday")}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-amber-50/70 border-amber-200 text-amber-700 font-bold text-[11px] px-2 py-0.5 rounded-full">
+                              {h.date}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-slate-700 font-semibold">{h.day}</TableCell>
+                          <TableCell className="font-bold text-slate-900">{h.name || "Holiday"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          </TabsContent>
         </Tabs>
       )}
+
+      {/* Add / Edit Holiday Modal */}
+      <Dialog open={openHolidayModal} onOpenChange={setOpenHolidayModal}>
+        <DialogContent className="sm:max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-amber-900">
+              {editingHoliday.id ? "Edit Holiday" : "Add Holiday"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Date</Label>
+              <Input
+                type="date"
+                value={editingHoliday.date}
+                onChange={(e) => setEditingHoliday((prev) => ({ ...prev, date: e.target.value }))}
+                className="h-9 text-sm border-amber-200 focus-visible:ring-amber-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Holiday Name</Label>
+              <Input
+                placeholder="e.g. Diwali"
+                value={editingHoliday.name}
+                onChange={(e) => setEditingHoliday((prev) => ({ ...prev, name: e.target.value }))}
+                className="h-9 text-sm border-amber-200 focus-visible:ring-amber-500"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOpenHolidayModal(false)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveHoliday}
+              disabled={isSavingHoliday}
+              className="bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+            >
+              {isSavingHoliday ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              {editingHoliday.id ? "Save Changes" : "Add Holiday"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Responsible Persons Modal */}
       <Dialog open={openRespModal} onOpenChange={setOpenRespModal}>

@@ -48,6 +48,15 @@ export async function GET() {
 
     if (matError) throw matError;
 
+    // Qty-resolution ledger, only relevant for lifts where QC was required. A QC=Yes lift
+    // stays locked out of this stage entirely until Material Testing (and Repair Process,
+    // if any qty was routed there) fully resolve it.
+    const { data: ledgerRows, error: ledgerError } = await supabase
+      .from("pfms_lift_qc_resolution")
+      .select("liftNo, passedQty, repairedQty, isFullyResolved, releasedAt");
+    if (ledgerError) throw ledgerError;
+    const ledgerMap = new Map((ledgerRows || []).map((l: any) => [l.liftNo, l]));
+
     const pending = [];
     const history = [];
 
@@ -56,8 +65,20 @@ export async function GET() {
       const indent = lift.indent || {};
       const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
       const poEntry = Array.isArray(indent.poEntry) ? (indent.poEntry[0] || {}) : (indent.poEntry || {});
-      
+
       const tally = Array.isArray(lift.tallyEntry) ? lift.tallyEntry[0] : lift.tallyEntry;
+
+      // If QC was required for this lift, it isn't ready for Receipt in Tally until Material
+      // Testing/Repair Process have fully resolved it (ledger released). Skip it entirely
+      // (not pending, not history) until then.
+      let readyQty = mat.receivedQty || 0;
+      if (mat.qcRequired === "yes") {
+        const ledger: any = ledgerMap.get(lift.liftNo);
+        if (!ledger || !ledger.isFullyResolved || !ledger.releasedAt) {
+          continue;
+        }
+        readyQty = (ledger.passedQty || 0) + (ledger.repairedQty || 0);
+      }
 
       const vendorName = negotiation.selectedVendorName || "-";
       const basicValue = poEntry.basicValue !== undefined && poEntry.basicValue !== null ? poEntry.basicValue : "-";
@@ -86,6 +107,7 @@ export async function GET() {
         invoiceDate: mat.invoiceDate || "-",
         invoiceNumber: mat.invoiceNumber || "-",
         receivedQty: mat.receivedQty || "-",
+        readyQty: readyQty,
         receivedItemImage: mat.receivedItemImage || "",
         srnNumber: "-", // populated downstream in testing
         qcRequirement: mat.qcRequired || "-",

@@ -31,6 +31,7 @@ import PurchaseReturnHistory from "./purchase-return-history";
 
 const PENDING_COLUMNS = [
   { key: "indentNumber", label: "Indent No" },
+  { key: "source", label: "Source" },
   { key: "plan6", label: "Planned" },
   { key: "unitTrackingNo", label: "Unit Tracking No" },
   { key: "itemName", label: "Item" },
@@ -44,6 +45,7 @@ const PENDING_COLUMNS = [
 
 const HISTORY_COLUMNS = [
   { key: "indentNumber", label: "Indent No" },
+  { key: "source", label: "Source" },
   { key: "plan6", label: "Planned" },
   { key: "actual6", label: "Actual" },
   { key: "delay6", label: "Delay" },
@@ -293,7 +295,7 @@ export default function PurchaseReturn() {
       if (uploadPromises.length > 0) await Promise.all(uploadPromises);
 
       const payload = {
-        liftNo: rec.id, // rec.id is the liftNo in mapped records
+        liftNo: rec.rowIndex, // rec.id is now the source (Material Testing / Repair Process) row id
         returnedQty: formData.returnedQty,
         returnRate: formData.returnRate,
         returnAmount: formData.returnAmount,
@@ -301,7 +303,9 @@ export default function PurchaseReturn() {
         returnStatus: formData.returnStatus,
         returnItemImage: itemImgUrl,
         creditNoteImage: creditImgUrl,
-        actualDate: formData.actual6Date || new Date()
+        actualDate: formData.actual6Date || new Date(),
+        source: rec.data.source,
+        sourceId: rec.data.sourceId,
       };
 
       const res = await fetch("/api/purchase-return", {

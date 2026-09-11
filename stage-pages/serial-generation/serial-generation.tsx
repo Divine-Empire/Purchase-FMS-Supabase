@@ -110,7 +110,7 @@ const PENDING_COLUMNS = [
     { key: "invoiceCopy", label: "Invoice Copy" },
     { key: "poNumber", label: "PO Number" },
     { key: "poCopy", label: "PO Copy" },
-    { key: "receivedQty", label: "Received Qty" },
+    { key: "readyQty", label: "Ready Qty" },
     { key: "warrantyExpiry", label: "Warranty Expiry" },
     { key: "productExpiry", label: "Product Expiry" },
 ] as const;
@@ -895,7 +895,10 @@ export default function SerialGeneration() {
             const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
             const prefix = `SN-${vendorCode}/${encodedDate}/`;
-            const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
+            // readyQty (passed + repaired, once QC/Repair fully resolve) is the correct count
+            // to generate serials for — receivedQty may include qty that was rejected/returned
+            // and never reaches this stage. Falls back to receivedQty for QC=No lifts.
+            const qty = Math.max(1, parseInt(rec.data.readyQty ?? rec.data.receivedQty) || 1);
             newEntriesMap[rec.id] = Array.from({ length: qty }, () => ({
                 serialNo: prefix,
             }));
@@ -925,7 +928,10 @@ export default function SerialGeneration() {
             const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
             const prefix = `SN-${vendorCode}/${encodedDate}/`;
-            const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
+            // readyQty (passed + repaired, once QC/Repair fully resolve) is the correct count
+            // to generate serials for — receivedQty may include qty that was rejected/returned
+            // and never reaches this stage. Falls back to receivedQty for QC=No lifts.
+            const qty = Math.max(1, parseInt(rec.data.readyQty ?? rec.data.receivedQty) || 1);
 
             const length = !isSerialEnabled ? 1 : qty;
 

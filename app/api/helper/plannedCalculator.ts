@@ -11,6 +11,19 @@ export function getLocalTimestamp(dateInput?: Date | string | number | null): st
 }
 
 /**
+ * Daily working shift bounds used by calculatePlannedTime() below. Hardcoded on purpose
+ * (not admin-configurable) — exported so the frontend (Stage Master tab) can display the
+ * exact same value the backend actually calculates with, instead of a separately hand-typed value.
+ */
+export const OFFICE_HOURS = {
+  startHour: 9,
+  startMinute: 30,
+  endHour: 18,
+  endMinute: 30,
+  label: "9:30 AM – 6:30 PM",
+};
+
+/**
  * Normalizes a stage name string for robust matching.
  * Converts to lowercase, trims, and replaces spaces & underscores with hyphens.
  */
@@ -57,12 +70,13 @@ function isNonWorkingDay(date: Date, holidaySet: Set<string>): boolean {
 }
 
 /**
- * Advances a Date object to 10:00:00 AM on the next valid working day (skipping Sundays and holidays).
+ * Advances a Date object to the shift start time (see OFFICE_HOURS) on the next valid
+ * working day (skipping Sundays and holidays).
  */
 function advanceToNextWorkingDayStart(date: Date, holidaySet: Set<string>): void {
-  // Move to next calendar day at 10:00 AM
+  // Move to next calendar day at shift start
   date.setDate(date.getDate() + 1);
-  date.setHours(10, 0, 0, 0);
+  date.setHours(OFFICE_HOURS.startHour, OFFICE_HOURS.startMinute, 0, 0);
 
   // Keep advancing if it falls on a Sunday or holiday
   while (isNonWorkingDay(date, holidaySet)) {
@@ -71,10 +85,10 @@ function advanceToNextWorkingDayStart(date: Date, holidaySet: Set<string>): void
 }
 
 /**
- * Snaps a Date object into the 10:00 AM - 6:00 PM working shift window.
- * - If on a Sunday or holiday: advances to 10:00 AM on the next working day.
- * - If before 10:00 AM: snaps to 10:00 AM of the same working day.
- * - If at or after 6:00 PM (18:00): advances to 10:00 AM on the next working day.
+ * Snaps a Date object into the OFFICE_HOURS working shift window.
+ * - If on a Sunday or holiday: advances to shift start on the next working day.
+ * - If before shift start: snaps to shift start of the same working day.
+ * - If at or after shift end: advances to shift start on the next working day.
  */
 function snapToWorkingShiftWindow(date: Date, holidaySet: Set<string>): void {
   if (isNonWorkingDay(date, holidaySet)) {
@@ -82,13 +96,13 @@ function snapToWorkingShiftWindow(date: Date, holidaySet: Set<string>): void {
     return;
   }
 
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const seconds = date.getSeconds();
+  const minutesOfDay = date.getHours() * 60 + date.getMinutes() + date.getSeconds() / 60;
+  const shiftStartMinutes = OFFICE_HOURS.startHour * 60 + OFFICE_HOURS.startMinute;
+  const shiftEndMinutes = OFFICE_HOURS.endHour * 60 + OFFICE_HOURS.endMinute;
 
-  if (hours < 10) {
-    date.setHours(10, 0, 0, 0);
-  } else if (hours > 18 || (hours === 18 && (minutes > 0 || seconds > 0))) {
+  if (minutesOfDay < shiftStartMinutes) {
+    date.setHours(OFFICE_HOURS.startHour, OFFICE_HOURS.startMinute, 0, 0);
+  } else if (minutesOfDay >= shiftEndMinutes) {
     advanceToNextWorkingDayStart(date, holidaySet);
   }
 }
@@ -98,9 +112,9 @@ function snapToWorkingShiftWindow(date: Date, holidaySet: Set<string>): void {
  *
  * Takes into account:
  * - TAT duration_in_minutes queried from the `pfms_tat` table
- * - 10:00 AM to 6:00 PM daily working shift bounds
+ * - Daily working shift bounds (see OFFICE_HOURS above)
  * - Shift overflow rollover to subsequent working days
- * - Exclusions of Sundays and official holidays queried from the `holidays` table (`holiday_date` column)
+ * - Exclusions of Sundays and official holidays queried from the `pfms_holidays` table (`holiday_date` column)
  *
  * @param stageName Name or identifier of the target stage
  * @param baseTimestamp Starting timestamp (defaults to current time Date.now() if null/omitted)
@@ -143,11 +157,11 @@ export async function calculatePlannedTime(
     tatMinutes = customTatMinutes || 24 * 60;
   }
 
-  // 3. Fetch holiday dates from the `holidays` table
+  // 3. Fetch holiday dates from the `pfms_holidays` table
   const holidaySet = new Set<string>();
   try {
     const { data: holidayData } = await supabase
-      .from("holidays")
+      .from("pfms_holidays")
       .select("holiday_date");
 
     if (holidayData) {
@@ -168,13 +182,12 @@ export async function calculatePlannedTime(
   // 5. Snap to valid working shift start if outside shift or on non-working day
   snapToWorkingShiftWindow(curr, holidaySet);
 
-  // 6. Calculate working shift consumption (10:00 AM - 18:00 PM)
-  const SHIFT_END_HOUR = 18;
+  // 6. Calculate working shift consumption (see OFFICE_HOURS)
+  const shiftEndMinutesOfDay = OFFICE_HOURS.endHour * 60 + OFFICE_HOURS.endMinute;
   let remainingTatMinutes = Math.round(tatMinutes);
 
   while (remainingTatMinutes > 0) {
     const currMinutesOfDay = curr.getHours() * 60 + curr.getMinutes() + curr.getSeconds() / 60;
-    const shiftEndMinutesOfDay = SHIFT_END_HOUR * 60; // 18:00 = 1080 minutes
 
     const availableMinutesToday = Math.max(0, shiftEndMinutesOfDay - currMinutesOfDay);
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { supabase } from "@/utils/supabase/server";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
@@ -75,6 +76,8 @@ export async function GET() {
         qcBy: testing.qcBy || "",
         approvedQty: testing.approvedQty || 0,
         rejectedQty: testing.rejectedQty || 0,
+        rejectedRepairQty: testing.rejectedRepairQty || 0,
+        rejectedReturnQty: testing.rejectedReturnQty || 0,
         totalApproved: testing.approvedQty || 0,
         totalRejected: testing.rejectedQty || 0,
         pendingQty: pendingQty,
@@ -172,10 +175,20 @@ export async function POST(request: NextRequest) {
     // 3. Compute new quantities
     const oldApproved = currentTesting.approvedQty || 0;
     const oldRejected = currentTesting.rejectedQty || 0;
+    const oldRejectedRepairQty = currentTesting.rejectedRepairQty || 0;
+    const oldRejectedReturnQty = currentTesting.rejectedReturnQty || 0;
 
+    const roundRejectedQty = parseFloat(rejectedQty) || 0;
     const newApproved = oldApproved + (parseFloat(approvedQty) || 0);
-    const newRejected = oldRejected + (parseFloat(rejectedQty) || 0);
+    const newRejected = oldRejected + roundRejectedQty;
     const newPending = Math.max(0, receivedQty - (newApproved + newRejected));
+
+    // Split this round's rejected qty by reject type, so a lift that gets rejected across
+    // multiple QC rounds with different reject types (e.g. one round "Repair", another
+    // "Return") still tracks each bucket's running total correctly.
+    const isRepairReject = roundRejectedQty > 0 && (rejectType || "").trim() === "Repair";
+    const newRejectedRepairQty = oldRejectedRepairQty + (isRepairReject ? roundRejectedQty : 0);
+    const newRejectedReturnQty = oldRejectedReturnQty + (!isRepairReject ? roundRejectedQty : 0);
 
     // 4. Append to lists
     const newChecklist = Array.from(new Set([...(currentTesting.checklist || []), ...(checklistSelected || [])]));
@@ -184,9 +197,11 @@ export async function POST(request: NextRequest) {
 
     const now = getLocalTimestamp();
 
-    // 5. Determine planned purchase returns if pending becomes 0 and there are rejected quantities
+    // 5. Determine planned purchase returns — only for the "Exchange/Return" bucket, and only
+    // once testing is fully resolved for this lift. "Repair" rejects go to Repair Process
+    // instead (handled via the pfms_lift_qc_resolution ledger below), not straight to Purchase Return.
     let plannedPurchaseReturns = currentTesting.plannedPurchaseReturns;
-    if (newPending === 0 && newRejected > 0) {
+    if (newPending === 0 && newRejectedReturnQty > 0) {
       plannedPurchaseReturns = await calculatePlannedTime("purchase-return");
     }
 
@@ -202,6 +217,8 @@ export async function POST(request: NextRequest) {
         pendingQty: newPending,
         approvedQty: newApproved,
         rejectedQty: newRejected,
+        rejectedRepairQty: newRejectedRepairQty,
+        rejectedReturnQty: newRejectedReturnQty,
         checklist: newChecklist,
         serialNumbers: newSerialNumbers,
         images: newImages,
@@ -213,6 +230,70 @@ export async function POST(request: NextRequest) {
       .eq("liftNo", liftNo);
 
     if (updateError) throw updateError;
+
+    // 7. Sync the qty-resolution ledger (only exists for lifts where QC was required).
+    // Serial Generation / Receipt in Tally read this ledger to decide when the lift is
+    // fully resolved and ready to be released.
+    const { data: ledgerRow } = await supabase
+      .from("pfms_lift_qc_resolution")
+      .select("*")
+      .eq("liftNo", liftNo)
+      .maybeSingle();
+
+    if (ledgerRow) {
+      const ledgerUpdate: any = {
+        pendingQcQty: newPending,
+        passedQty: newApproved,
+        updatedAt: now,
+      };
+
+      if (newPending === 0) {
+        // Testing is fully done for this lift — hand off whatever repair-bound qty remains
+        // unresolved (accounting for any repair progress already made, if this fires again).
+        const outstandingRepairQty = Math.max(
+          0,
+          newRejectedRepairQty - (ledgerRow.repairedQty || 0) - (ledgerRow.repairFailedQty || 0)
+        );
+        ledgerUpdate.repairPendingQty = outstandingRepairQty;
+
+        const fullyResolved = outstandingRepairQty === 0;
+        ledgerUpdate.isFullyResolved = fullyResolved;
+        if (fullyResolved && !ledgerRow.releasedAt) {
+          ledgerUpdate.releasedAt = now;
+        }
+
+        // If some qty needs repair, create the Repair Process record for this lift
+        // (only once — subsequent testing rounds, if any, won't re-create it).
+        if (outstandingRepairQty > 0) {
+          const { data: existingRepair } = await supabase
+            .from("pfms_repair_process")
+            .select("id")
+            .eq("liftNo", liftNo)
+            .maybeSingle();
+
+          if (!existingRepair) {
+            const { error: repairInsertError } = await supabase
+              .from("pfms_repair_process")
+              .insert({
+                id: randomUUID(),
+                timestamp: now,
+                liftNo: liftNo,
+                repairedQty: 0,
+                failedQty: 0,
+                createdAt: now,
+                updatedAt: now,
+              });
+            if (repairInsertError) throw repairInsertError;
+          }
+        }
+      }
+
+      const { error: ledgerUpdateError } = await supabase
+        .from("pfms_lift_qc_resolution")
+        .update(ledgerUpdate)
+        .eq("liftNo", liftNo);
+      if (ledgerUpdateError) throw ledgerUpdateError;
+    }
 
     return NextResponse.json({ success: true });
 

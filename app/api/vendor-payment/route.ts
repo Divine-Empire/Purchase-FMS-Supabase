@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
-
-function getLocalTimestamp(dateInput?: Date | string | number | null): string {
-  const date = dateInput ? new Date(dateInput) : new Date();
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().replace("Z", "");
-}
+import { getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
 export async function GET() {
   try {
-    // 1. Fetch Turn Around Time (TAT) for vendor-payment
+    // 1. Fetch Turn Around Time (TAT) for vendor-payments
     const { data: tatData } = await supabase
       .from("pfms_tat")
-      .select("actionTime")
-      .eq("stageName", "vendor-payment")
+      .select("duration_in_minutes")
+      .eq("stage_name", "vendor-payments")
       .maybeSingle();
-    const tatHours = tatData?.actionTime || 72; // default to 72 hours
+    const tatMinutes = tatData?.duration_in_minutes || 72 * 60; // default to 72 hours
 
     // 2. Fetch all vendor payment details
     const { data: payDetails, error: payError } = await supabase
@@ -109,13 +104,13 @@ export async function GET() {
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
       const verification = Array.isArray(lift.accountsVerification) ? (lift.accountsVerification[0] || {}) : (lift.accountsVerification || {});
 
-      // Calculate planned date: prioritize stored plannedDate, fallback to verificationDate + tatHours
+      // Calculate planned date: prioritize stored plannedDate, fallback to verificationDate + tatMinutes
       let plan1Date = "";
       if (pd.plannedDate) {
         plan1Date = pd.plannedDate;
       } else if (verification.verificationDate) {
         const vDate = new Date(verification.verificationDate);
-        plan1Date = getLocalTimestamp(new Date(vDate.getTime() + tatHours * 60 * 60 * 1000));
+        plan1Date = getLocalTimestamp(new Date(vDate.getTime() + tatMinutes * 60 * 1000));
       } else if (matRecd.plannedTallyEntry) {
         plan1Date = matRecd.plannedTallyEntry;
       }
@@ -161,7 +156,7 @@ export async function GET() {
         plan1Date = vendorInvoice.plannedDate;
       } else if (verification.verificationDate) {
         const vDate = new Date(verification.verificationDate);
-        plan1Date = getLocalTimestamp(new Date(vDate.getTime() + tatHours * 60 * 60 * 1000));
+        plan1Date = getLocalTimestamp(new Date(vDate.getTime() + tatMinutes * 60 * 1000));
       }
 
       history.push({

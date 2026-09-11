@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Database,
   Plus,
@@ -34,10 +35,13 @@ import {
   FileSpreadsheet,
   Users,
   Settings,
-  UserCheck
+  UserCheck,
+  Clock,
+  Timer,
+  UserCircle2
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, minutesToDHM, dhmToMinutes, formatDurationShort } from "@/lib/utils";
 
 const DROPDOWN_COLUMNS = [
   { key: "Created By", label: "Created By", fieldName: "createdByOptions" },
@@ -49,6 +53,7 @@ const DROPDOWN_COLUMNS = [
   { key: "Purchaser", label: "Purchaser", fieldName: "purchaserOptions" },
   { key: "Accounts", label: "Accounts", fieldName: "accountsOptions" },
   { key: "Engineers", label: "Engineers", fieldName: "engineersOptions" },
+  { key: "Responsible Person", label: "Responsible Person", fieldName: "responsiblePersonOptions" },
   { key: "QC-Checklist", label: "QC Checklist", fieldName: "qcChecklistOptions" },
   { key: "Reject Type (QC)", label: "Reject Type (QC)", fieldName: "rejectTypeQcOptions" },
 ];
@@ -88,9 +93,10 @@ export default function DropdownsMaster() {
   const [editingResp, setEditingResp] = useState({
     id: "",
     stageName: "",
-    responsibleName: "",
-    tatValue: 0,
-    tatUnit: "hours" as "hours" | "days"
+    days: 0,
+    hours: 0,
+    minutes: 60,
+    responsiblePersons: [] as string[],
   });
   const [isSavingResp, setIsSavingResp] = useState(false);
   const [itemsPage, setItemsPage] = useState(1);
@@ -511,18 +517,18 @@ export default function DropdownsMaster() {
     if (!search) return list;
     return list.filter((r: any) => {
       const stage = r.stageName || "";
-      const names = r.responsibleName || "";
+      const names = (r.responsibleNames || []).join(", ");
       return stage.toLowerCase().includes(search) || names.toLowerCase().includes(search);
     });
   }, [data.responsiblePersons, responsibleSearch]);
 
-  const renderResponsibleBadges = (namesStr: string) => {
-    if (!namesStr || !namesStr.trim()) {
+  const renderResponsibleBadges = (names: string[]) => {
+    if (!names || names.length === 0) {
       return <span className="text-slate-400 italic text-xs font-semibold">No assignees configured</span>;
     }
     return (
       <div className="flex flex-wrap gap-1.5">
-        {namesStr.split(",").map((name, i) => (
+        {names.map((name, i) => (
           <Badge key={i} variant="outline" className="bg-indigo-50/50 font-bold text-indigo-700 text-[10px] uppercase border-indigo-100 px-2 py-0.5 rounded-full">
             {name.trim()}
           </Badge>
@@ -532,27 +538,34 @@ export default function DropdownsMaster() {
   };
 
   const handleEditResponsible = (record: any) => {
-    const totalHours = record.tat || 0;
-    let val = totalHours;
-    let unit: "hours" | "days" = "hours";
-    if (totalHours > 0 && totalHours % 24 === 0) {
-      val = totalHours / 24;
-      unit = "days";
-    }
-
+    const { days, hours, minutes } = minutesToDHM(record.durationMinutes || 0);
     setEditingResp({
       id: record.id,
       stageName: record.stageName,
-      responsibleName: record.responsibleName,
-      tatValue: val,
-      tatUnit: unit
+      days,
+      hours,
+      minutes,
+      responsiblePersons: Array.isArray(record.responsibleNames) ? [...record.responsibleNames] : [],
     });
     setOpenRespModal(true);
   };
 
+  const toggleEditingRespPerson = (name: string, checked: boolean) => {
+    setEditingResp((prev) => ({
+      ...prev,
+      responsiblePersons: checked
+        ? Array.from(new Set([...prev.responsiblePersons, name]))
+        : prev.responsiblePersons.filter((n) => n !== name),
+    }));
+  };
+
   const handleSaveResponsible = async () => {
     setIsSavingResp(true);
-    const totalHours = editingResp.tatUnit === "days" ? editingResp.tatValue * 24 : editingResp.tatValue;
+    const totalMinutes = dhmToMinutes({
+      days: editingResp.days,
+      hours: editingResp.hours,
+      minutes: editingResp.minutes,
+    });
     try {
       const res = await fetch("/api/dropdowns", {
         method: "POST",
@@ -561,8 +574,8 @@ export default function DropdownsMaster() {
           action: "upsertResponsible",
           id: editingResp.id,
           stageName: editingResp.stageName,
-          responsibleName: editingResp.responsibleName,
-          tat: totalHours
+          responsiblePersons: editingResp.responsiblePersons,
+          durationMinutes: totalMinutes,
         })
       });
       const json = await res.json();
@@ -1052,9 +1065,8 @@ export default function DropdownsMaster() {
                       </TableRow>
                     ) : (
                       filteredStages.map((record: any) => {
-                        const names = record.responsibleName || "";
-                        const tatVal = record.tat || 0;
-                        const tatDisplay = tatVal > 0 && tatVal % 24 === 0 ? `${tatVal / 24} Days` : `${tatVal} Hours`;
+                        const names: string[] = record.responsibleNames || [];
+                        const tatDisplay = formatDurationShort(record.durationMinutes || 0);
                         return (
                           <TableRow key={record.id} className="hover:bg-slate-50 border-b border-indigo-50/60 transition-colors">
                             <TableCell className="text-center">
@@ -1068,7 +1080,11 @@ export default function DropdownsMaster() {
                               </Button>
                             </TableCell>
                             <TableCell className="font-bold text-slate-900">{record.stageName}</TableCell>
-                            <TableCell className="font-bold text-slate-900 text-center">{tatDisplay}</TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="outline" className="bg-violet-50/70 border-violet-200 text-violet-700 font-bold text-[11px] px-2 py-0.5 rounded-full">
+                                {tatDisplay}
+                              </Badge>
+                            </TableCell>
                             <TableCell>{renderResponsibleBadges(names)}</TableCell>
                           </TableRow>
                         );
@@ -1084,69 +1100,134 @@ export default function DropdownsMaster() {
 
       {/* Responsible Persons Modal */}
       <Dialog open={openRespModal} onOpenChange={setOpenRespModal}>
-        <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
-          <DialogHeader className="border-b border-slate-200 pb-2">
-            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Edit Responsible Persons</DialogTitle>
+        <DialogContent className="max-w-lg bg-white border-0 rounded-2xl p-0 shadow-2xl overflow-hidden">
+          <DialogHeader className="p-6 pb-5 bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-700 space-y-0">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-white/15 rounded-xl backdrop-blur-sm ring-1 ring-white/20">
+                <Clock className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold text-white tracking-tight">Edit Stage TAT & Responsible Persons</DialogTitle>
+                <p className="text-[11px] font-medium text-indigo-100 mt-0.5">Configure turnaround time and assignees for this stage</p>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 my-4 animate-in fade-in slide-in-from-top-1 duration-200">
+
+          <div className="p-6 space-y-5 max-h-[65vh] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+            {/* Stage Name */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-900">Stage Name</Label>
+              <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stage Name</Label>
               <Input
                 value={editingResp.stageName}
                 disabled
-                className="h-9 text-xs border-slate-300 bg-slate-100 font-bold text-slate-800 focus-visible:ring-0"
+                className="h-10 text-sm border-slate-200 bg-slate-100 font-bold text-slate-700 focus-visible:ring-0 cursor-not-allowed"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="tatVal" className="text-xs font-bold text-slate-900">TAT (Turnaround Time)</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="tatVal"
-                  type="number"
-                  min="0"
-                  placeholder="e.g. 24"
-                  value={editingResp.tatValue === 0 ? "" : editingResp.tatValue}
-                  onChange={(e) => setEditingResp((prev) => ({ ...prev, tatValue: parseInt(e.target.value) || 0 }))}
-                  className="h-9 text-xs border-slate-350 bg-white rounded-lg focus-visible:ring-slate-950 font-semibold text-slate-900 flex-1"
-                />
-                <select
-                  id="tatUnit"
-                  value={editingResp.tatUnit}
-                  onChange={(e) => setEditingResp((prev) => ({ ...prev, tatUnit: e.target.value as "hours" | "days" }))}
-                  className="flex h-9 rounded-md border border-slate-350 bg-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-slate-950 cursor-pointer w-28"
-                >
-                  <option value="hours">Hours</option>
-                  <option value="days">Days</option>
-                </select>
+
+            {/* TAT */}
+            <div className="space-y-2 p-4 rounded-xl bg-violet-50/60 border border-violet-100">
+              <Label className="text-[11px] font-bold text-violet-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5" />
+                Turnaround Time (TAT)
+              </Label>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editingResp.days === 0 ? "" : editingResp.days}
+                    placeholder="0"
+                    onChange={(e) => setEditingResp((prev) => ({ ...prev, days: parseInt(e.target.value) || 0 }))}
+                    className="h-10 text-sm text-center border-violet-200 bg-white rounded-lg focus-visible:ring-violet-500 font-bold text-slate-900"
+                  />
+                  <p className="text-[10px] text-center font-bold text-violet-600 uppercase tracking-wide">Days</p>
+                </div>
+                <div className="space-y-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={editingResp.hours === 0 ? "" : editingResp.hours}
+                    placeholder="0"
+                    onChange={(e) => setEditingResp((prev) => ({ ...prev, hours: parseInt(e.target.value) || 0 }))}
+                    className="h-10 text-sm text-center border-violet-200 bg-white rounded-lg focus-visible:ring-violet-500 font-bold text-slate-900"
+                  />
+                  <p className="text-[10px] text-center font-bold text-violet-600 uppercase tracking-wide">Hours</p>
+                </div>
+                <div className="space-y-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={editingResp.minutes === 0 ? "" : editingResp.minutes}
+                    placeholder="0"
+                    onChange={(e) => setEditingResp((prev) => ({ ...prev, minutes: parseInt(e.target.value) || 0 }))}
+                    className="h-10 text-sm text-center border-violet-200 bg-white rounded-lg focus-visible:ring-violet-500 font-bold text-slate-900"
+                  />
+                  <p className="text-[10px] text-center font-bold text-violet-600 uppercase tracking-wide">Minutes</p>
+                </div>
               </div>
+              <p className="text-[10px] font-semibold text-violet-700 pt-1">
+                Total: {formatDurationShort(dhmToMinutes(editingResp))}
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="respNames" className="text-xs font-bold text-slate-900">Responsible Person(s)</Label>
-              <Textarea
-                id="respNames"
-                placeholder="Enter names separated by commas (e.g. NAMRATA RAJAK, HARISH KUMAR)"
-                value={editingResp.responsibleName}
-                onChange={(e) => setEditingResp((prev) => ({ ...prev, responsibleName: e.target.value.toUpperCase() }))}
-                rows={3}
-                className="text-xs uppercase resize-none border-slate-350 focus-visible:ring-slate-950 font-semibold placeholder-slate-500 text-slate-900 bg-white"
-              />
-              <p className="text-[10px] text-slate-650 font-semibold leading-relaxed">
-                * Enter multiple names separated by commas. Names will be automatically formatted to uppercase and trimmed.
+
+            {/* Responsible Persons */}
+            <div className="space-y-2 p-4 rounded-xl bg-indigo-50/60 border border-indigo-100">
+              <Label className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1.5">
+                <UserCircle2 className="w-3.5 h-3.5" />
+                Responsible Person(s)
+              </Label>
+              {(data.responsiblePersonOptions || []).length === 0 ? (
+                <p className="text-xs font-semibold text-slate-500 bg-white border border-dashed border-indigo-200 rounded-lg p-3">
+                  No names configured yet. Add names under "Responsible Person" in the Dropdown Fields tab first.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {(data.responsiblePersonOptions || []).map((name: string) => {
+                    const checked = editingResp.responsiblePersons.includes(name);
+                    return (
+                      <label
+                        key={name}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all text-xs font-bold",
+                          checked
+                            ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                            : "bg-white border-indigo-100 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50/50"
+                        )}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => toggleEditingRespPerson(name, !!v)}
+                          className={cn(
+                            "shrink-0",
+                            checked ? "border-white data-[state=checked]:bg-white data-[state=checked]:text-indigo-600" : "border-indigo-300"
+                          )}
+                        />
+                        <span className="truncate">{name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[10px] text-indigo-600/80 font-semibold pt-0.5">
+                {editingResp.responsiblePersons.length} selected
               </p>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-100 p-4 bg-slate-50/70">
             <Button
               variant="outline"
               onClick={() => setOpenRespModal(false)}
-              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-300 bg-white font-bold"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSaveResponsible}
               disabled={isSavingResp}
-              className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold gap-2"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-9 rounded-lg cursor-pointer font-bold gap-2 shadow-sm shadow-indigo-200"
             >
               {isSavingResp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Save Changes

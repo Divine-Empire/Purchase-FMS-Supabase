@@ -167,3 +167,43 @@ export function isWarrantyExpiringSoon(expiryDate: string | Date | null | undefi
     return false;
   }
 }
+
+export interface DurationDHM {
+  days: number;
+  hours: number;
+  minutes: number;
+}
+
+/**
+ * Breaks a total minute count (as stored in pfms_tat.duration_in_minutes) into
+ * a {days, hours, minutes} triple for display/editing in a Days/Hours/Minutes form.
+ */
+export function minutesToDHM(totalMinutes: number): DurationDHM {
+  const total = Math.max(0, Math.round(totalMinutes || 0));
+  const days = Math.floor(total / (24 * 60));
+  const hours = Math.floor((total % (24 * 60)) / 60);
+  const minutes = total % 60;
+  return { days, hours, minutes };
+}
+
+/**
+ * Combines a {days, hours, minutes} triple back into a total minute count,
+ * ready to submit to pfms_tat.duration_in_minutes.
+ */
+export function dhmToMinutes({ days, hours, minutes }: DurationDHM): number {
+  return (days || 0) * 24 * 60 + (hours || 0) * 60 + (minutes || 0);
+}
+
+/**
+ * Formats a total minute count as a short human-readable duration string,
+ * e.g. 1500 -> "1d 1h", 90 -> "1h 30m", 45 -> "45m". Omits zero-valued parts;
+ * falls back to "0m" when the total is zero.
+ */
+export function formatDurationShort(totalMinutes: number): string {
+  const { days, hours, minutes } = minutesToDHM(totalMinutes);
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
+  return parts.join(" ");
+}

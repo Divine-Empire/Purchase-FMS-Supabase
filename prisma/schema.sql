@@ -402,13 +402,14 @@ CREATE TABLE public.pfms_order-cancellation (
   CONSTRAINT pfms_order-cancellation_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.pfms_tat (
-  id text NOT NULL,
-  stageName text NOT NULL,
-  actionTime integer NOT NULL,
-  createdAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updatedAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  responsibleNames text,
-  CONSTRAINT pfms_tat_pkey PRIMARY KEY (id)
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  stage_name text NOT NULL,
+  duration_in_minutes integer NOT NULL DEFAULT 60,
+  responsible_persons text[] NOT NULL DEFAULT '{}',
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT pfms_tat_pkey PRIMARY KEY (id),
+  CONSTRAINT pfms_tat_stage_name_key UNIQUE (stage_name)
 );
 CREATE TABLE public.pfms_item_master (
   id text NOT NULL,

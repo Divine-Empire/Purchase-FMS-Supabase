@@ -14,6 +14,7 @@ const DROPDOWN_CATEGORIES = [
   "Purchaser",
   "Accounts",
   "Engineers",
+  "Responsible Person",
   "QC-Checklist",
   "Reject Type (QC)",
 ] as const;
@@ -54,10 +55,10 @@ export async function GET() {
       'id, "Vendor Code", "Vendor List"'
     );
 
-    // Fetch all responsible persons
+    // Fetch all stage TAT / responsible-person rows
     const responsibleRows = await fetchAllRows(
       "pfms_tat",
-      "id, stageName, actionTime, responsibleNames"
+      "id, stage_name, duration_in_minutes, responsible_persons"
     );
 
     // 4. Group dropdown rows by category -> unique, non-empty option lists
@@ -80,6 +81,7 @@ export async function GET() {
     const purchaserOptions = getOptions("Purchaser");
     const accountsOptions = getOptions("Accounts");
     const engineersOptions = getOptions("Engineers");
+    const responsiblePersonOptions = getOptions("Responsible Person");
     const qcChecklistOptions = getOptions("QC-Checklist");
     const rejectTypeQcOptions = getOptions("Reject Type (QC)");
 
@@ -116,9 +118,9 @@ export async function GET() {
 
     const responsiblePersons = (responsibleRows || []).map((r: any) => ({
       id: r.id,
-      stageName: r.stageName,
-      tat: r.actionTime,
-      responsibleName: r.responsibleNames || ""
+      stageName: r.stage_name,
+      durationMinutes: r.duration_in_minutes,
+      responsibleNames: Array.isArray(r.responsible_persons) ? r.responsible_persons : [],
     }));
 
     return NextResponse.json({
@@ -134,6 +136,7 @@ export async function GET() {
         purchaserOptions,
         accountsOptions,
         engineersOptions,
+        responsiblePersonOptions,
         qcChecklistOptions,
         rejectTypeQcOptions,
         dropdownData,
@@ -175,27 +178,29 @@ export async function POST(request: Request) {
     }
 
     if (action === "upsertResponsible") {
-      const { id, stageName, responsibleName, tat } = body;
+      const { id, stageName, responsiblePersons, durationMinutes } = body;
       if (!stageName) {
         return NextResponse.json({ success: false, error: "Missing stageName" }, { status: 400 });
       }
 
-      // Format name list: split by comma, trim, uppercase, join
-      const normalizedNames = (responsibleName || "")
-        .split(",")
-        .map((s: string) => s.trim().toUpperCase())
-        .filter(Boolean)
-        .join(", ");
+      // Normalize the responsible-person list: trim, uppercase, drop blanks/duplicates
+      const normalizedNames: string[] = Array.from(
+        new Set(
+          (Array.isArray(responsiblePersons) ? responsiblePersons : [])
+            .map((s: string) => s.trim().toUpperCase())
+            .filter(Boolean)
+        )
+      );
 
-      const tatHours = tat !== undefined ? parseInt(tat) || 0 : 0;
+      const minutes = durationMinutes !== undefined ? parseInt(durationMinutes) || 0 : 0;
 
-      // Find the row by id or stageName
+      // Find the row by id or stage_name
       let targetId = id;
       if (!targetId) {
         const { data: existing, error: fetchError } = await supabase
           .from("pfms_tat")
           .select("id")
-          .eq("stageName", stageName.trim())
+          .eq("stage_name", stageName.trim())
           .maybeSingle();
         if (fetchError) throw fetchError;
         targetId = existing?.id;
@@ -206,21 +211,21 @@ export async function POST(request: Request) {
         const { error: updateError } = await supabase
           .from("pfms_tat")
           .update({
-            responsibleNames: normalizedNames || null,
-            actionTime: tatHours
+            responsible_persons: normalizedNames,
+            duration_in_minutes: minutes || 60,
+            updated_at: new Date().toISOString(),
           })
           .eq("id", targetId);
 
         if (updateError) throw updateError;
       } else {
-        // Insert new record in pfms_tat
+        // Insert new record in pfms_tat (id defaults via gen_random_uuid())
         const { error: insertError } = await supabase
           .from("pfms_tat")
           .insert({
-            id: randomUUID(),
-            stageName: stageName.trim(),
-            actionTime: tatHours,
-            responsibleNames: normalizedNames || null
+            stage_name: stageName.trim(),
+            duration_in_minutes: minutes || 60,
+            responsible_persons: normalizedNames,
           });
 
         if (insertError) throw insertError;

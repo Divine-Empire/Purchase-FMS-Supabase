@@ -502,16 +502,18 @@
 | updatedAt | timestamp without time zone | NO | CURRENT_TIMESTAMP |
 | delay | double precision | YES |  |
 
-### pfms_tat
+### pfms_tat  ⚠️ rebuilt 2026-09-11 (was id/stageName/actionTime/responsibleNames text; see DB_CONTEXT.md §11)
 
 | Column | Type | Nullable | Default |
 |---|---|---|---|
-| id | text | NO |  |
-| stageName | text | NO |  |
-| actionTime | integer | NO |  |
-| createdAt | timestamp without time zone | NO | CURRENT_TIMESTAMP |
-| updatedAt | timestamp without time zone | NO | CURRENT_TIMESTAMP |
-| responsibleNames | text | YES |  |
+| id | uuid | NO | gen_random_uuid() |
+| stage_name | text | NO |  |
+| duration_in_minutes | integer | NO | 60 |
+| responsible_persons | text[] | NO | '{}' |
+| created_at | timestamp without time zone | NO | CURRENT_TIMESTAMP |
+| updated_at | timestamp without time zone | NO | CURRENT_TIMESTAMP |
+
+(Old table renamed to `pfms_tat_old_backup`, not dropped.)
 
 ### pfms_transporter-follow-up
 

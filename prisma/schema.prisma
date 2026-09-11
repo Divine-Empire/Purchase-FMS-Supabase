@@ -662,13 +662,13 @@ model OrderCancellation {
 //* TAT (TURN AROUND TIME) CONFIGURATION
 //-------------------------------------------
 model TAT {
-  id               String  @id @default(uuid())
-  stageName        String  @unique
-  actionTime       Int // Stored in hours
-  responsibleNames String?
+  id                 String   @id @default(uuid()) @map("id")
+  stageName          String   @unique @map("stage_name")
+  durationInMinutes  Int      @default(60) @map("duration_in_minutes")
+  responsiblePersons String[] @default([]) @map("responsible_persons")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("pfms_tat")
 }

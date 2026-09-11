@@ -23,7 +23,7 @@ export function normalizeStageKey(name: string): string {
 }
 
 /**
- * Known stage aliases to map route or workflow names to the pfms_tat stageName database row.
+ * Known stage aliases to map route or workflow names to the pfms_tat stage_name database row.
  */
 const STAGE_ALIASES: Record<string, string> = {
   "create-indent": "indent-approval",
@@ -95,52 +95,52 @@ function snapToWorkingShiftWindow(date: Date, holidaySet: Set<string>): void {
 
 /**
  * Dynamically calculates the planned completion timestamp for a stage.
- * 
+ *
  * Takes into account:
- * - TAT actionTime (in hours) queried from the `pfms_tat` table
+ * - TAT duration_in_minutes queried from the `pfms_tat` table
  * - 10:00 AM to 6:00 PM daily working shift bounds
  * - Shift overflow rollover to subsequent working days
  * - Exclusions of Sundays and official holidays queried from the `holidays` table (`holiday_date` column)
- * 
+ *
  * @param stageName Name or identifier of the target stage
  * @param baseTimestamp Starting timestamp (defaults to current time Date.now() if null/omitted)
- * @param customTatHours Optional default/fallback TAT hours if pfms_tat query returns no result
+ * @param customTatMinutes Optional default/fallback TAT in minutes if pfms_tat query returns no result
  * @returns Promise<string> Formatted local timestamp string (YYYY-MM-DDTHH:mm:ss.sss)
  */
 export async function calculatePlannedTime(
   stageName: string,
   baseTimestamp?: Date | string | number | null,
-  customTatHours?: number | null
+  customTatMinutes?: number | null
 ): Promise<string> {
   // 1. Normalize stage key and resolve aliases
   const normKey = normalizeStageKey(stageName);
   const targetStage = STAGE_ALIASES[normKey] || normKey;
 
-  // 2. Fetch pfms_tat for actionTime
-  let tatHours: number = customTatHours || 0;
+  // 2. Fetch pfms_tat for duration_in_minutes
+  let tatMinutes: number = customTatMinutes || 0;
 
   try {
     const { data: tatData } = await supabase
       .from("pfms_tat")
-      .select("stageName, actionTime");
+      .select("stage_name, duration_in_minutes");
 
     if (tatData && tatData.length > 0) {
       const match = tatData.find((row: any) => {
-        const rowNorm = normalizeStageKey(row.stageName || "");
+        const rowNorm = normalizeStageKey(row.stage_name || "");
         return rowNorm === targetStage || rowNorm === normKey;
       });
 
-      if (match && typeof match.actionTime === "number") {
-        tatHours = match.actionTime;
+      if (match && typeof match.duration_in_minutes === "number") {
+        tatMinutes = match.duration_in_minutes;
       }
     }
   } catch (err) {
     console.error("Error fetching TAT in calculatePlannedTime:", err);
   }
 
-  // Fallback default if actionTime is missing or invalid
-  if (!tatHours || tatHours <= 0) {
-    tatHours = customTatHours || 24;
+  // Fallback default if duration_in_minutes is missing or invalid
+  if (!tatMinutes || tatMinutes <= 0) {
+    tatMinutes = customTatMinutes || 24 * 60;
   }
 
   // 3. Fetch holiday dates from the `holidays` table
@@ -170,7 +170,7 @@ export async function calculatePlannedTime(
 
   // 6. Calculate working shift consumption (10:00 AM - 18:00 PM)
   const SHIFT_END_HOUR = 18;
-  let remainingTatMinutes = Math.round(tatHours * 60);
+  let remainingTatMinutes = Math.round(tatMinutes);
 
   while (remainingTatMinutes > 0) {
     const currMinutesOfDay = curr.getHours() * 60 + curr.getMinutes() + curr.getSeconds() / 60;

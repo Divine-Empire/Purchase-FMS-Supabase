@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         // 2. Fetch cancellation list and TAT responsible persons in parallel
         const [cancelRes, respRes] = await Promise.all([
             supabase.from("pfms_order-cancellation").select("indentNo"),
-            supabase.from("pfms_tat").select("stageName, responsibleNames")
+            supabase.from("pfms_tat").select("stage_name, responsible_persons")
         ]);
 
         if (cancelRes.error) throw cancelRes.error;
@@ -34,11 +34,11 @@ export async function GET(request: NextRequest) {
 
         const cancelledNos = new Set(cancelledList.map((c: any) => c.indentNo));
 
-        // Map responsible persons by stageName (lowercased for case-insensitive lookup)
+        // Map responsible persons by stage_name (lowercased for case-insensitive lookup)
         const respMap: Record<string, string> = {};
         responsibles.forEach((r: any) => {
-            if (r.stageName && r.responsibleNames) {
-                respMap[r.stageName.trim().toLowerCase()] = r.responsibleNames.trim();
+            if (r.stage_name && Array.isArray(r.responsible_persons) && r.responsible_persons.length > 0) {
+                respMap[r.stage_name.trim().toLowerCase()] = r.responsible_persons.join(", ");
             }
         });
 

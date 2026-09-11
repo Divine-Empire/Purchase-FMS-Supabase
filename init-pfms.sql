@@ -477,13 +477,15 @@ CREATE TABLE IF NOT EXISTS "pfms_order-cancellation" (
 
 -- 25. TAT (TURN AROUND TIME) CONFIG
 CREATE TABLE IF NOT EXISTS "pfms_tat" (
-    "id" TEXT NOT NULL,
-    "stageName" TEXT NOT NULL,
-    "actionTime" INTEGER NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "stage_name" TEXT NOT NULL,
+    "duration_in_minutes" INTEGER NOT NULL DEFAULT 60,
+    "responsible_persons" TEXT[] NOT NULL DEFAULT '{}',
+    "created_at" TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "pfms_tat_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "pfms_tat_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "pfms_tat_stage_name_key" UNIQUE ("stage_name")
 );
 
 -- 26. ITEM MASTER
@@ -543,7 +545,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS "pfms_submit-invoice_liftNo_key" ON "pfms_subm
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_accounts-verification_liftNo_key" ON "pfms_accounts-verification"("liftNo");
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_vendor-payment-details_liftNo_key" ON "pfms_vendor-payment-details"("liftNo");
 CREATE UNIQUE INDEX IF NOT EXISTS "pfms_freight-payment-details_liftNo_key" ON "pfms_freight-payment-details"("liftNo");
-CREATE UNIQUE INDEX IF NOT EXISTS "pfms_tat_stageName_key" ON "pfms_tat"("stageName");
 
 -- =========================================================================
 -- FOREIGN KEY CONSTRAINTS

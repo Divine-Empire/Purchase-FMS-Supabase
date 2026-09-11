@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
-import { calculatePlannedTime } from "@/app/api/helper/plannedCalculator";
-
-function getLocalTimestamp(dateInput?: Date | string | number | null): string {
-  const date = dateInput ? new Date(dateInput) : new Date();
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().replace("Z", "");
-}
+import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
 export async function GET() {
   try {

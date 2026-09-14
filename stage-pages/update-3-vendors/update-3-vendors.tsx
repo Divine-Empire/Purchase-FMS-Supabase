@@ -55,6 +55,7 @@ import {
   canViewPurchaserRecord
 } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import BackgroundSyncBanner from "@/components/background-sync-banner";
 import Update3VendorsPending from "./update-3-vendors-pending";
 import Update3VendorsHistory from "./update-3-vendors-history";
 
@@ -72,9 +73,20 @@ export default function Stage3() {
     updateRecord,
   } = useWorkflow();
   const { role, records: recordsAccess } = useAuth();
+  const isAdmin = role?.toUpperCase() === "ADMIN";
 
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Admin-only History edit modal
+  const [openEditModal, setOpenEditModal] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    vendor1Name: "", vendor1Rate: "", vendor1Terms: "",
+    vendor2Name: "", vendor2Rate: "", vendor2Terms: "",
+    vendor3Name: "", vendor3Rate: "", vendor3Terms: "",
+  });
 
   const [open, setOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<string | null>(null);
@@ -207,6 +219,50 @@ export default function Stage3() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // ---- Admin: edit a completed History record ----
+  const handleOpenEditHistory = useCallback((record: any) => {
+    setEditingRecord(record);
+    setEditFormData({
+      vendor1Name: record.data.vendor1Name || "",
+      vendor1Rate: record.data.vendor1Rate || "",
+      vendor1Terms: record.data.vendor1Terms || "",
+      vendor2Name: record.data.vendor2Name || "",
+      vendor2Rate: record.data.vendor2Rate || "",
+      vendor2Terms: record.data.vendor2Terms || "",
+      vendor3Name: record.data.vendor3Name || "",
+      vendor3Rate: record.data.vendor3Rate || "",
+      vendor3Terms: record.data.vendor3Terms || "",
+    });
+    setOpenEditModal(true);
+  }, []);
+
+  const handleSaveEditHistory = useCallback(async () => {
+    if (!editingRecord) return;
+    setIsSavingEdit(true);
+    try {
+      const res = await fetch("/api/update-3-vendors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editHistory",
+          indentNo: editingRecord.data.indentNumber,
+          ...editFormData,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to save changes");
+
+      toast.success("Record updated — related PO Entry values (if any) have been synced.");
+      setOpenEditModal(false);
+      setEditingRecord(null);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save changes");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }, [editingRecord, editFormData]);
 
   const isThirdParty = true;
   const numVendors = 3;
@@ -603,6 +659,8 @@ export default function Stage3() {
               completed={completed}
               selectedColumns={selectedColumns}
               baseColumns={baseColumns}
+              isAdmin={isAdmin}
+              onEdit={handleOpenEditHistory}
             />
           )}
         </TabsContent>
@@ -957,6 +1015,68 @@ export default function Stage3() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Admin: Edit History record modal */}
+      <Dialog open={openEditModal} onOpenChange={setOpenEditModal}>
+        <DialogContent className="max-w-2xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-indigo-950">
+              Edit Vendor Details — {editingRecord?.data?.indentNumber}
+            </DialogTitle>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+              ⚠️ Agar rate change kiya jo Negotiation me select hua vendor hai, to PO Entry ka Basic/Total Value bhi automatically recalculate ho jayega.
+            </p>
+          </DialogHeader>
+          <div className="space-y-5 max-h-[60vh] overflow-y-auto py-2">
+            {[1, 2, 3].map((num) => (
+              <div key={num} className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/10">
+                <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-3">Vendor {num}</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Vendor Name</Label>
+                    <Input
+                      value={(editFormData as any)[`vendor${num}Name`]}
+                      onChange={(e) => setEditFormData((prev) => ({ ...prev, [`vendor${num}Name`]: e.target.value }))}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Rate</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={(editFormData as any)[`vendor${num}Rate`]}
+                      onChange={(e) => setEditFormData((prev) => ({ ...prev, [`vendor${num}Rate`]: e.target.value }))}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Payment Term</Label>
+                    <Select
+                      value={(editFormData as any)[`vendor${num}Terms`]}
+                      onValueChange={(v) => setEditFormData((prev) => ({ ...prev, [`vendor${num}Terms`]: v }))}
+                    >
+                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        {paymentTermsList.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>Cancel</Button>
+            <Button onClick={handleSaveEditHistory} disabled={isSavingEdit} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <BackgroundSyncBanner visible={isSavingEdit} />
     </div>
   );
 }

@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
 import { parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import BackgroundSyncBanner from "@/components/background-sync-banner";
 import MaterialReceivedPending from "./material-received-pending";
 import MaterialReceivedHistory from "./material-received-history";
 
@@ -147,9 +148,18 @@ const HISTORY_COLUMNS = [
 
 export default function MaterialReceived() {
     const { role, records: recordsAccess } = useAuth();
+    const isAdmin = role?.toUpperCase() === "ADMIN";
     const [open, setOpen] = useState(false);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+
+    // Admin-only History edit modal
+    const [openEditModal, setOpenEditModal] = useState(false);
+    const [editingRecord, setEditingRecord] = useState<any>(null);
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+    const [editFormData, setEditFormData] = useState({
+        invoiceNumber: "", receivedQty: "", qcRequirement: "", billAttachment: null as File | string | null,
+    });
     const [selectedPendingColumns, setSelectedPendingColumns] = useState<string[]>(
         PENDING_COLUMNS.map((c) => c.key)
     );
@@ -232,6 +242,53 @@ export default function MaterialReceived() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // ---- Admin: edit a completed History record ----
+    const handleOpenEditHistory = (record: any) => {
+        setEditingRecord(record);
+        setEditFormData({
+            invoiceNumber: record.data.invoiceNumber || "",
+            receivedQty: record.data.receivedQty || "",
+            qcRequirement: record.data.qcRequirement || "no",
+            billAttachment: record.data.billAttachment || null,
+        });
+        setOpenEditModal(true);
+    };
+
+    const handleSaveEditHistory = async () => {
+        if (!editingRecord) return;
+        setIsSavingEdit(true);
+        try {
+            let billUrl: string | null = typeof editFormData.billAttachment === "string" ? editFormData.billAttachment : null;
+            if (editFormData.billAttachment instanceof File) {
+                billUrl = await uploadFileToDrive(editFormData.billAttachment);
+            }
+
+            const res = await fetch("/api/material-received", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "editHistory",
+                    liftNo: editingRecord.data.liftNo,
+                    invoiceNumber: editFormData.invoiceNumber,
+                    receivedQty: editFormData.receivedQty,
+                    qcRequired: editFormData.qcRequirement,
+                    billAttachment: billUrl,
+                }),
+            });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || "Failed to save changes");
+
+            toast.success("Record updated — Material Testing / QC ledger synced where applicable.");
+            setOpenEditModal(false);
+            setEditingRecord(null);
+            await fetchData();
+        } catch (err: any) {
+            toast.error(err.message || "Failed to save changes");
+        } finally {
+            setIsSavingEdit(false);
+        }
+    };
 
     const [form, setForm] = useState({
         itemName: "",
@@ -945,6 +1002,8 @@ export default function MaterialReceived() {
                                     completed={completed}
                                     selectedHistoryColumns={selectedHistoryColumns}
                                     HISTORY_COLUMNS={HISTORY_COLUMNS}
+                                    isAdmin={isAdmin}
+                                    onEdit={handleOpenEditHistory}
                                 />
                             )}
                         </TabsContent>
@@ -1807,6 +1866,76 @@ export default function MaterialReceived() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Admin: Edit History record modal */}
+            <Dialog open={openEditModal} onOpenChange={setOpenEditModal}>
+                <DialogContent className="max-w-md bg-white">
+                    <DialogHeader>
+                        <DialogTitle className="text-amber-950">
+                            Edit Material Received — {editingRecord?.data?.liftNo}
+                        </DialogTitle>
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                            ⚠️ Received Qty / QC Required edits are blocked once this lift has reached Serial Generation / Receipt in Tally, or once QC/Repair has recorded any progress.
+                        </p>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-700">Invoice Number</Label>
+                            <Input
+                                value={editFormData.invoiceNumber}
+                                onChange={(e) => setEditFormData((prev) => ({ ...prev, invoiceNumber: e.target.value }))}
+                                className="h-9 text-sm"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-700">Received Qty</Label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                value={editFormData.receivedQty}
+                                onChange={(e) => setEditFormData((prev) => ({ ...prev, receivedQty: e.target.value }))}
+                                className="h-9 text-sm"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-700">QC Required</Label>
+                            <Select
+                                value={editFormData.qcRequirement}
+                                onValueChange={(v) => setEditFormData((prev) => ({ ...prev, qcRequirement: v }))}
+                            >
+                                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="yes">Yes</SelectItem>
+                                    <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-700">Bill Attachment</Label>
+                            <Input
+                                type="file"
+                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                onChange={(e) => setEditFormData((prev) => ({ ...prev, billAttachment: e.target.files?.[0] || prev.billAttachment }))}
+                                className="h-9 text-sm"
+                            />
+                            {typeof editFormData.billAttachment === "string" && editFormData.billAttachment && (
+                                <a href={editFormData.billAttachment} target="_blank" rel="noopener noreferrer" className="text-xs text-amber-700 hover:underline">
+                                    View current Bill Attachment
+                                </a>
+                            )}
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>Cancel</Button>
+                        <Button onClick={handleSaveEditHistory} disabled={isSavingEdit} className="bg-amber-600 hover:bg-amber-700 text-white">
+                            {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+                            Save Changes
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <BackgroundSyncBanner visible={isSavingEdit} />
         </div>
     );
 }

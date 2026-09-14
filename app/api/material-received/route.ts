@@ -132,7 +132,157 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, records } = body;
+    const { action } = body;
+
+    // Edit an already-completed Material Received record (admin-only, from the History tab).
+    // Received Qty / QC Required are NOT plain leaf values — they drive Material Testing's
+    // pendingQty math and the pfms_lift_qc_resolution ledger, so this guards against edits
+    // that would silently corrupt already-in-progress QC/Repair state.
+    if (action === "editHistory") {
+      const { liftNo, invoiceNumber, receivedQty, qcRequired, billAttachment } = body;
+
+      if (!liftNo) {
+        return NextResponse.json({ success: false, error: "Missing liftNo" }, { status: 400 });
+      }
+
+      const { data: existing, error: fetchError } = await supabase
+        .from("pfms_material-received")
+        .select("*")
+        .eq("liftNo", liftNo)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+      if (!existing) {
+        return NextResponse.json({ success: false, error: `No material-received record found for lift ${liftNo}` }, { status: 404 });
+      }
+
+      const editNow = getLocalTimestamp();
+
+      // Has this lift already moved past Material Received (into Serial Generation /
+      // Receipt in Tally)? If so, Received Qty / QC Required must not change anymore —
+      // those downstream records were built off the original values.
+      const [{ data: serials }, { data: tally }] = await Promise.all([
+        supabase.from("pfms_serial-number").select("id").eq("liftNo", liftNo).limit(1),
+        supabase.from("pfms_tally-entry").select("id").eq("liftNo", liftNo).limit(1),
+      ]);
+      const alreadyProgressedDownstream = (serials && serials.length > 0) || (tally && tally.length > 0);
+
+      const receivedQtyChanged = receivedQty !== undefined && parseFloat(receivedQty) !== existing.receivedQty;
+      const qcRequiredChanged = qcRequired !== undefined && qcRequired !== existing.qcRequired;
+
+      if ((receivedQtyChanged || qcRequiredChanged) && alreadyProgressedDownstream) {
+        return NextResponse.json({
+          success: false,
+          error: "This lift has already reached Serial Generation / Receipt in Tally — Received Qty and QC Required can no longer be edited.",
+        }, { status: 400 });
+      }
+
+      // Fetch related rows needed to validate/cascade the two sensitive fields.
+      const { data: testing } = await supabase
+        .from("pfms_material-testing")
+        .select("*")
+        .eq("liftNo", liftNo)
+        .maybeSingle();
+      const { data: ledger } = await supabase
+        .from("pfms_lift_qc_resolution")
+        .select("*")
+        .eq("liftNo", liftNo)
+        .maybeSingle();
+      const { data: repair } = await supabase
+        .from("pfms_repair_process")
+        .select("id")
+        .eq("liftNo", liftNo)
+        .maybeSingle();
+
+      const testingHasProgress = !!testing && ((testing.approvedQty || 0) > 0 || (testing.rejectedQty || 0) > 0);
+
+      if (qcRequiredChanged && (testingHasProgress || repair)) {
+        return NextResponse.json({
+          success: false,
+          error: "QC Required cannot be changed — Material Testing (or Repair Process) has already recorded progress for this lift.",
+        }, { status: 400 });
+      }
+
+      const newReceivedQty = receivedQtyChanged ? parseFloat(receivedQty) || 0 : existing.receivedQty;
+
+      if (receivedQtyChanged && testing) {
+        const consumedQty = (testing.approvedQty || 0) + (testing.rejectedQty || 0);
+        if (newReceivedQty < consumedQty) {
+          return NextResponse.json({
+            success: false,
+            error: `Received Qty cannot be less than the qty already tested (${consumedQty}).`,
+          }, { status: 400 });
+        }
+      }
+
+      // 1. Update the material-received row itself
+      const { error: updateError } = await supabase
+        .from("pfms_material-received")
+        .update({
+          invoiceNumber: invoiceNumber !== undefined ? invoiceNumber : undefined,
+          receivedQty: receivedQtyChanged ? newReceivedQty : undefined,
+          qcRequired: qcRequiredChanged ? qcRequired : undefined,
+          billAttachment: billAttachment !== undefined ? billAttachment : undefined,
+          updatedAt: editNow,
+        })
+        .eq("liftNo", liftNo);
+      if (updateError) throw updateError;
+
+      // 2. Cascade Received Qty into Material Testing's pendingQty + the ledger
+      if (receivedQtyChanged && testing) {
+        const newPendingQty = Math.max(0, newReceivedQty - (testing.approvedQty || 0) - (testing.rejectedQty || 0));
+        await supabase
+          .from("pfms_material-testing")
+          .update({ pendingQty: newPendingQty, updatedAt: editNow })
+          .eq("liftNo", liftNo);
+
+        if (ledger) {
+          await supabase
+            .from("pfms_lift_qc_resolution")
+            .update({ receivedQty: newReceivedQty, pendingQcQty: newPendingQty, updatedAt: editNow })
+            .eq("liftNo", liftNo);
+        }
+      }
+
+      // 3. QC Required toggle (only reachable here when there is zero progress to lose)
+      if (qcRequiredChanged) {
+        if (qcRequired === "yes" && !testing) {
+          // "No" -> "Yes": create the Material Testing row + qty-resolution ledger row
+          await supabase.from("pfms_material-testing").insert({
+            id: randomUUID(),
+            timestamp: editNow,
+            liftNo,
+            pendingQty: newReceivedQty,
+            approvedQty: 0,
+            rejectedQty: 0,
+            rejectedRepairQty: 0,
+            rejectedReturnQty: 0,
+            createdAt: editNow,
+            updatedAt: editNow,
+          });
+          await supabase.from("pfms_lift_qc_resolution").insert({
+            id: randomUUID(),
+            liftNo,
+            receivedQty: newReceivedQty,
+            pendingQcQty: newReceivedQty,
+            passedQty: 0,
+            repairPendingQty: 0,
+            repairedQty: 0,
+            repairFailedQty: 0,
+            isFullyResolved: false,
+            createdAt: editNow,
+            updatedAt: editNow,
+          });
+        } else if (qcRequired === "no" && testing) {
+          // "Yes" -> "No": safe to remove — guarded above to only reach here with zero progress
+          await supabase.from("pfms_material-testing").delete().eq("liftNo", liftNo);
+          await supabase.from("pfms_lift_qc_resolution").delete().eq("liftNo", liftNo);
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    const { records } = body;
 
     if (!records || records.length === 0) {
       return NextResponse.json({ success: false, error: "No records to process" }, { status: 400 });

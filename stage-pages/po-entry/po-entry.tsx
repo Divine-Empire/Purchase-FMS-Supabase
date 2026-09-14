@@ -30,12 +30,22 @@ import {
 } from "@/components/ui/select";
 import { formatDate, parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import BackgroundSyncBanner from "@/components/background-sync-banner";
 import PoEntryPending from "./po-entry-pending";
 import PoEntryHistory from "./po-entry-history";
 
 export default function Stage5() {
   const { role, records: recordsAccess } = useAuth();
+  const isAdmin = role?.toUpperCase() === "ADMIN";
   const [open, setOpen] = useState(false);
+
+  // Admin-only History edit modal
+  const [openEditModal, setOpenEditModal] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    poNumber: "", basicValue: "", totalWithTax: "", poCopy: null as File | string | null,
+  });
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [bulkFormData, setBulkFormData] = useState<Record<string, any>>({});
@@ -83,6 +93,58 @@ export default function Stage5() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // ---- Admin: edit a completed History record ----
+  const handleOpenEditHistory = (record: any) => {
+    setEditingRecord(record);
+    setEditFormData({
+      poNumber: record.data.poNumber || "",
+      basicValue: record.data.basicValue || "",
+      totalWithTax: record.data.totalWithTax || "",
+      poCopy: record.data.poCopy || null,
+    });
+    setOpenEditModal(true);
+  };
+
+  const handleSaveEditHistory = async () => {
+    if (!editingRecord) return;
+    setIsSavingEdit(true);
+    try {
+      let poCopyUrl: string | null = typeof editFormData.poCopy === "string" ? editFormData.poCopy : null;
+      if (editFormData.poCopy instanceof File) {
+        const fileData = new FormData();
+        fileData.append("file", editFormData.poCopy);
+        const uploadRes = await fetch("/api/upload-supabase", { method: "POST", body: fileData });
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson.success) throw new Error(uploadJson.error || "PO Copy upload failed");
+        poCopyUrl = uploadJson.url;
+      }
+
+      const res = await fetch("/api/po-entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editHistory",
+          indentNo: editingRecord.data.indentNumber,
+          poNumber: editFormData.poNumber,
+          basicValue: editFormData.basicValue,
+          totalWithTax: editFormData.totalWithTax,
+          poCopy: poCopyUrl,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to save changes");
+
+      toast.success("PO Entry record updated");
+      setOpenEditModal(false);
+      setEditingRecord(null);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save changes");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
@@ -544,6 +606,8 @@ export default function Stage5() {
               getVendorData={getVendorData}
               paymentTermsList={paymentTermsList}
               poTotalMap={poTotalMap}
+              isAdmin={isAdmin}
+              onEdit={handleOpenEditHistory}
             />
           )}
         </TabsContent>
@@ -847,6 +911,72 @@ export default function Stage5() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Admin: Edit History record modal */}
+      <Dialog open={openEditModal} onOpenChange={setOpenEditModal}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-indigo-950">
+              Edit PO Entry — {editingRecord?.data?.indentNumber}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">PO Number</Label>
+              <Input
+                value={editFormData.poNumber}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, poNumber: e.target.value }))}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Basic Value</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editFormData.basicValue}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, basicValue: e.target.value }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Total Value</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editFormData.totalWithTax}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, totalWithTax: e.target.value }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">PO Copy</Label>
+              <Input
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, poCopy: e.target.files?.[0] || prev.poCopy }))}
+                className="h-9 text-sm"
+              />
+              {typeof editFormData.poCopy === "string" && editFormData.poCopy && (
+                <a href={editFormData.poCopy} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline">
+                  View current PO Copy
+                </a>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>Cancel</Button>
+            <Button onClick={handleSaveEditHistory} disabled={isSavingEdit} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <BackgroundSyncBanner visible={isSavingEdit} />
     </div>
   );
 }

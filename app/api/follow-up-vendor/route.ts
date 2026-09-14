@@ -232,7 +232,35 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, records } = body;
+    const { action } = body;
+
+    // Edit an already-completed lift record (admin-only, from the History tab).
+    // Qty Lifted needs no cascade write — pendingLifted is recomputed live on every GET
+    // (see the "totalLifted" SUM above) — editing it here is automatically reflected.
+    if (action === "editHistory") {
+      const { liftNo, liftingQty, lrNo, biltyCopy, paymentStatus } = body;
+
+      if (!liftNo) {
+        return NextResponse.json({ success: false, error: "Missing liftNo" }, { status: 400 });
+      }
+
+      const editNow = getLocalTimestamp();
+      const { error: editError } = await supabase
+        .from("pfms_lift")
+        .update({
+          liftingQty: liftingQty !== undefined ? parseFloat(liftingQty) || 0 : undefined,
+          lrNo: lrNo !== undefined ? lrNo : undefined,
+          biltyCopy: biltyCopy !== undefined ? biltyCopy : undefined,
+          paymentStatus: paymentStatus !== undefined ? paymentStatus : undefined,
+          updatedAt: editNow,
+        })
+        .eq("liftNo", liftNo);
+
+      if (editError) throw editError;
+      return NextResponse.json({ success: true });
+    }
+
+    const { records } = body;
 
     if (!records || records.length === 0) {
       return NextResponse.json({ success: false, error: "No records provided" }, { status: 400 });

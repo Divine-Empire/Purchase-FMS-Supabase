@@ -123,6 +123,31 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
+    // Edit an already-completed PO Entry record (admin-only, from the History tab).
+    // These are leaf-level values — nothing downstream reads them live, so no cascade needed.
+    if (action === "editHistory") {
+      const { indentNo, poNumber, poCopy, basicValue, totalWithTax } = body;
+
+      if (!indentNo) {
+        return NextResponse.json({ success: false, error: "Missing indentNo" }, { status: 400 });
+      }
+
+      const now = getLocalTimestamp();
+      const { error: updateError } = await supabase
+        .from("pfms_po-entry")
+        .update({
+          poNumber: poNumber !== undefined ? poNumber : undefined,
+          poCopy: poCopy !== undefined ? poCopy : undefined,
+          basicValue: basicValue !== undefined ? parseFloat(basicValue) || 0 : undefined,
+          totalWithTax: totalWithTax !== undefined ? parseFloat(totalWithTax) || 0 : undefined,
+          updatedAt: now,
+        })
+        .eq("indentNo", indentNo);
+
+      if (updateError) throw updateError;
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "insertPOEntry") {
       const { poNumber, poCopy, pkgAmount, pkgGST, records } = body;
 

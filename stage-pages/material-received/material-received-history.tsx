@@ -8,7 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText } from "lucide-react";
+import { FileText, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
@@ -40,18 +41,27 @@ interface MaterialReceivedHistoryProps {
   completed: any[];
   selectedHistoryColumns: string[];
   HISTORY_COLUMNS: readonly { readonly key: string; readonly label: string }[];
+  isAdmin?: boolean;
+  onEdit?: (record: any) => void;
 }
 
 export default function MaterialReceivedHistory({
   completed,
   selectedHistoryColumns,
   HISTORY_COLUMNS,
+  isAdmin,
+  onEdit,
 }: MaterialReceivedHistoryProps) {
   return (
     <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
       <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
         <TableHeader className="sticky top-0 z-30 bg-slate-900 shadow-sm border-none [&_th]:h-12 border-b-0">
           <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+            {isAdmin && (
+              <TableHead className="bg-slate-900 border-b text-center px-4 py-3 font-semibold text-white whitespace-nowrap uppercase">
+                Edit
+              </TableHead>
+            )}
             {HISTORY_COLUMNS.filter((c) =>
               selectedHistoryColumns.includes(c.key)
             ).map((c) => (
@@ -70,6 +80,18 @@ export default function MaterialReceivedHistory({
 
             return (
               <TableRow key={record.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
+                {isAdmin && (
+                  <TableCell className="border-b px-4 py-2 text-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEdit?.(record)}
+                      className="h-7 px-2.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3 mr-1" /> Edit
+                    </Button>
+                  </TableCell>
+                )}
                 {HISTORY_COLUMNS.filter((c) =>
                   selectedHistoryColumns.includes(c.key)
                 ).map((col) => {

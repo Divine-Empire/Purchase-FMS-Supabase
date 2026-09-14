@@ -57,6 +57,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import BackgroundSyncBanner from "@/components/background-sync-banner";
 import FollowUpVendorPending from "./follow-up-vendor-pending";
 import FollowUpVendorHistory from "./follow-up-vendor-history";
 
@@ -178,8 +179,17 @@ const TransporterCombobox = ({
 
 export default function Stage6() {
   const { role, records: recordsAccess } = useAuth();
+  const isAdmin = role?.toUpperCase() === "ADMIN";
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+
+  // Admin-only History edit modal
+  const [openEditModal, setOpenEditModal] = useState(false);
+  const [editingLiftRow, setEditingLiftRow] = useState<any>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    liftingQty: "", lrNo: "", biltyCopy: null as File | string | null, paymentStatus: "",
+  });
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [bulkFormData, setBulkFormData] = useState<RecordLifting[]>([]);
   const [liftCounter, setLiftCounter] = useState(1);
@@ -254,6 +264,58 @@ export default function Stage6() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // ---- Admin: edit a completed lift History record ----
+  const handleOpenEditHistory = (row: any) => {
+    setEditingLiftRow(row);
+    setEditFormData({
+      liftingQty: row.liftingQty || "",
+      lrNo: row.lrNo || "",
+      biltyCopy: row.biltyCopy || null,
+      paymentStatus: row.paymentStatus || "",
+    });
+    setOpenEditModal(true);
+  };
+
+  const handleSaveEditHistory = async () => {
+    if (!editingLiftRow) return;
+    setIsSavingEdit(true);
+    try {
+      let biltyCopyUrl: string | null = typeof editFormData.biltyCopy === "string" ? editFormData.biltyCopy : null;
+      if (editFormData.biltyCopy instanceof File) {
+        const fileData = new FormData();
+        fileData.append("file", editFormData.biltyCopy);
+        const uploadRes = await fetch("/api/upload-supabase", { method: "POST", body: fileData });
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson.success) throw new Error(uploadJson.error || "Bilty Copy upload failed");
+        biltyCopyUrl = uploadJson.url;
+      }
+
+      const res = await fetch("/api/follow-up-vendor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editHistory",
+          liftNo: editingLiftRow.liftNo,
+          liftingQty: editFormData.liftingQty,
+          lrNo: editFormData.lrNo,
+          biltyCopy: biltyCopyUrl,
+          paymentStatus: editFormData.paymentStatus,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to save changes");
+
+      toast.success("Lift record updated");
+      setOpenEditModal(false);
+      setEditingLiftRow(null);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save changes");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
@@ -1072,6 +1134,8 @@ export default function Stage6() {
             <FollowUpVendorHistory
               filteredHistoryData={filteredHistoryData}
               sheetRecords={sheetRecords}
+              isAdmin={isAdmin}
+              onEdit={handleOpenEditHistory}
             />
           )}
         </TabsContent>
@@ -1736,6 +1800,69 @@ export default function Stage6() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Admin: Edit History (lift) record modal */}
+      <Dialog open={openEditModal} onOpenChange={setOpenEditModal}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-indigo-950">
+              Edit Lift — {editingLiftRow?.liftNo}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Qty Lifted</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editFormData.liftingQty}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, liftingQty: e.target.value }))}
+                className="h-9 text-sm"
+              />
+              <p className="text-[11px] text-slate-500">Pending Dispatch Qty is recalculated live from this value.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">LR Number</Label>
+              <Input
+                value={editFormData.lrNo}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, lrNo: e.target.value }))}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Payment Status</Label>
+              <Input
+                value={editFormData.paymentStatus}
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, paymentStatus: e.target.value }))}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Bilty Copy</Label>
+              <Input
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                onChange={(e) => setEditFormData((prev) => ({ ...prev, biltyCopy: e.target.files?.[0] || prev.biltyCopy }))}
+                className="h-9 text-sm"
+              />
+              {typeof editFormData.biltyCopy === "string" && editFormData.biltyCopy && (
+                <a href={editFormData.biltyCopy} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline">
+                  View current Bilty Copy
+                </a>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>Cancel</Button>
+            <Button onClick={handleSaveEditHistory} disabled={isSavingEdit} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <BackgroundSyncBanner visible={isSavingEdit} />
     </div>
   );
 }

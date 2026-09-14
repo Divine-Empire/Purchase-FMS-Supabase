@@ -8,7 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText, Shield, ShieldCheck } from "lucide-react";
+import { FileText, Shield, ShieldCheck, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { parseSheetDate, formatDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
@@ -52,6 +53,8 @@ interface PoEntryHistoryProps {
   getVendorData: (record: any) => any;
   paymentTermsList: { value: string; label: string }[];
   poTotalMap: Map<string, number>;
+  isAdmin?: boolean;
+  onEdit?: (record: any) => void;
 }
 
 export default function PoEntryHistory({
@@ -59,12 +62,17 @@ export default function PoEntryHistory({
   getVendorData,
   paymentTermsList,
   poTotalMap,
+  isAdmin,
+  onEdit,
 }: PoEntryHistoryProps) {
   return (
     <div className="border border-indigo-100 rounded-xl flex-1 overflow-auto shadow-xs relative h-full bg-white">
       <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
         <TableHeader className="sticky top-0 z-30 bg-slate-900 shadow-xs border-none text-white">
           <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+            {isAdmin && (
+              <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase tracking-wider">Edit</TableHead>
+            )}
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase tracking-wider">Item Details</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Planned</TableHead>
             <TableHead className="sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 text-[11px] font-bold text-white uppercase whitespace-nowrap tracking-wider">Actual</TableHead>
@@ -84,6 +92,18 @@ export default function PoEntryHistory({
             const delayVal = calculateDelay(record.data.planned4 || record.data.plannedDate, record.data.actual4 || record.data.actualDate);
             return (
               <TableRow key={record.id} className="odd:bg-emerald-50/10 even:bg-white hover:bg-emerald-50/20 border-b border-indigo-50/80 last:border-0 transition-colors text-slate-700">
+                {isAdmin && (
+                  <TableCell className="px-4 py-3 border-b border-indigo-50/80">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEdit?.(record)}
+                      className="h-7 px-2.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3 mr-1" /> Edit
+                    </Button>
+                  </TableCell>
+                )}
                 <TableCell className="max-w-[200px] px-4 py-3 border-b border-indigo-50/80">
                   <div className="space-y-1">
                     <div className="font-bold text-indigo-950">{record.data.indentNumber || "-"}</div>

@@ -9,7 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText } from "lucide-react";
+import { FileText, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
@@ -40,17 +41,22 @@ const calculateDelay = (planned: any, actual: any) => {
 interface FollowUpVendorHistoryProps {
   filteredHistoryData: any[];
   sheetRecords: any[];
+  isAdmin?: boolean;
+  onEdit?: (row: any) => void;
 }
 
 export default function FollowUpVendorHistory({
   filteredHistoryData,
   sheetRecords,
+  isAdmin,
+  onEdit,
 }: FollowUpVendorHistoryProps) {
   return (
     <div className="border rounded-lg overflow-auto flex-1 flex flex-col min-h-[350px] md:min-h-0 bg-white">
       <Table>
         <TableHeader className="bg-slate-900 sticky top-0 z-10 shadow-sm [&_th]:text-white [&_th]:font-semibold [&_th]:h-12 border-b-0">
           <TableRow className="border-b-0 hover:bg-slate-900">
+            {isAdmin && <TableHead>Edit</TableHead>}
             <TableHead>Indent No.</TableHead>
             <TableHead>Planned</TableHead>
             <TableHead>Actual</TableHead>
@@ -92,6 +98,18 @@ export default function FollowUpVendorHistory({
 
             return (
               <TableRow key={row.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
+                {isAdmin && (
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEdit?.(row)}
+                      className="h-7 px-2.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3 mr-1" /> Edit
+                    </Button>
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">{row.indentNumber || "-"}</TableCell>
                 <TableCell>{indentRecord ? formatDateDash(indentRecord.data.planned5) : "-"}</TableCell>
                 <TableCell>{indentRecord ? formatDateDash(indentRecord.data.actual5) : "-"}</TableCell>

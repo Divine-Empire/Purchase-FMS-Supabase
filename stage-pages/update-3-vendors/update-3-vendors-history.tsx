@@ -8,7 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Shield, ShieldCheck, FileText } from "lucide-react";
+import { Shield, ShieldCheck, FileText, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
@@ -40,17 +41,24 @@ interface Update3VendorsHistoryProps {
   completed: any[];
   selectedColumns: string[];
   baseColumns: any[];
+  isAdmin?: boolean;
+  onEdit?: (record: any) => void;
 }
 
 export default function Update3VendorsHistory({
   completed,
   selectedColumns,
   baseColumns,
+  isAdmin,
+  onEdit,
 }: Update3VendorsHistoryProps) {  return (
     <div className="border border-indigo-100 rounded-xl overflow-auto flex-1 shadow-xs relative h-full bg-white">
       <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
         <TableHeader className="sticky top-0 z-30 bg-slate-900 shadow-xs border-none text-white">
           <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+            {isAdmin && (
+              <TableHead className="w-20 text-center text-sm font-bold text-white sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 whitespace-nowrap">Edit</TableHead>
+            )}
             <TableHead className="w-12 text-center text-sm font-bold text-white sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 whitespace-nowrap">#</TableHead>
             {baseColumns
               .filter((c) => selectedColumns.includes(c.accessorKey))
@@ -95,6 +103,18 @@ export default function Update3VendorsHistory({
               <TableRow key={`${record.id}-v${idx + 1}`} className={cn(rowBg, "hover:bg-indigo-50/30 transition-colors border-b border-indigo-50/80 last:border-0")}>
                 {idx === 0 && (
                   <>
+                    {isAdmin && (
+                      <TableCell rowSpan={vendors.length} className="text-center border-b border-indigo-50/80 px-4 py-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onEdit?.(record)}
+                          className="h-7 px-2.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3 mr-1" /> Edit
+                        </Button>
+                      </TableCell>
+                    )}
                     <TableCell rowSpan={vendors.length} className="text-center font-bold text-indigo-950 text-sm border-b border-indigo-50/80 px-4 py-3">
                       {recordIdx + 1}
                     </TableCell>

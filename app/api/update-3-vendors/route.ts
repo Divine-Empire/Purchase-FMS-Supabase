@@ -165,6 +165,112 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    // --- CASE 1.5: EDIT HISTORY (admin-only, cascades to Negotiation + PO Entry) ---
+    if (action === "editHistory") {
+      const { indentNo, vendor1Name, vendor1Rate, vendor1Terms, vendor2Name, vendor2Rate, vendor2Terms, vendor3Name, vendor3Rate, vendor3Terms } = body;
+
+      if (!indentNo) {
+        return NextResponse.json({ success: false, error: "Missing indentNo" }, { status: 400 });
+      }
+
+      const { data: existing, error: fetchError } = await supabase
+        .from("pfms_update-3-vendors")
+        .select("*")
+        .eq("indentNo", indentNo)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+      if (!existing) {
+        return NextResponse.json({ success: false, error: `No vendor record found for indent ${indentNo}` }, { status: 404 });
+      }
+
+      const now = getLocalTimestamp();
+
+      const { error: updateError } = await supabase
+        .from("pfms_update-3-vendors")
+        .update({
+          vendor1Name: vendor1Name ?? existing.vendor1Name,
+          vendor1Rate: vendor1Rate !== undefined ? parseFloat(vendor1Rate) || null : existing.vendor1Rate,
+          vendor1Terms: vendor1Terms ?? existing.vendor1Terms,
+          vendor2Name: vendor2Name ?? existing.vendor2Name,
+          vendor2Rate: vendor2Rate !== undefined ? parseFloat(vendor2Rate) || null : existing.vendor2Rate,
+          vendor2Terms: vendor2Terms ?? existing.vendor2Terms,
+          vendor3Name: vendor3Name ?? existing.vendor3Name,
+          vendor3Rate: vendor3Rate !== undefined ? parseFloat(vendor3Rate) || null : existing.vendor3Rate,
+          vendor3Terms: vendor3Terms ?? existing.vendor3Terms,
+          updatedAt: now,
+        })
+        .eq("indentNo", indentNo);
+      if (updateError) throw updateError;
+
+      // ---- Cascade: figure out which vendor slot (if any) was the one selected in Negotiation ----
+      const { data: negotiation } = await supabase
+        .from("pfms_negotiation")
+        .select("selectedVendorName")
+        .eq("indentNo", indentNo)
+        .maybeSingle();
+
+      if (negotiation?.selectedVendorName) {
+        const selected = negotiation.selectedVendorName;
+        let newRate: number | null = null;
+        let newSelectedName: string | null = null;
+
+        if (selected === existing.vendor1Name) {
+          newRate = vendor1Rate !== undefined ? parseFloat(vendor1Rate) || null : existing.vendor1Rate;
+          newSelectedName = vendor1Name ?? existing.vendor1Name;
+        } else if (selected === existing.vendor2Name) {
+          newRate = vendor2Rate !== undefined ? parseFloat(vendor2Rate) || null : existing.vendor2Rate;
+          newSelectedName = vendor2Name ?? existing.vendor2Name;
+        } else if (selected === existing.vendor3Name) {
+          newRate = vendor3Rate !== undefined ? parseFloat(vendor3Rate) || null : existing.vendor3Rate;
+          newSelectedName = vendor3Name ?? existing.vendor3Name;
+        }
+
+        // Keep Negotiation's selectedVendorName in sync if that vendor's name was renamed
+        if (newSelectedName && newSelectedName !== selected) {
+          await supabase
+            .from("pfms_negotiation")
+            .update({ selectedVendorName: newSelectedName, updatedAt: now })
+            .eq("indentNo", indentNo);
+        }
+
+        // Cascade the new rate into PO Entry's Basic/Total Value, if a PO already exists
+        if (newRate !== null) {
+          const { data: poRow } = await supabase
+            .from("pfms_po-entry")
+            .select("basicValue, totalWithTax")
+            .eq("indentNo", indentNo)
+            .maybeSingle();
+
+          if (poRow) {
+            const { data: indentRow } = await supabase
+              .from("pfms_indent_generation")
+              .select("quantity")
+              .eq("indentNo", indentNo)
+              .maybeSingle();
+
+            const quantity = parseFloat(indentRow?.quantity) || 0;
+            const oldBasicValue = parseFloat(poRow.basicValue) || 0;
+            const oldTotalWithTax = parseFloat(poRow.totalWithTax) || 0;
+            const taxDelta = oldTotalWithTax - oldBasicValue;
+
+            const newBasicValue = parseFloat((newRate * quantity).toFixed(2));
+            const newTotalWithTax = parseFloat((newBasicValue + taxDelta).toFixed(2));
+
+            await supabase
+              .from("pfms_po-entry")
+              .update({
+                basicValue: newBasicValue,
+                totalWithTax: newTotalWithTax,
+                updatedAt: now,
+              })
+              .eq("indentNo", indentNo);
+          }
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
     // --- CASE 2: SAVE NEW VENDORS TO CATALOG ---
     if (action === "saveNewVendors") {
       const { names } = body;

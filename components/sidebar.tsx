@@ -55,9 +55,15 @@ export default function Sidebar() {
     }
   }, []);
 
+  // Fetch once on mount only. Previously this also re-ran on every
+  // pathname change, which meant every client-side navigation anywhere
+  // in the app re-triggered the full (heavy) /api/dashboard computation
+  // just to refresh sidebar badge counts. Counts now refresh via the
+  // 60s poll below instead of on every navigation.
   useEffect(() => {
     fetchCounts();
-  }, [pathname, fetchCounts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {

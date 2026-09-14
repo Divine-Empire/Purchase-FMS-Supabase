@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 
+// Short-lived in-memory cache for this heavy endpoint. /api/dashboard fans
+// out into 6-10+ Supabase calls and a full JS aggregation pass over every
+// indent + lift, and is hit repeatedly (dashboard page load, sidebar poll,
+// multiple concurrent users). A 45s TTL means bursts of requests within
+// that window are served the same computed result instead of each
+// re-running the full fetch + aggregation. Cache lives per warm serverless
+// instance (best-effort, not perfectly consistent across instances/cold
+// starts), and dashboard data may lag by up to ~45s as a result.
+const DASHBOARD_CACHE_TTL_MS = 45_000;
+let dashboardCache: { data: any; expiresAt: number } | null = null;
+
 export async function GET(request: NextRequest) {
+  if (dashboardCache && dashboardCache.expiresAt > Date.now()) {
+    return NextResponse.json(dashboardCache.data);
+  }
+
   try {
     // 1. Fetch all indents with their full workflow stages and relations using pagination to surpass default 1000 row limit
     const indents: any[] = [];
@@ -12,25 +27,40 @@ export async function GET(request: NextRequest) {
       const { data: pageIndents, error: indentError } = await supabase
         .from("pfms_indent_generation")
         .select(`
-          *,
-          approval:"pfms_indent-approval"(*),
-          update3Vendors:"pfms_update-3-vendors"(*),
-          negotiation:pfms_negotiation(*),
-          poEntry:"pfms_po-entry"(*),
+          indentNo,
+          createdBy,
+          category,
+          itemName,
+          quantity,
+          warehouseLocation,
+          plannedIndentApproval,
+          leadTime,
+          timestamp,
+          approval:"pfms_indent-approval"(status, plannedUpdateVendors, approvedQty),
+          update3Vendors:"pfms_update-3-vendors"(plannedNegotiation),
+          negotiation:pfms_negotiation(selectedVendorName, plannedPOEntry),
+          poEntry:"pfms_po-entry"(poNumber, poCopy, plannedFollowUpVendor, estimatedFollowUpVendor),
           lifts:pfms_lift(
-            *,
-            transporterFollowUp:"pfms_transporter-follow-up"(*),
-            materialReceived:"pfms_material-received"(*),
-            serials:"pfms_serial-number"(*),
-            tallyEntry:"pfms_tally-entry"(*),
-            submitInvoiceHO:"pfms_submit-invoice-ho"(*),
-            submitInvoice:"pfms_submit-invoice"(*),
-            accountsVerification:"pfms_accounts-verification"(*),
-            materialTesting:"pfms_material-testing"(*),
-            purchaseReturn:"pfms_purchase-return"(*),
-            returnApproval:"pfms_return-approval"(*),
-            vendorPaymentDetails:"pfms_vendor-payment-details"(*),
-            freightPaymentDetails:"pfms_freight-payment-details"(*)
+            liftNo,
+            liftingQty,
+            vehicleNo,
+            dispatchDate,
+            freightAmount,
+            plannedTransporterFlwUp,
+            plannedMaterialRcd,
+            plannedSerialGen,
+            transporterFollowUp:"pfms_transporter-follow-up"(status),
+            materialReceived:"pfms_material-received"(invoiceNumber, invoiceDate, receivedQty, receivedItemImage, billAttachment, qcRequired, timestamp, plannedMaterialTesting, plannedTallyEntry),
+            serials:"pfms_serial-number"(id, serialNo, warrantyExpiry),
+            tallyEntry:"pfms_tally-entry"(plannedInvoiceHO),
+            submitInvoiceHO:"pfms_submit-invoice-ho"(plannedInvoice),
+            submitInvoice:"pfms_submit-invoice"(plannedVerification),
+            accountsVerification:"pfms_accounts-verification"(id),
+            materialTesting:"pfms_material-testing"(qcDate, rejectedQty, plannedPurchaseReturns),
+            purchaseReturn:"pfms_purchase-return"(plannedReturnApproval),
+            returnApproval:"pfms_return-approval"(id),
+            vendorPaymentDetails:"pfms_vendor-payment-details"(totalAmount, paidAmount, plannedDate),
+            freightPaymentDetails:"pfms_freight-payment-details"(totalAmount, paidAmount, plannedDate)
           )
         `)
         .order("timestamp", { ascending: false })
@@ -423,7 +453,7 @@ export async function GET(request: NextRequest) {
 
     const completionRate = totalPurchaseOrders > 0 ? Math.round((completedPOs / totalPurchaseOrders) * 100) : 0;
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
       data: {
         totalPurchaseOrders,
@@ -439,7 +469,14 @@ export async function GET(request: NextRequest) {
         stageOverdueCounts,
         topReceivedOrders,
       },
-    });
+    };
+
+    dashboardCache = {
+      data: responseBody,
+      expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+    };
+
+    return NextResponse.json(responseBody);
   } catch (error: any) {
     console.error("Dashboard API Error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

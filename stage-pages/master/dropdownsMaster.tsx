@@ -25,6 +25,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Database,
   Plus,
@@ -40,7 +49,9 @@ import {
   Timer,
   UserCircle2,
   CalendarOff,
-  Pencil
+  Pencil,
+  ChevronsUpDown,
+  Check
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn, minutesToDHM, dhmToMinutes, formatDurationShort } from "@/lib/utils";
@@ -68,6 +79,85 @@ interface ItemRecord {
   category: string;
   itemName: string;
   purchaser?: string;
+}
+
+// Type-to-filter picker for a long options list (Item/Vendor Master can run into the
+// thousands) — filters client-side against the already-fetched `options` array, but only
+// ever renders the first SEARCH_SELECT_RENDER_LIMIT matches, so the popup never has to mount
+// thousands of rows at once the way a plain <select> or an unbounded Command list would.
+const SEARCH_SELECT_RENDER_LIMIT = 50;
+
+function SearchSelect({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+}: {
+  options: { id: string; label: string }[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder: string;
+  searchPlaceholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+    return base.slice(0, SEARCH_SELECT_RENDER_LIMIT);
+  }, [options, search]);
+
+  const selected = options.find((o) => o.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "h-9 flex-grow justify-between text-xs font-semibold border-slate-350",
+            !selected && "text-slate-500 font-medium"
+          )}
+        >
+          <span className="truncate">{selected ? selected.label : placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} className="text-xs" />
+          <CommandList>
+            <CommandEmpty className="py-3 px-4 text-xs text-slate-500">No match — try a different search.</CommandEmpty>
+            <CommandGroup>
+              {filtered.map((o) => (
+                <CommandItem
+                  key={o.id}
+                  value={o.id}
+                  onSelect={() => {
+                    onChange(o.id);
+                    setOpen(false);
+                  }}
+                  className="text-xs"
+                >
+                  <Check className={cn("mr-2 h-3.5 w-3.5", value === o.id ? "opacity-100" : "opacity-0")} />
+                  <span className="truncate">{o.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            {options.length > filtered.length && (
+              <div className="px-3 py-1.5 text-[10.5px] text-slate-400 border-t border-slate-100">
+                Showing {filtered.length} of {options.length} — keep typing to narrow it down.
+              </div>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 interface VendorRecord {
@@ -113,6 +203,7 @@ export default function DropdownsMaster() {
   // Modals for Items & Vendors
   const [openItemModal, setOpenItemModal] = useState(false);
   const [newItem, setNewItem] = useState({ itemCode: "", category: "", itemName: "", purchaser: "" });
+  const [addItemError, setAddItemError] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [manualCategory, setManualCategory] = useState("");
 
@@ -125,11 +216,116 @@ export default function DropdownsMaster() {
 
   const [openVendorModal, setOpenVendorModal] = useState(false);
   const [newVendor, setNewVendor] = useState({ vendorCode: "", vendorName: "" });
+  const [addVendorError, setAddVendorError] = useState("");
+
+  // Edit Vendor Modal
+  const [openEditVendorModal, setOpenEditVendorModal] = useState(false);
+  const [editingVendor, setEditingVendor] = useState({ id: "", vendorCode: "", vendorName: "" });
+  const [isSavingVendor, setIsSavingVendor] = useState(false);
 
   // Modal for Holidays (add/edit)
   const [openHolidayModal, setOpenHolidayModal] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState({ id: "", date: "", name: "" });
   const [isSavingHoliday, setIsSavingHoliday] = useState(false);
+
+  // Mismatch-fix tool: item/vendor names used on real indents that don't match anything
+  // currently in Master (typos, or names entered before the "select only" restriction).
+  // Lets an admin remap every affected indent/negotiation row to a real Master entry in one go.
+  const [openMismatchModal, setOpenMismatchModal] = useState<"items" | "vendors" | null>(null);
+  const [mismatchData, setMismatchData] = useState<{
+    unmatchedItems: { name: string; indentNos: string[]; count: number }[];
+    totalUnmatchedItems: number;
+    unmatchedVendors: { name: string; indentNos: string[]; count: number }[];
+    totalUnmatchedVendors: number;
+  }>({ unmatchedItems: [], totalUnmatchedItems: 0, unmatchedVendors: [], totalUnmatchedVendors: 0 });
+  const [isLoadingMismatch, setIsLoadingMismatch] = useState(false);
+  const [remapSelections, setRemapSelections] = useState<Record<string, string>>({});
+  const [applyingRemapFor, setApplyingRemapFor] = useState<string | null>(null);
+
+  const fetchMismatchReport = async () => {
+    setIsLoadingMismatch(true);
+    try {
+      const res = await fetch("/api/dropdowns?report=mismatches");
+      const json = await res.json();
+      if (json.success) {
+        setMismatchData({
+          unmatchedItems: json.unmatchedItems || [],
+          totalUnmatchedItems: json.totalUnmatchedItems ?? (json.unmatchedItems || []).length,
+          unmatchedVendors: json.unmatchedVendors || [],
+          totalUnmatchedVendors: json.totalUnmatchedVendors ?? (json.unmatchedVendors || []).length,
+        });
+      } else {
+        toast.error(json.error || "Failed to load mismatch report");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load mismatch report");
+    } finally {
+      setIsLoadingMismatch(false);
+    }
+  };
+
+  const openMismatchTool = (which: "items" | "vendors") => {
+    setOpenMismatchModal(which);
+    setRemapSelections({});
+    fetchMismatchReport();
+  };
+
+  const handleApplyItemRename = async (fromName: string) => {
+    const toItemId = remapSelections[fromName];
+    if (!toItemId) {
+      toast.error("Pick which Item Master entry this should map to first");
+      return;
+    }
+    setApplyingRemapFor(fromName);
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "renameItem", fromName, toItemId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Fixed ${json.updatedCount} indent${json.updatedCount === 1 ? "" : "s"}`);
+        fetchMismatchReport();
+      } else {
+        toast.error(json.error || "Failed to remap item");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remap item");
+    } finally {
+      setApplyingRemapFor(null);
+    }
+  };
+
+  const handleApplyVendorRename = async (fromName: string) => {
+    const toVendorId = remapSelections[fromName];
+    if (!toVendorId) {
+      toast.error("Pick which Vendor Master entry this should map to first");
+      return;
+    }
+    setApplyingRemapFor(fromName);
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "renameVendor", fromName, toVendorId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Fixed ${json.updatedCount} negotiation(s), ${json.updatedVendorSlots} vendor slot(s)`);
+        fetchMismatchReport();
+      } else {
+        toast.error(json.error || "Failed to remap vendor");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remap vendor");
+    } finally {
+      setApplyingRemapFor(null);
+    }
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -306,11 +502,18 @@ export default function DropdownsMaster() {
 
   // Actions - Items
   const handleAddItem = async () => {
+    setAddItemError("");
+
     // Determine the category name based on selection
     const finalCategory = selectedCategory === "OTHER" ? manualCategory.trim() : selectedCategory.trim();
 
     if (!finalCategory || !newItem.itemName.trim()) {
-      toast.error("Category and Item Name are required");
+      setAddItemError("Category and Item Name are required.");
+      return;
+    }
+
+    if (!newItem.itemCode.trim()) {
+      setAddItemError("Item Code is required.");
       return;
     }
 
@@ -323,21 +526,19 @@ export default function DropdownsMaster() {
     );
 
     if (isDuplicate) {
-      toast.warning(`Item "${newItem.itemName}" already exists under category "${finalCategory}".`);
+      setAddItemError(`Item "${newItem.itemName}" already exists under category "${finalCategory}".`);
       return;
     }
 
     // Duplicate Check: Item Code
-    if (newItem.itemCode.trim()) {
-      const isCodeDuplicate = existingItems.some(
-        (item) =>
-          item.itemCode &&
-          item.itemCode.trim().toLowerCase() === newItem.itemCode.trim().toLowerCase()
-      );
-      if (isCodeDuplicate) {
-        toast.warning(`Item code "${newItem.itemCode}" is already assigned to another item.`);
-        return;
-      }
+    const isCodeDuplicate = existingItems.some(
+      (item) =>
+        item.itemCode &&
+        item.itemCode.trim().toLowerCase() === newItem.itemCode.trim().toLowerCase()
+    );
+    if (isCodeDuplicate) {
+      setAddItemError(`Item code "${newItem.itemCode}" is already assigned to another item.`);
+      return;
     }
 
     try {
@@ -358,16 +559,19 @@ export default function DropdownsMaster() {
         setNewItem({ itemCode: "", category: "", itemName: "", purchaser: "" });
         setSelectedCategory("");
         setManualCategory("");
+        setAddItemError("");
         setOpenItemModal(false);
         // Reset to page 1 to see the new item immediately at the top
         setItemsPage(1);
         fetchData();
       } else {
-        toast.error(json.error || "Failed to add item");
+        // Server also runs the duplicate check (findItemDuplicate) — surface its message
+        // inline the same way, in case the client's already-loaded list was stale.
+        setAddItemError(json.error || "Failed to add item");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to add item");
+      setAddItemError("Failed to add item");
     }
   };
 
@@ -452,8 +656,15 @@ export default function DropdownsMaster() {
 
   // Actions - Vendors
   const handleAddVendor = async () => {
+    setAddVendorError("");
+
     if (!newVendor.vendorName.trim()) {
-      toast.error("Vendor Name is required");
+      setAddVendorError("Vendor Name is required.");
+      return;
+    }
+
+    if (!newVendor.vendorCode.trim()) {
+      setAddVendorError("Vendor Code is required.");
       return;
     }
 
@@ -464,21 +675,19 @@ export default function DropdownsMaster() {
     );
 
     if (isDuplicate) {
-      toast.warning(`Vendor "${newVendor.vendorName}" already exists.`);
+      setAddVendorError(`Vendor "${newVendor.vendorName}" already exists.`);
       return;
     }
 
     // Duplicate Check: Vendor Code
-    if (newVendor.vendorCode.trim()) {
-      const isCodeDuplicate = existingVendors.some(
-        (vendor) =>
-          vendor.vendorCode &&
-          vendor.vendorCode.trim().toLowerCase() === newVendor.vendorCode.trim().toLowerCase()
-      );
-      if (isCodeDuplicate) {
-        toast.warning(`Vendor code "${newVendor.vendorCode}" is already assigned to another vendor.`);
-        return;
-      }
+    const isCodeDuplicate = existingVendors.some(
+      (vendor) =>
+        vendor.vendorCode &&
+        vendor.vendorCode.trim().toLowerCase() === newVendor.vendorCode.trim().toLowerCase()
+    );
+    if (isCodeDuplicate) {
+      setAddVendorError(`Vendor code "${newVendor.vendorCode}" is already assigned to another vendor.`);
+      return;
     }
 
     try {
@@ -495,16 +704,88 @@ export default function DropdownsMaster() {
       if (json.success) {
         toast.success("Vendor added successfully");
         setNewVendor({ vendorCode: "", vendorName: "" });
+        setAddVendorError("");
         setOpenVendorModal(false);
         // Reset page to 1 to see the new vendor at the top
         setVendorsPage(1);
         fetchData();
       } else {
-        toast.error(json.error || "Failed to add vendor");
+        // Server also runs the duplicate check (findVendorDuplicate) — surface its message
+        // inline the same way, in case the client's already-loaded list was stale.
+        setAddVendorError(json.error || "Failed to add vendor");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to add vendor");
+      setAddVendorError("Failed to add vendor");
+    }
+  };
+
+  const handleOpenEditVendor = (vendor: VendorRecord) => {
+    setEditingVendor({
+      id: vendor.id,
+      vendorCode: vendor.vendorCode || "",
+      vendorName: vendor.vendorName || "",
+    });
+    setOpenEditVendorModal(true);
+  };
+
+  const handleSaveEditVendor = async () => {
+    if (!editingVendor.vendorName.trim()) {
+      toast.error("Vendor Name is required");
+      return;
+    }
+
+    // Duplicate Check: Vendor Name (excluding this vendor's own current row)
+    const existingVendors: VendorRecord[] = data.vendors || [];
+    const isDuplicate = existingVendors.some(
+      (vendor) =>
+        vendor.id !== editingVendor.id &&
+        vendor.vendorName.trim().toLowerCase() === editingVendor.vendorName.trim().toLowerCase()
+    );
+    if (isDuplicate) {
+      toast.warning(`Vendor "${editingVendor.vendorName}" already exists.`);
+      return;
+    }
+
+    // Duplicate Check: Vendor Code (excluding this vendor's own current row)
+    if (editingVendor.vendorCode.trim()) {
+      const isCodeDuplicate = existingVendors.some(
+        (vendor) =>
+          vendor.id !== editingVendor.id &&
+          vendor.vendorCode &&
+          vendor.vendorCode.trim().toLowerCase() === editingVendor.vendorCode.trim().toLowerCase()
+      );
+      if (isCodeDuplicate) {
+        toast.warning(`Vendor code "${editingVendor.vendorCode}" is already assigned to another vendor.`);
+        return;
+      }
+    }
+
+    setIsSavingVendor(true);
+    try {
+      const res = await fetch("/api/dropdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "updateVendor",
+          id: editingVendor.id,
+          vendorCode: editingVendor.vendorCode,
+          vendorName: editingVendor.vendorName,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success("Vendor updated successfully");
+        setOpenEditVendorModal(false);
+        fetchData();
+      } else {
+        toast.error(json.error || "Failed to update vendor");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update vendor");
+    } finally {
+      setIsSavingVendor(false);
     }
   };
 
@@ -905,18 +1186,29 @@ export default function DropdownsMaster() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={() => {
-                    setNewItem({ itemCode: "", category: "", itemName: "", purchaser: "" });
-                    setSelectedCategory("");
-                    setManualCategory("");
-                    setOpenItemModal(true);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer border-none"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Catalog Item
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => openMismatchTool("items")}
+                    className="border-amber-300 text-amber-800 hover:bg-amber-50 bg-amber-50/50 font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    Fix Mismatched Items
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setNewItem({ itemCode: "", category: "", itemName: "", purchaser: "" });
+                      setSelectedCategory("");
+                      setManualCategory("");
+                      setAddItemError("");
+                      setOpenItemModal(true);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer border-none"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Catalog Item
+                  </Button>
+                </div>
               </div>
 
               {/* Table Body Container */}
@@ -1034,13 +1326,27 @@ export default function DropdownsMaster() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={() => setOpenVendorModal(true)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer border-none"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Vendor
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => openMismatchTool("vendors")}
+                    className="border-amber-300 text-amber-800 hover:bg-amber-50 bg-amber-50/50 font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    Fix Mismatched Vendors
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setNewVendor({ vendorCode: "", vendorName: "" });
+                      setAddVendorError("");
+                      setOpenVendorModal(true);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm gap-2 h-9 rounded-lg cursor-pointer border-none"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Vendor
+                  </Button>
+                </div>
               </div>
 
               {/* Table Body Container */}
@@ -1048,7 +1354,7 @@ export default function DropdownsMaster() {
                 <Table className="border-collapse">
                   <TableHeader>
                     <TableRow className="bg-slate-100 hover:bg-slate-100 text-xs font-bold uppercase tracking-wider text-slate-755 border-b border-slate-350">
-                      <TableHead className="w-[100px] text-center font-bold text-slate-900">Actions</TableHead>
+                      <TableHead className="w-[130px] text-center font-bold text-slate-900">Actions</TableHead>
                       <TableHead className="font-bold text-slate-900">Vendor Code</TableHead>
                       <TableHead className="font-bold text-slate-900">Vendor Name</TableHead>
                     </TableRow>
@@ -1064,14 +1370,24 @@ export default function DropdownsMaster() {
                       paginatedVendors.map((vendor) => (
                         <TableRow key={vendor.id} className="hover:bg-slate-50 border-b border-slate-200 transition-colors">
                           <TableCell className="text-center">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-md cursor-pointer border border-transparent hover:border-red-200"
-                              onClick={() => handleDeleteVendor(vendor.id, vendor.vendorName)}
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-[11px] text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 font-bold rounded-md cursor-pointer"
+                                onClick={() => handleOpenEditVendor(vendor)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-md cursor-pointer border border-transparent hover:border-red-200"
+                                onClick={() => handleDeleteVendor(vendor.id, vendor.vendorName)}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </div>
                           </TableCell>
                           <TableCell className="font-mono text-xs font-bold text-slate-800">
                             {vendor.vendorCode || "N/A"}
@@ -1482,14 +1798,22 @@ export default function DropdownsMaster() {
             <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Add New Item</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 my-4">
+            {addItemError && (
+              <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {addItemError}
+              </div>
+            )}
             <div className="space-y-1.5">
-              <Label htmlFor="itemCode" className="text-xs font-bold text-slate-900">Item Code (Optional)</Label>
+              <Label htmlFor="itemCode" className="text-xs font-bold text-slate-900">
+                Item Code <span className="text-red-500">*</span>
+              </Label>
               <Input
                 id="itemCode"
                 placeholder="e.g. ITM-001"
                 value={newItem.itemCode}
                 onChange={(e) => setNewItem((prev) => ({ ...prev, itemCode: e.target.value }))}
                 className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+                required
               />
             </div>
 
@@ -1668,6 +1992,54 @@ export default function DropdownsMaster() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Vendor Modal */}
+      <Dialog open={openEditVendorModal} onOpenChange={setOpenEditVendorModal}>
+        <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
+          <DialogHeader className="border-b border-slate-200 pb-2">
+            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Edit Vendor</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 my-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="editVendorCode" className="text-xs font-bold text-slate-900">Vendor Code (Optional)</Label>
+              <Input
+                id="editVendorCode"
+                placeholder="e.g. VND-901"
+                value={editingVendor.vendorCode}
+                onChange={(e) => setEditingVendor((prev) => ({ ...prev, vendorCode: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-900 font-semibold"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="editVendorName" className="text-xs font-bold text-slate-900">Vendor Name</Label>
+              <Input
+                id="editVendorName"
+                placeholder="e.g. Acme Corp Industries"
+                value={editingVendor.vendorName}
+                onChange={(e) => setEditingVendor((prev) => ({ ...prev, vendorName: e.target.value }))}
+                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setOpenEditVendorModal(false)}
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEditVendor}
+              disabled={isSavingVendor}
+              className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold gap-2"
+            >
+              {isSavingVendor && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Vendor Modal */}
       <Dialog open={openVendorModal} onOpenChange={setOpenVendorModal}>
         <DialogContent className="max-w-md bg-white border border-slate-355 rounded-xl p-6 shadow-xl">
@@ -1675,14 +2047,22 @@ export default function DropdownsMaster() {
             <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">Add New Vendor</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 my-4">
+            {addVendorError && (
+              <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {addVendorError}
+              </div>
+            )}
             <div className="space-y-1.5">
-              <Label htmlFor="vendorCode" className="text-xs font-bold text-slate-900">Vendor Code (Optional)</Label>
+              <Label htmlFor="vendorCode" className="text-xs font-bold text-slate-900">
+                Vendor Code <span className="text-red-500">*</span>
+              </Label>
               <Input
                 id="vendorCode"
                 placeholder="e.g. VND-901"
                 value={newVendor.vendorCode}
                 onChange={(e) => setNewVendor((prev) => ({ ...prev, vendorCode: e.target.value }))}
                 className="h-9 text-xs border-slate-350 focus-visible:ring-slate-900 font-semibold"
+                required
               />
             </div>
             <div className="space-y-1.5">
@@ -1709,6 +2089,108 @@ export default function DropdownsMaster() {
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-lg cursor-pointer font-bold"
             >
               Add Vendor
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mismatch Fix Tool — remaps an item/vendor name used on real indents (that doesn't
+          match anything in Master) onto an actual Master entry, in one shot across every
+          affected record. */}
+      <Dialog open={openMismatchModal !== null} onOpenChange={(v) => !v && setOpenMismatchModal(null)}>
+        <DialogContent className="max-w-2xl bg-white border border-slate-355 rounded-xl p-6 shadow-xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="border-b border-slate-200 pb-2 shrink-0">
+            <DialogTitle className="text-lg font-bold text-slate-955 tracking-tight">
+              {openMismatchModal === "vendors" ? "Fix Mismatched Vendor Names" : "Fix Mismatched Item Names"}
+            </DialogTitle>
+            <p className="text-xs text-slate-600 font-medium mt-1">
+              {openMismatchModal === "vendors"
+                ? "These vendor names appear on real Negotiation/Update-3-Vendors records but don't match anything in Vendor Master. Map each one to the correct Master entry — every affected record is updated in one go."
+                : "These item names appear on real indents but don't match anything in Item Master. Map each one to the correct Master entry — every affected indent is updated in one go."}
+            </p>
+          </DialogHeader>
+
+          <div className="flex-grow overflow-y-auto min-h-0 my-3 space-y-2">
+            {isLoadingMismatch ? (
+              <div className="flex items-center justify-center py-12 text-slate-500 text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Scanning indents…
+              </div>
+            ) : (() => {
+              const rows = openMismatchModal === "vendors" ? mismatchData.unmatchedVendors : mismatchData.unmatchedItems;
+              const total = openMismatchModal === "vendors" ? mismatchData.totalUnmatchedVendors : mismatchData.totalUnmatchedItems;
+              if (rows.length === 0) {
+                return (
+                  <div className="text-center py-12 text-slate-500 text-sm font-semibold">
+                    Nothing to fix — every {openMismatchModal === "vendors" ? "vendor" : "item"} name in use matches Master. 🎉
+                  </div>
+                );
+              }
+              const targetOptions = openMismatchModal === "vendors"
+                ? (data.vendors || []).map((v: VendorRecord) => ({
+                    id: v.id,
+                    label: `${v.vendorName}${v.vendorCode ? ` (${v.vendorCode})` : ""}`,
+                  }))
+                : (data.items || []).map((i: ItemRecord) => ({
+                    id: i.id,
+                    label: `${i.itemName} — ${i.category}${i.itemCode ? ` (${i.itemCode})` : ""}`,
+                  }));
+              return (
+                <>
+                  {total > rows.length && (
+                    <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-semibold mb-2">
+                      Showing the top {rows.length} of {total}, sorted by how many indents each one affects. Fix these, then reopen this tool for the next batch.
+                    </div>
+                  )}
+                  {rows.map((row) => (
+                    <div key={row.name} className="border border-slate-200 rounded-lg p-3 bg-slate-50/60 flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">{row.name}</div>
+                          <div className="text-[11px] text-slate-500 font-semibold">
+                            {row.count} indent{row.count === 1 ? "" : "s"} &middot; {row.indentNos.slice(0, 4).join(", ")}{row.indentNos.length > 4 ? ` +${row.indentNos.length - 4} more` : ""}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <SearchSelect
+                          options={targetOptions}
+                          value={remapSelections[row.name] || ""}
+                          onChange={(id) => setRemapSelections((prev) => ({ ...prev, [row.name]: id }))}
+                          placeholder={openMismatchModal === "vendors" ? "Map to Vendor Master entry…" : "Map to Item Master entry…"}
+                          searchPlaceholder={openMismatchModal === "vendors" ? "Search vendors…" : "Search items…"}
+                        />
+                        <Button
+                          size="sm"
+                          disabled={!remapSelections[row.name] || applyingRemapFor === row.name}
+                          onClick={() =>
+                            openMismatchModal === "vendors"
+                              ? handleApplyVendorRename(row.name)
+                              : handleApplyItemRename(row.name)
+                          }
+                          className="h-9 px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-md cursor-pointer gap-1.5 shrink-0"
+                        >
+                          {applyingRemapFor === row.name && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-200 pt-3 shrink-0">
+            <p className="text-[11px] text-slate-500 font-medium mr-auto self-center">
+              Not in Master yet? Add it under {openMismatchModal === "vendors" ? '"Add Vendor"' : '"Add Catalog Item"'} first, then come back here to map it.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => setOpenMismatchModal(null)}
+              className="text-xs h-9 rounded-lg cursor-pointer border-slate-350 font-bold"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

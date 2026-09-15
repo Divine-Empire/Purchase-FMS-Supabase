@@ -297,38 +297,11 @@ export default function Stage3() {
     return { search: vendorSearch3, setSearch: setVendorSearch3, show: showVendorDropdown3, setShow: setShowVendorDropdown3 };
   }, [vendorSearch1, vendorSearch2, vendorSearch3, showVendorDropdown1, showVendorDropdown2, showVendorDropdown3]);
 
-  const checkAndSaveNewVendors = useCallback(async (names: string[]) => {
-    if (names.length === 0) return;
-
-    const newVendors: string[] = [];
-    names.forEach(name => {
-      if (!name) return;
-      const exists = vendorList.some(v => v.toLowerCase() === name.toLowerCase());
-      const alreadyQueued = newVendors.some(v => v.toLowerCase() === name.toLowerCase());
-      if (!exists && !alreadyQueued) {
-        newVendors.push(name);
-      }
-    });
-
-    if (newVendors.length > 0) {
-      setVendorList(prev => [...prev, ...newVendors]);
-
-      try {
-        await fetch("/api/update-3-vendors", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            action: "saveNewVendors",
-            names: newVendors
-          }),
-        });
-      } catch (e) {
-        console.error("Failed to save new vendors:", e);
-      }
-    }
-  }, [vendorList]);
+  // Vendor selection is restricted to existing Vendor Master entries (see the vendor-name
+  // suggestion dropdown above) — there is no longer an inline "create new vendor" path here.
+  // New vendors must be added by an admin on the Master page, where addVendor/updateVendor
+  // run the duplicate-name/code check.
+  // (Removed: checkAndSaveNewVendors / the "saveNewVendors" call it made.)
 
   const resetForm = useCallback(() => {
     setOpen(false);
@@ -352,13 +325,6 @@ export default function Stage3() {
     resetForm();
 
     const submitPromise = (async () => {
-      const vendorsToCheck = [
-        submissionData.vendor1Name,
-        submissionData.vendor2Name,
-        submissionData.vendor3Name
-      ].filter(Boolean);
-      checkAndSaveNewVendors(vendorsToCheck);
-
       const vendorImageUrls: string[] = ["", "", ""];
 
       for (let i = 1; i <= numVendors; i++) {
@@ -432,7 +398,7 @@ export default function Stage3() {
       success: "Vendor details saved successfully!",
       error: (err) => `Failed to save: ${err.message}`,
     });
-  }, [selectedIds, selectedRecord, currentRecord, formData, bulkVendorData, moveToNextStage, updateRecord, checkAndSaveNewVendors, isThirdParty]);
+  }, [selectedIds, selectedRecord, currentRecord, formData, bulkVendorData, moveToNextStage, updateRecord, isThirdParty]);
 
   const toggleSelection = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -792,18 +758,13 @@ export default function Stage3() {
                                 </div>
                               ))
                             ) : (
-                              <div
-                                className="px-3 py-2 text-sm text-blue-600 hover:bg-gray-50 cursor-pointer flex items-center gap-2"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  const newVal = getVendorSearchState(num).search;
-                                  setFormData({ ...formData, [`vendor${num}Name`]: newVal });
-                                  const { setSearch, setShow } = getVendorSearchState(num);
-                                  setSearch(newVal);
-                                  setShow(false);
-                                }}
-                              >
-                                <span className="font-semibold">+ Create "{getVendorSearchState(num).search}"</span>
+                              // Selection is restricted to existing Vendor Master entries — no
+                              // inline "create new" here. A missing vendor has to be added by an
+                              // admin on the Master page first (where it goes through the
+                              // duplicate-name/code check), so negotiations never carry a
+                              // typo'd or unregistered vendor name.
+                              <div className="px-3 py-2 text-xs text-slate-500">
+                                No matching vendor. Ask an admin to add it under Master &rarr; Vendors first.
                               </div>
                             )}
                           </div>

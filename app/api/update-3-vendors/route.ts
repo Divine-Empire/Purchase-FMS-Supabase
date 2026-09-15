@@ -3,6 +3,23 @@ import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
+// Vendor selection on this stage (and its admin Edit History dialog) is restricted to
+// Vendor Master entries (see stage-pages/update-3-vendors/update-3-vendors.tsx) — no inline
+// "create new" anymore. This is the server-side half of that guarantee: reject any vendor
+// name that isn't actually registered in pfms_vendor-master, in case anything bypasses the UI.
+async function findUnregisteredVendors(names: (string | null | undefined)[]): Promise<string[]> {
+  const wanted = Array.from(new Set(names.map((n) => (n || "").trim()).filter(Boolean)));
+  if (wanted.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("pfms_vendor-master")
+    .select('"Vendor List"');
+  if (error) throw error;
+
+  const registered = new Set((data || []).map((r: any) => (r["Vendor List"] || "").trim().toLowerCase()));
+  return wanted.filter((n) => !registered.has(n.toLowerCase()));
+}
+
 export async function GET() {
   try {
     // Fetch all indent approvals and join with indent-generation + update-3-vendors
@@ -115,6 +132,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "No records to process" }, { status: 400 });
       }
 
+      const unregistered = await findUnregisteredVendors([
+        submissionData.vendor1Name, submissionData.vendor2Name, submissionData.vendor3Name,
+      ]);
+      if (unregistered.length > 0) {
+        return NextResponse.json(
+          { success: false, error: `Not in Vendor Master, ask an admin to add first: ${unregistered.join(", ")}` },
+          { status: 400 }
+        );
+      }
+
       // 1. Calculate planned time for negotiation
       const now = getLocalTimestamp();
       const plannedNegotiation = await calculatePlannedTime("negotiation");
@@ -181,6 +208,18 @@ export async function POST(request: NextRequest) {
       if (fetchError) throw fetchError;
       if (!existing) {
         return NextResponse.json({ success: false, error: `No vendor record found for indent ${indentNo}` }, { status: 404 });
+      }
+
+      const unregistered = await findUnregisteredVendors([
+        vendor1Name ?? existing.vendor1Name,
+        vendor2Name ?? existing.vendor2Name,
+        vendor3Name ?? existing.vendor3Name,
+      ]);
+      if (unregistered.length > 0) {
+        return NextResponse.json(
+          { success: false, error: `Not in Vendor Master, ask an admin to add first: ${unregistered.join(", ")}` },
+          { status: 400 }
+        );
       }
 
       const now = getLocalTimestamp();
@@ -271,27 +310,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // --- CASE 2: SAVE NEW VENDORS TO CATALOG ---
-    if (action === "saveNewVendors") {
-      const { names } = body;
-      if (!names || names.length === 0) {
-        return NextResponse.json({ success: true });
-      }
-
-      const vendorsToInsert = names.map((name: string) => ({
-        "Vendor List": name
-      }));
-
-      const { error } = await supabase
-        .from("pfms_vendor-master")
-        .insert(vendorsToInsert);
-
-      if (error) {
-        console.error("Error inserting catalog vendors:", error);
-      }
-
-      return NextResponse.json({ success: true });
-    }
+    // NOTE: the old "saveNewVendors" action (inline catalog creation from this stage) has
+    // been removed on purpose — new vendors now only ever enter pfms_vendor-master through
+    // the Master page's addVendor/updateVendor actions, which run the duplicate-name/code check.
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
   } catch (error: any) {

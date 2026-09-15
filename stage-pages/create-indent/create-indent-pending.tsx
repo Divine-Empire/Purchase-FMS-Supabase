@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { X, Loader2, PlusCircle, FileText, Upload } from "lucide-react";
+import { X, Loader2, FileText, Upload } from "lucide-react";
 import { cn, getFmsTimestamp } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
 import {
@@ -134,56 +134,10 @@ export default function CreateIndentPending({
     return Array.from(new Map(items.map(item => [item.itemName, item])).values());
   };
 
-  const checkAndSaveNewOptions = async (items: any[]) => {
-    const newOptions: any[] = [];
-    const newLocalDropdowns: any[] = [];
-
-    items.forEach(item => {
-      const exists = dropdownData.some(
-        d => d.category === item.category &&
-          d.itemName === item.itemName &&
-          d.itemCode === item.itemCode
-      );
-
-      const alreadyQueued = newOptions.some(
-        d => d.category === item.category &&
-          d.itemName === item.itemName &&
-          d.itemCode === item.itemCode
-      );
-
-      if (!exists && !alreadyQueued) {
-        newOptions.push({
-          category: item.category,
-          itemName: item.itemName,
-          itemCode: item.itemCode
-        });
-        newLocalDropdowns.push({
-          category: item.category,
-          itemName: item.itemName,
-          itemCode: item.itemCode
-        });
-      }
-    });
-
-    if (newOptions.length > 0) {
-      setDropdownData(prev => [...prev, ...newLocalDropdowns]);
-
-      try {
-        await fetch("/api/create-indent", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            action: "saveNewItems",
-            items: newOptions,
-          }),
-        });
-      } catch (e) {
-        console.error("Failed to save new options:", e);
-      }
-    }
-  };
+  // Item selection is restricted to existing Item Master entries (see the Combobox above) —
+  // there is no longer an inline "create new item" path here. New items must be added by an
+  // admin on the Master page, where addItem/updateItem run the duplicate-name/code check.
+  // (Removed: checkAndSaveNewOptions / the "saveNewItems" call it made.)
 
   const submitToSheet = async (data: any, attachmentUrl: string): Promise<string[]> => {
     const res = await fetch("/api/create-indent", {
@@ -246,12 +200,6 @@ export default function CreateIndentPending({
         }
 
         const generatedIds = await submitToSheet({ ...formData }, attachmentUrl);
-
-        const createdRecords = formData.items.map((item, i) => ({
-          indentNumber: generatedIds[i] || "",
-          ...item,
-        }));
-        checkAndSaveNewOptions(createdRecords);
 
         await fetchData();
         setFormData({ createdBy: "", warehouseLocation: "", leadTime: "", attachment: null, items: [] });
@@ -475,17 +423,12 @@ export default function CreateIndentPending({
             />
             <CommandList>
               <CommandEmpty>
-                <div
-                  className="py-2 px-4 text-sm text-indigo-600 cursor-pointer hover:bg-indigo-50 flex items-center gap-2 font-semibold"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onChange(searchValue);
-                    setOpen(false);
-                  }}
-                >
-                  <PlusCircle className="w-3 h-3" />
-                  Create "{searchValue}"
+                {/* Selection is restricted to existing Item Master entries — no inline
+                    "create new" here. A missing item has to be added by an admin on the
+                    Master page first (where it goes through the duplicate-name/code check),
+                    so indents can never carry a typo'd or unregistered item name. */}
+                <div className="py-3 px-4 text-xs text-slate-500">
+                  No matching item. Ask an admin to add it under Master &rarr; Items first.
                 </div>
               </CommandEmpty>
               <CommandGroup>

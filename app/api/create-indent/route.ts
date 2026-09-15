@@ -30,6 +30,33 @@ async function getPurchaserMap(itemNames: string[]): Promise<Record<string, stri
   return map;
 }
 
+// Item selection on Create Indent is restricted to Item Master entries (no inline "create
+// new" anymore — see stage-pages/create-indent/create-indent-pending.tsx). This is the
+// server-side half of that guarantee: reject any itemName/category combo that isn't
+// actually registered in pfms_item_master, in case anything ever bypasses the UI.
+async function findUnregisteredItems(items: { itemName: string; category: string }[]): Promise<string[]> {
+  const wanted = items
+    .map((i) => ({ itemName: (i.itemName || "").trim(), category: (i.category || "").trim() }))
+    .filter((i) => i.itemName);
+  if (wanted.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("pfms_item_master")
+    .select('"ITEM NAME", "ITEM CATEGORY"');
+  if (error) throw error;
+
+  const registered = new Set(
+    (data || []).map((r: any) => `${(r["ITEM NAME"] || "").trim().toLowerCase()}|${(r["ITEM CATEGORY"] || "").trim().toLowerCase()}`)
+  );
+
+  const missing: string[] = [];
+  for (const w of wanted) {
+    const key = `${w.itemName.toLowerCase()}|${w.category.toLowerCase()}`;
+    if (!registered.has(key)) missing.push(`${w.itemName} (${w.category || "no category"})`);
+  }
+  return missing;
+}
+
 export async function GET() {
   try {
     // Fetch all indents and join with indent-approval (1-to-1 relation)
@@ -113,6 +140,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "No items provided" }, { status: 400 });
       }
 
+      const unregistered = await findUnregisteredItems(items);
+      if (unregistered.length > 0) {
+        return NextResponse.json(
+          { success: false, error: `Not in Item Master, ask an admin to add first: ${unregistered.join(", ")}` },
+          { status: 400 }
+        );
+      }
+
       // 1. Fetch next sequence indent number batch from Supabase sequence procedure
       const { data: generatedIds, error: seqError } = await supabase
         .rpc("pfms_generate_next_indent_no", { batch_size: items.length });
@@ -164,6 +199,14 @@ export async function POST(request: NextRequest) {
     if (action === "updateIndent") {
       const { id, createdBy, warehouseLocation, leadTime, category, itemName, quantity, uom, itemCode, attachment } = body;
 
+      const unregistered = await findUnregisteredItems([{ itemName, category }]);
+      if (unregistered.length > 0) {
+        return NextResponse.json(
+          { success: false, error: `Not in Item Master, ask an admin to add first: ${unregistered.join(", ")}` },
+          { status: 400 }
+        );
+      }
+
       // Re-resolve the purchaser in case the item was changed during edit.
       const purchaserMap = await getPurchaserMap([itemName]);
 
@@ -189,31 +232,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // --- CASE 3: SAVE NEW ITEMS TO CATALOG ---
-    if (action === "saveNewItems") {
-      const { items } = body;
-      if (!items || items.length === 0) {
-        return NextResponse.json({ success: true });
-      }
-
-      // Filter properties to match item-master exactly
-      const itemsToInsert = items.map((item: any) => ({
-        "ITEM CODE": item.itemCode,
-        "ITEM CATEGORY": item.category,
-        "ITEM NAME": item.itemName
-      }));
-
-      const { error: itemError } = await supabase
-        .from("pfms_item_master")
-        .insert(itemsToInsert);
-
-      if (itemError) {
-        console.error("Error inserting catalog items:", itemError);
-        // Do not crash the entire process since catalog save is supplementary
-      }
-
-      return NextResponse.json({ success: true });
-    }
+    // NOTE: the old "saveNewItems" action (inline catalog creation from Create Indent) has
+    // been removed on purpose — new items now only ever enter pfms_item_master through the
+    // Master page's addItem/updateItem actions, which run the duplicate-name/code check.
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
   } catch (error: any) {

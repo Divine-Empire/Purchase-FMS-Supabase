@@ -39,8 +39,156 @@ async function fetchAllRows(tableName: string, selectQuery: string) {
   return allRows;
 }
 
-export async function GET() {
+/**
+ * Server-side duplicate guard for pfms_item_master, used by addItem/updateItem.
+ * Mirrors the client-side check in dropdownsMaster.tsx (case-insensitive, trimmed),
+ * but re-verified against the DB so a stale client list or a concurrent add can't slip
+ * a duplicate through. `excludeId` is passed on update so the row isn't compared to itself.
+ * Returns an error message string if a duplicate is found, or null if the entry is clear.
+ */
+async function findItemDuplicate(
+  category: string,
+  itemName: string,
+  itemCode: string | undefined,
+  excludeId?: string
+): Promise<string | null> {
+  // Category + Item Name combination must be unique.
+  let nameQuery = supabase
+    .from("pfms_item_master")
+    .select("id")
+    .ilike("ITEM NAME", itemName)
+    .ilike("ITEM CATEGORY", category)
+    .limit(1);
+  if (excludeId) nameQuery = nameQuery.neq("id", excludeId);
+  const { data: nameMatch, error: nameError } = await nameQuery;
+  if (nameError) throw nameError;
+  if (nameMatch && nameMatch.length > 0) {
+    return `Item "${itemName}" already exists under category "${category}".`;
+  }
+
+  // Item Code, if given, must be unique across all items.
+  if (itemCode) {
+    let codeQuery = supabase
+      .from("pfms_item_master")
+      .select("id")
+      .ilike("ITEM CODE", itemCode)
+      .limit(1);
+    if (excludeId) codeQuery = codeQuery.neq("id", excludeId);
+    const { data: codeMatch, error: codeError } = await codeQuery;
+    if (codeError) throw codeError;
+    if (codeMatch && codeMatch.length > 0) {
+      return `Item code "${itemCode}" is already assigned to another item.`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Server-side duplicate guard for pfms_vendor-master, used by addVendor/updateVendor.
+ * Same shape as findItemDuplicate above.
+ */
+async function findVendorDuplicate(
+  vendorName: string,
+  vendorCode: string | undefined,
+  excludeId?: string
+): Promise<string | null> {
+  let nameQuery = supabase
+    .from("pfms_vendor-master")
+    .select("id")
+    .ilike("Vendor List", vendorName)
+    .limit(1);
+  if (excludeId) nameQuery = nameQuery.neq("id", excludeId);
+  const { data: nameMatch, error: nameError } = await nameQuery;
+  if (nameError) throw nameError;
+  if (nameMatch && nameMatch.length > 0) {
+    return `Vendor "${vendorName}" already exists.`;
+  }
+
+  if (vendorCode) {
+    let codeQuery = supabase
+      .from("pfms_vendor-master")
+      .select("id")
+      .ilike("Vendor Code", vendorCode)
+      .limit(1);
+    if (excludeId) codeQuery = codeQuery.neq("id", excludeId);
+    const { data: codeMatch, error: codeError } = await codeQuery;
+    if (codeError) throw codeError;
+    if (codeMatch && codeMatch.length > 0) {
+      return `Vendor code "${vendorCode}" is already assigned to another vendor.`;
+    }
+  }
+
+  return null;
+}
+
+// Live "which Item/Vendor names on real records don't match anything in Master" report,
+// used by the Master page's rename/remap tool. Computed on demand (not cached) so it always
+// reflects the current state of pfms_indent_generation / pfms_negotiation / pfms_item_master
+// / pfms_vendor-master. Kept out of the main GET payload above since it's a heavier,
+// multi-table scan that the normal dropdowns page load doesn't need.
+const MISMATCH_REPORT_LIMIT = 50;
+
+async function buildMismatchReport() {
+  // The four source tables are independent of each other, so fetch them all in parallel
+  // instead of one after another — this is what was actually making the tool feel slow to
+  // open (four sequential paginated round-trips instead of one wave of concurrent ones).
+  const [items, vendors, indents, negotiations] = await Promise.all([
+    fetchAllRows("pfms_item_master", '"ITEM NAME"'),
+    fetchAllRows("pfms_vendor-master", '"Vendor List"'),
+    fetchAllRows("pfms_indent_generation", "indentNo, itemName"),
+    fetchAllRows("pfms_negotiation", "indentNo, selectedVendorName"),
+  ]);
+
+  const itemNameSet = new Set((items as any[]).map((r) => (r["ITEM NAME"] || "").trim()).filter(Boolean));
+  const vendorNameSet = new Set((vendors as any[]).map((r) => (r["Vendor List"] || "").trim()).filter(Boolean));
+
+  const vendorNameByIndent = new Map<string, string>();
+  for (const n of negotiations as any[]) {
+    if (n.selectedVendorName) vendorNameByIndent.set(n.indentNo, n.selectedVendorName);
+  }
+
+  const itemGroups = new Map<string, Set<string>>();
+  const vendorGroups = new Map<string, Set<string>>();
+  for (const ind of indents as any[]) {
+    const itemName = (ind.itemName || "").trim();
+    if (itemName && !itemNameSet.has(itemName)) {
+      if (!itemGroups.has(itemName)) itemGroups.set(itemName, new Set());
+      itemGroups.get(itemName)!.add(ind.indentNo);
+    }
+    const vendorName = (vendorNameByIndent.get(ind.indentNo) || "").trim();
+    if (vendorName && !vendorNameSet.has(vendorName)) {
+      if (!vendorGroups.has(vendorName)) vendorGroups.set(vendorName, new Set());
+      vendorGroups.get(vendorName)!.add(ind.indentNo);
+    }
+  }
+
+  const allUnmatchedItems = Array.from(itemGroups.entries())
+    .map(([name, indentSet]) => ({ name, indentNos: Array.from(indentSet), count: indentSet.size }))
+    .sort((a, b) => b.count - a.count);
+  const allUnmatchedVendors = Array.from(vendorGroups.entries())
+    .map(([name, indentSet]) => ({ name, indentNos: Array.from(indentSet), count: indentSet.size }))
+    .sort((a, b) => b.count - a.count);
+
+  // Fixing the highest-impact names first (most affected indents) matters more than seeing
+  // all of them at once, and rendering hundreds of rows in the modal is its own slowdown —
+  // so only the top 50 of each go back to the client; totalXxxCount says how many remain.
+  return {
+    unmatchedItems: allUnmatchedItems.slice(0, MISMATCH_REPORT_LIMIT),
+    totalUnmatchedItems: allUnmatchedItems.length,
+    unmatchedVendors: allUnmatchedVendors.slice(0, MISMATCH_REPORT_LIMIT),
+    totalUnmatchedVendors: allUnmatchedVendors.length,
+  };
+}
+
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get("report") === "mismatches") {
+      const report = await buildMismatchReport();
+      return NextResponse.json({ success: true, ...report });
+    }
+
     // 1. Fetch all dropdown options (normalized category/value pairs)
     const dropdownRows = await fetchAllRows("pfms_dropdown", "category, value");
 
@@ -261,6 +409,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: "Missing category or itemName" }, { status: 400 });
       }
 
+      // Server-side duplicate guard — the client also checks this against its already-loaded
+      // list, but that's bypassable (stale data, concurrent adds), so re-verify against the DB here.
+      const dupError = await findItemDuplicate(category.trim(), itemName.trim(), itemCode?.trim());
+      if (dupError) {
+        return NextResponse.json({ success: false, error: dupError }, { status: 409 });
+      }
+
       const { error } = await supabase
         .from("pfms_item_master")
         .insert({
@@ -282,6 +437,11 @@ export async function POST(request: Request) {
       }
       if (!category || !itemName) {
         return NextResponse.json({ success: false, error: "Missing category or itemName" }, { status: 400 });
+      }
+
+      const dupError = await findItemDuplicate(category.trim(), itemName.trim(), itemCode?.trim(), id);
+      if (dupError) {
+        return NextResponse.json({ success: false, error: dupError }, { status: 409 });
       }
 
       const { error } = await supabase
@@ -359,6 +519,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: "Missing vendorName" }, { status: 400 });
       }
 
+      const dupError = await findVendorDuplicate(vendorName.trim(), vendorCode?.trim());
+      if (dupError) {
+        return NextResponse.json({ success: false, error: dupError }, { status: 409 });
+      }
+
       const { error } = await supabase
         .from("pfms_vendor-master")
         .insert({
@@ -369,6 +534,121 @@ export async function POST(request: Request) {
 
       if (error) throw error;
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "updateVendor") {
+      const { id, vendorCode, vendorName } = body;
+      if (!id) {
+        return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
+      }
+      if (!vendorName) {
+        return NextResponse.json({ success: false, error: "Missing vendorName" }, { status: 400 });
+      }
+
+      const dupError = await findVendorDuplicate(vendorName.trim(), vendorCode?.trim(), id);
+      if (dupError) {
+        return NextResponse.json({ success: false, error: dupError }, { status: 409 });
+      }
+
+      const { error } = await supabase
+        .from("pfms_vendor-master")
+        .update({
+          "Vendor Code": vendorCode?.trim() || null,
+          "Vendor List": vendorName.trim()
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    // --- Rename/remap an unmatched Item Name across existing indents (Master data-cleanup
+    // tool). Only ever repoints itemName (and the itemCode/category that go with it) on
+    // pfms_indent_generation and pfms_order-cancellation — Serial Generation, Dashboard,
+    // etc. all read itemName by joining back to pfms_indent_generation, so nothing else
+    // needs to change. `toItemId` must be an existing pfms_item_master row.
+    if (action === "renameItem") {
+      const { fromName, toItemId } = body;
+      if (!fromName || !toItemId) {
+        return NextResponse.json({ success: false, error: "Missing fromName or toItemId" }, { status: 400 });
+      }
+
+      const { data: target, error: targetError } = await supabase
+        .from("pfms_item_master")
+        .select('"ITEM CODE", "ITEM CATEGORY", "ITEM NAME"')
+        .eq("id", toItemId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) {
+        return NextResponse.json({ success: false, error: "Target item not found in Item Master" }, { status: 404 });
+      }
+
+      const updatePayload = {
+        itemName: target["ITEM NAME"],
+        category: target["ITEM CATEGORY"],
+        itemCode: target["ITEM CODE"],
+      };
+
+      const { data: updatedIndents, error: indentError } = await supabase
+        .from("pfms_indent_generation")
+        .update(updatePayload)
+        .ilike("itemName", fromName.trim())
+        .select("indentNo");
+      if (indentError) throw indentError;
+
+      const { error: cancelError } = await supabase
+        .from("pfms_order-cancellation")
+        .update({ itemName: target["ITEM NAME"] })
+        .ilike("itemName", fromName.trim());
+      if (cancelError) throw cancelError;
+
+      return NextResponse.json({ success: true, updatedCount: (updatedIndents || []).length });
+    }
+
+    // --- Rename/remap an unmatched Vendor Name across existing records. Repoints
+    // pfms_negotiation.selectedVendorName and the vendor1/2/3Name columns on
+    // pfms_update-3-vendors wherever they hold the old (unmatched) name. `toVendorId`
+    // must be an existing pfms_vendor-master row.
+    if (action === "renameVendor") {
+      const { fromName, toVendorId } = body;
+      if (!fromName || !toVendorId) {
+        return NextResponse.json({ success: false, error: "Missing fromName or toVendorId" }, { status: 400 });
+      }
+
+      const { data: target, error: targetError } = await supabase
+        .from("pfms_vendor-master")
+        .select('"Vendor List"')
+        .eq("id", toVendorId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) {
+        return NextResponse.json({ success: false, error: "Target vendor not found in Vendor Master" }, { status: 404 });
+      }
+      const toName = target["Vendor List"];
+
+      const { data: updatedNeg, error: negError } = await supabase
+        .from("pfms_negotiation")
+        .update({ selectedVendorName: toName })
+        .ilike("selectedVendorName", fromName.trim())
+        .select("indentNo");
+      if (negError) throw negError;
+
+      let updatedVendorSlots = 0;
+      for (const col of ["vendor1Name", "vendor2Name", "vendor3Name"]) {
+        const { data: updated, error: colError } = await supabase
+          .from("pfms_update-3-vendors")
+          .update({ [col]: toName })
+          .ilike(col, fromName.trim())
+          .select("indentNo");
+        if (colError) throw colError;
+        updatedVendorSlots += (updated || []).length;
+      }
+
+      return NextResponse.json({
+        success: true,
+        updatedCount: (updatedNeg || []).length,
+        updatedVendorSlots,
+      });
     }
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });

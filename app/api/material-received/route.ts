@@ -300,6 +300,12 @@ export async function POST(request: NextRequest) {
         const plannedMaterialTesting = await calculatePlannedTime("material-testing");
         const plannedTallyEntry = await calculatePlannedTime("receipt-in-tally");
 
+        // Serial Generation no longer waits on Material Testing/QC resolution — its planned
+        // date is (re)calculated here, from Material Received's own timestamp, so it reflects
+        // when the lift actually became eligible for Serial Generation instead of the lift's
+        // original creation time at Follow-Up Vendor.
+        const plannedSerialGen = await calculatePlannedTime("serial-generation");
+
         // A. Insert into material-received table
         const { error: insertError } = await supabase
           .from("pfms_material-received")
@@ -333,6 +339,14 @@ export async function POST(request: NextRequest) {
           });
 
         if (insertError) throw insertError;
+
+        // Push the recalculated plannedSerialGen onto the lift row so Serial Generation's
+        // pending list (which reads lift.plannedSerialGen) reflects the Material Received time.
+        const { error: liftUpdateError } = await supabase
+          .from("pfms_lift")
+          .update({ plannedSerialGen: plannedSerialGen, updatedAt: now })
+          .eq("liftNo", liftNo);
+        if (liftUpdateError) throw liftUpdateError;
 
         // Clean up any leftover incomplete/orphan records for this liftNo in downstream tables
         const { error: delTestingError } = await supabase

@@ -895,10 +895,12 @@ export default function SerialGeneration() {
             const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
             const prefix = `SN-${vendorCode}/${encodedDate}/`;
-            // readyQty (passed + repaired, once QC/Repair fully resolve) is the correct count
-            // to generate serials for — receivedQty may include qty that was rejected/returned
-            // and never reaches this stage. Falls back to receivedQty for QC=No lifts.
-            const qty = Math.max(1, parseInt(rec.data.readyQty ?? rec.data.receivedQty) || 1);
+            // Serial Generation no longer waits on QC/Repair, so receivedQty (not readyQty) is
+            // the count to generate serials for. NOTE: this means serials can now be created
+            // for qty that later turns out rejected/repaired/returned during QC — there is no
+            // automatic reconciliation for that; see readyQty in the table if you need to check
+            // how much has actually passed QC so far before generating serials for a QC-required lift.
+            const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
             newEntriesMap[rec.id] = Array.from({ length: qty }, () => ({
                 serialNo: prefix,
             }));
@@ -928,10 +930,9 @@ export default function SerialGeneration() {
             const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
             const prefix = `SN-${vendorCode}/${encodedDate}/`;
-            // readyQty (passed + repaired, once QC/Repair fully resolve) is the correct count
-            // to generate serials for — receivedQty may include qty that was rejected/returned
-            // and never reaches this stage. Falls back to receivedQty for QC=No lifts.
-            const qty = Math.max(1, parseInt(rec.data.readyQty ?? rec.data.receivedQty) || 1);
+            // Serial Generation no longer waits on QC/Repair, so receivedQty (not readyQty) is
+            // the count to generate serials for. See the openForm note above for the tradeoff.
+            const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
 
             const length = !isSerialEnabled ? 1 : qty;
 

@@ -117,9 +117,13 @@ export async function GET(request: NextRequest) {
       serialsByLift.set(s.liftNo, list);
     }
 
-    // Qty-resolution ledger, only relevant for lifts where QC was required. A QC=Yes lift
-    // stays locked out of this stage entirely until Material Testing (and Repair Process,
-    // if any qty was routed there) fully resolve it.
+    // Serial Generation no longer waits on Material Testing/Repair Process to resolve QC —
+    // a lift becomes eligible as soon as Material Received is recorded, regardless of
+    // qcRequired. We still read the ledger (where it exists) purely to report how much of
+    // the lift's qty has been QC-passed so far; it no longer gates pending/history inclusion.
+    // NOTE: removing this gate also removes the only practical guard against generating more
+    // serials than have actually passed QC for qcRequired="yes" lifts — see plannedCalculator/
+    // serial-generation POST handler, which performs no quantity validation of its own.
     const { data: ledgerRows, error: ledgerError } = await supabase
       .from("pfms_lift_qc_resolution")
       .select("liftNo, passedQty, repairedQty, isFullyResolved, releasedAt");
@@ -138,16 +142,13 @@ export async function GET(request: NextRequest) {
       const liftNo = lift.liftNo;
       const liftSerials = serialsByLift.get(liftNo) || [];
 
-      // If QC was required for this lift, it isn't ready for Serial Generation until Material
-      // Testing/Repair Process have fully resolved it (ledger released). Skip it entirely
-      // (not pending, not history) until then.
+      // readyQty is informational only now. For QC-required lifts still mid-QC, it reflects
+      // however much has passed/been repaired so far (0 if QC hasn't started); it no longer
+      // blocks the lift from appearing here.
       let readyQty = receipt.receivedQty || 0;
       if (receipt.qcRequired === "yes") {
         const ledger: any = ledgerMap.get(liftNo);
-        if (!ledger || !ledger.isFullyResolved || !ledger.releasedAt) {
-          continue;
-        }
-        readyQty = (ledger.passedQty || 0) + (ledger.repairedQty || 0);
+        readyQty = ledger ? (ledger.passedQty || 0) + (ledger.repairedQty || 0) : 0;
       }
 
       const record = {

@@ -255,8 +255,10 @@ export async function GET(request: NextRequest) {
           if (isPast(lift.plannedMaterialRcd)) stageOverdueCounts["Material Received"]++;
         }
 
-        // STAGE 9: Serial Generation
-        if (mr && mr.qcRequired === "no" && serials.length === 0) {
+        // STAGE 9: Serial Generation — no longer gated on qcRequired/QC resolution, matching
+        // the /api/serial-generation pending list (a lift is countable as soon as Material
+        // Received exists and it has no serials yet).
+        if (mr && serials.length === 0) {
           stageCounts["Serial Generation"]++;
           if (isPast(lift.plannedSerialGen)) stageOverdueCounts["Serial Generation"]++;
         }

@@ -3,6 +3,29 @@ import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
+// Supabase/PostgREST caps an unbounded select at 1000 rows. pfms_item_master
+// already has 4000+ rows, so any plain .select() below here only ever sees
+// an arbitrary first page of it — see fetchAllRows in app/api/dropdowns/route.ts
+// for the same pattern used there.
+async function fetchAllRows(tableName: string, selectQuery: string) {
+  let allRows: any[] = [];
+  let page = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select(selectQuery)
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < pageSize) break;
+    page++;
+  }
+  return allRows;
+}
+
 // Looks up each item's purchaser from the catalog (pfms_item_master.purchaser) so it
 // can be copied onto the indent row at creation time. Falls back to null when the
 // item isn't in the catalog yet, or its purchaser hasn't been set there.
@@ -40,10 +63,7 @@ async function findUnregisteredItems(items: { itemName: string; category: string
     .filter((i) => i.itemName);
   if (wanted.length === 0) return [];
 
-  const { data, error } = await supabase
-    .from("pfms_item_master")
-    .select('"ITEM NAME", "ITEM CATEGORY"');
-  if (error) throw error;
+  const data = await fetchAllRows("pfms_item_master", '"ITEM NAME", "ITEM CATEGORY"');
 
   const registered = new Set(
     (data || []).map((r: any) => `${(r["ITEM NAME"] || "").trim().toLowerCase()}|${(r["ITEM CATEGORY"] || "").trim().toLowerCase()}`)

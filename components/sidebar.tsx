@@ -12,7 +12,7 @@ import { STAGES, isStageAccessGranted } from "@/lib/constants";
 
 export default function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
-  const { pageAccess, fullName, role, logout } = useAuth();
+  const { pageAccess, fullName, role, records, logout } = useAuth();
   const pathname = usePathname();
   const [counts, setCounts] = useState<Record<string, number>>({});
 
@@ -40,7 +40,14 @@ export default function Sidebar() {
 
   const fetchCounts = useCallback(async () => {
     try {
-      const response = await fetch("/api/dashboard");
+      // role/records scope the badge counts to this user's purchaser access
+      // (mirrors canViewPurchaserRecord filtering already applied on the
+      // individual stage pages), so a restricted user's sidebar badge
+      // matches what they actually see when they open that stage.
+      const params = new URLSearchParams();
+      if (role) params.set("role", role);
+      if (records) params.set("records", records);
+      const response = await fetch(`/api/dashboard?${params.toString()}`);
       const result = await response.json();
       if (result.success && result.data && result.data.stageCounts) {
         const stageCounts = result.data.stageCounts;
@@ -53,7 +60,7 @@ export default function Sidebar() {
     } catch (e) {
       console.error("Failed to fetch sidebar counts:", e);
     }
-  }, []);
+  }, [role, records]);
 
   // Fetch once on mount only. Previously this also re-ran on every
   // pathname change, which meant every client-side navigation anywhere
@@ -63,7 +70,7 @@ export default function Sidebar() {
   useEffect(() => {
     fetchCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [role, records]);
 
   useEffect(() => {
     const interval = setInterval(() => {

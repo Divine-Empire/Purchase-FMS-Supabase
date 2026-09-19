@@ -166,8 +166,8 @@ export async function GET() {
       .select("indentNo");
     const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
 
-    const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
-    const filteredClosurePending = closurePending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
+    const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNo));
+    const filteredClosurePending = closurePending.filter((row: any) => !cancelledNos.has(row.data.indentNo));
 
     return NextResponse.json({
       success: true,

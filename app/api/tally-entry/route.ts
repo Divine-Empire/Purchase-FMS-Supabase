@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { canViewPurchaserRecord } from "@/lib/utils";
 
-export async function GET() {
+// `view=pending` (default) is what loads on every page open/poll — it only builds the
+// Pending array plus a cheap `historyCount` (for the History tab badge), and never
+// builds or returns the (potentially much larger) History row objects. `view=history`
+// is only requested once the user actually opens that tab, and returns at most `limit`
+// (default 200) rows already filtered by search/warehouse/purchaser-visibility, plus
+// `totalCount` for that filtered set — so History no longer rides along on every
+// Pending load/poll, and its payload is capped regardless of how many records exist.
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get("view") === "history" ? "history" : "pending";
+    const page = Math.max(0, parseInt(searchParams.get("page") || "0", 10) || 0);
+    const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") || "200", 10) || 200));
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const warehouse = searchParams.get("warehouse") || "All";
+    const role = searchParams.get("role");
+    const records = searchParams.get("records");
+
     // 1. Fetch all material received records that have plannedTallyEntry populated
     const { data: materials, error: matError } = await supabase
       .from("pfms_material-received")
@@ -59,6 +76,7 @@ export async function GET() {
 
     const pending = [];
     const history = [];
+    let historyCount = 0;
 
     for (const mat of (materials || [])) {
       const lift = mat.lift || {};
@@ -135,6 +153,8 @@ export async function GET() {
         purchaser: indent.purchaser || null,
       };
 
+      if (!canViewPurchaserRecord(itemData.purchaser, records, role)) continue;
+
       const mappedRecord = {
         id: lift.liftNo,
         rowIndex: lift.liftNo, // placeholder for legacy key
@@ -144,7 +164,14 @@ export async function GET() {
       };
 
       if (tally) {
-        history.push(mappedRecord);
+        // On a `view=pending` request we only need the count for the History tab's
+        // badge, not the (often much larger) row objects — those are built and sent
+        // only when the user actually opens History (see `view === "history"` below).
+        if (view === "history") {
+          history.push(mappedRecord);
+        } else {
+          historyCount++;
+        }
       } else {
         pending.push(mappedRecord);
       }
@@ -158,10 +185,38 @@ export async function GET() {
 
     const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
 
+    if (view === "pending") {
+      return NextResponse.json({
+        success: true,
+        pending: filteredPending,
+        historyCount,
+      });
+    }
+
+    // view === "history": apply the same search/warehouse filters the page used to run
+    // client-side over the full list, then page the result server-side (default 200/page)
+    // so at most `limit` rows ever go over the wire, however large History actually is.
+    const filteredHistory = history.filter((row: any) => {
+      if (warehouse === "NE Warehouse" && row.data.warehouse !== "NE Warehouse") return false;
+      if (warehouse === "Others" && row.data.warehouse === "NE Warehouse") return false;
+      if (!search) return true;
+      return (
+        row.data.indentNumber?.toLowerCase().includes(search) ||
+        row.data.itemName?.toLowerCase().includes(search) ||
+        row.data.vendorName?.toLowerCase().includes(search) ||
+        String(row.data.poNumber || "").toLowerCase().includes(search) ||
+        String(row.data.invoiceNumber || "").toLowerCase().includes(search)
+      );
+    });
+
+    const totalCount = filteredHistory.length;
+    const pageStart = page * limit;
+    const pagedHistory = filteredHistory.slice(pageStart, pageStart + limit);
+
     return NextResponse.json({
       success: true,
-      pending: filteredPending,
-      history
+      history: pagedHistory,
+      totalCount,
     });
 
   } catch (error: any) {

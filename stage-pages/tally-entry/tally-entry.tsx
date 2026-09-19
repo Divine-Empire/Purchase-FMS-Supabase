@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, Search, RefreshCw, ClipboardList, History } from "lucide-react";
-import { parseSheetDate, getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 
@@ -81,10 +81,22 @@ const historyColumns = [
   { key: "checkedByAcc", label: "Checked By" },
 ] as const;
 
+const HISTORY_PAGE_SIZE = 200;
+
 export default function TallyEntry() {
   const { role, records: recordsAccess } = useAuth();
-  const [sheetRecords, setSheetRecords] = useState<any[]>([]);
+  // Pending loads on every mount/refresh (small dataset, drives the bulk-entry modal).
+  // History is fetched lazily — only once the History tab is opened, or its filters
+  // change — and paginated server-side, so it no longer rides along on every Pending
+  // load/poll and its payload is capped regardless of how many records exist.
+  const [pendingRaw, setPendingRaw] = useState<any[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -115,7 +127,7 @@ export default function TallyEntry() {
     if (selectedRows.size === 0) return;
     setBulkError(null);
 
-    const selectedRecords = sheetRecords.filter((r) => selectedRows.has(r.id));
+    const selectedRecords = pending.filter((r) => selectedRows.has(r.id));
     if (selectedRecords.length === 0) return;
 
     const firstInvoice = selectedRecords[0].data.invoiceNumber;
@@ -163,7 +175,7 @@ export default function TallyEntry() {
 
     setIsSubmitting(true);
     try {
-      const selectedRecords = sheetRecords.filter((r) => selectedRows.has(r.id));
+      const selectedRecords = pending.filter((r) => selectedRows.has(r.id));
       const records = selectedRecords.map((rec) => ({
         liftNo: rec.id,
         doneBy: formData.doneBy,
@@ -207,8 +219,12 @@ export default function TallyEntry() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
+      const params = new URLSearchParams({ view: "pending" });
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
       const [dataRes, dropRes] = await Promise.all([
-        fetch("/api/tally-entry"),
+        fetch(`/api/tally-entry?${params.toString()}`),
         fetch("/api/dropdowns")
       ]);
 
@@ -216,7 +232,8 @@ export default function TallyEntry() {
       const dropJson = await dropRes.json();
 
       if (dataJson.success) {
-        setSheetRecords([...(dataJson.pending || []), ...(dataJson.history || [])]);
+        setPendingRaw(dataJson.pending || []);
+        setHistoryCount(dataJson.historyCount || 0);
       } else {
         toast.error(dataJson.error || "Failed to load tally entries");
       }
@@ -232,75 +249,80 @@ export default function TallyEntry() {
     setIsLoading(false);
   };
 
+  const fetchHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        view: "history",
+        page: String(historyPage),
+        limit: String(HISTORY_PAGE_SIZE),
+      });
+      if (searchTerm) params.set("search", searchTerm);
+      if (warehouseFilter !== "All") params.set("warehouse", warehouseFilter);
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/tally-entry?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRecords(json.history || []);
+        setHistoryTotalCount(json.totalCount || 0);
+      } else {
+        toast.error(json.error || "Failed to load tally history");
+      }
+    } catch (e) {
+      console.error("History fetch error:", e);
+      toast.error("Failed to load tally history");
+    }
+    setIsHistoryLoading(false);
+  }, [historyPage, searchTerm, warehouseFilter, role, recordsAccess]);
+
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Purchaser-based record access: only show records this user is allowed to see.
-  const visibleRecords = useMemo(
-    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
-    [sheetRecords, recordsAccess, role]
-  );
+  // History is only ever fetched once the user opens that tab — never on initial
+  // load/poll — and again whenever its filters or page change while it's active.
+  // Search/warehouse changes are debounced so typing doesn't fire a request per
+  // keystroke; switching tabs or pages fetches immediately.
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const debounceMs = historyLoaded ? 350 : 0;
+    const timer = setTimeout(() => {
+      setHistoryLoaded(true);
+      fetchHistory();
+    }, debounceMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyPage, searchTerm, warehouseFilter]);
 
+  // Changing search/warehouse while on History resets back to page 0.
+  useEffect(() => {
+    setHistoryPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, warehouseFilter]);
+
+  // Pending is a small, always-fully-loaded dataset (server already applies
+  // purchaser-visibility), so search/warehouse filtering here stays client-side —
+  // only History needs server-side filtering + pagination.
   const pending = useMemo(
     () =>
-      visibleRecords
-        .filter((r: any) => r.status === "pending")
-        .filter((r) => {
-          if (
-            warehouseFilter === "NE Warehouse" &&
-            r.data.warehouse !== "NE Warehouse"
-          )
-            return false;
-          if (
-            warehouseFilter === "Others" &&
-            r.data.warehouse === "NE Warehouse"
-          )
-            return false;
+      pendingRaw.filter((r) => {
+        if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+        if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
 
-          const searchLower = searchTerm.toLowerCase();
-          return (
-            r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-            r.data.itemName?.toLowerCase().includes(searchLower) ||
-            r.data.vendorName?.toLowerCase().includes(searchLower) ||
-            String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-            String(r.data.invoiceNumber || "")
-              .toLowerCase()
-              .includes(searchLower)
-          );
-        }),
-    [visibleRecords, searchTerm, warehouseFilter]
-  );
-
-  const completed = useMemo(
-    () =>
-      visibleRecords
-        .filter((r: any) => r.status === "completed")
-        .filter((r: any) => {
-          if (
-            warehouseFilter === "NE Warehouse" &&
-            r.data.warehouse !== "NE Warehouse"
-          )
-            return false;
-          if (
-            warehouseFilter === "Others" &&
-            r.data.warehouse === "NE Warehouse"
-          )
-            return false;
-
-          const searchLower = searchTerm.toLowerCase();
-          if (!searchLower) return true;
-          return (
-            r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-            r.data.itemName?.toLowerCase().includes(searchLower) ||
-            r.data.vendorName?.toLowerCase().includes(searchLower) ||
-            String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-            String(r.data.invoiceNumber || "")
-              .toLowerCase()
-              .includes(searchLower)
-          );
-        }),
-    [visibleRecords, searchTerm, warehouseFilter]
+        const searchLower = searchTerm.toLowerCase();
+        if (!searchLower) return true;
+        return (
+          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+          r.data.itemName?.toLowerCase().includes(searchLower) ||
+          r.data.vendorName?.toLowerCase().includes(searchLower) ||
+          String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+          String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+        );
+      }),
+    [pendingRaw, searchTerm, warehouseFilter]
   );
 
   const toggleRow = useCallback((id: string) => {
@@ -688,11 +710,14 @@ export default function TallyEntry() {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={fetchData}
-                  disabled={isLoading}
+                  onClick={() => {
+                    fetchData();
+                    if (activeTab === "history") fetchHistory();
+                  }}
+                  disabled={isLoading || isHistoryLoading}
                   className="h-9 w-9 border-slate-200"
                 >
-                  {isLoading ? (
+                  {isLoading || isHistoryLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
                   ) : (
                     <RefreshCw className="w-4 h-4 text-slate-600" />
@@ -745,7 +770,7 @@ export default function TallyEntry() {
                   ? "bg-white text-emerald-600 shadow-xs"
                   : "bg-green-100 text-green-800"
               )}>
-                {completed.length}
+                {historyLoaded ? historyTotalCount : historyCount}
               </Badge>
             </TabsTrigger>
           </TabsList>
@@ -766,12 +791,38 @@ export default function TallyEntry() {
 
         <TabsContent value="history" className="mt-6">
           <TallyEntryHistory
-            completed={completed}
+            completed={historyRecords}
             selectedHistoryColumns={selectedHistoryColumns}
             historyColumns={historyColumns}
             safeValue={safeValue}
-            isLoading={isLoading}
+            isLoading={isHistoryLoading}
           />
+          {historyTotalCount > HISTORY_PAGE_SIZE && (
+            <div className="flex items-center justify-between mt-3 text-sm text-slate-600">
+              <span>
+                Showing {historyPage * HISTORY_PAGE_SIZE + 1}-
+                {Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, historyTotalCount)} of {historyTotalCount}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={historyPage === 0 || isHistoryLoading}
+                  onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={(historyPage + 1) * HISTORY_PAGE_SIZE >= historyTotalCount || isHistoryLoading}
+                  onClick={() => setHistoryPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

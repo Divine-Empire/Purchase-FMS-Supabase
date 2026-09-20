@@ -150,11 +150,21 @@ const defaultBulkForm = () => ({
   proof: null as File | null,
 });
 
+// History (the payment-log tab) is fetched lazily — only once the user opens that tab —
+// and paginated server-side, since it grows unboundedly over time unlike Pending (bounded
+// by open invoices). Default page size stays small (100) until search narrows it (200).
+const HISTORY_DEFAULT_LIMIT = 100;
+const HISTORY_FILTERED_LIMIT = 200;
+
 export default function VendorPayment() {
   const { role, records: recordsAccess } = useAuth();
   const [records, setRecords] = useState<any[]>([]);
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [searchTerm, setSearchTerm] = useState("");
@@ -173,11 +183,15 @@ export default function VendorPayment() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/vendor-payment");
+      const params = new URLSearchParams({ view: "pending" });
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/vendor-payment?${params.toString()}`);
       const json = await res.json();
       if (json.success) {
         setRecords(json.pending || []);
-        setHistoryRecords(json.history || []);
+        setHistoryCount(json.historyCount || 0);
       } else {
         throw new Error(json.error || "Failed to fetch data");
       }
@@ -187,9 +201,59 @@ export default function VendorPayment() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [role, recordsAccess]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const historyLoadedRef = React.useRef(false);
+  const historyHasSearch = activeTab === "history" && !!searchTerm;
+  const historyLimit = historyHasSearch ? HISTORY_FILTERED_LIMIT : HISTORY_DEFAULT_LIMIT;
+
+  const fetchHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        view: "history",
+        page: String(historyPage),
+      });
+      if (searchTerm) params.set("search", searchTerm);
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/vendor-payment?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRecords(json.history || []);
+        setHistoryTotalCount(json.totalCount || 0);
+      } else {
+        toast.error(json.error || "Failed to load payment history");
+      }
+    } catch (e) {
+      console.error("History fetch error:", e);
+      toast.error("Failed to load payment history");
+    }
+    setIsHistoryLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyPage, searchTerm, role, recordsAccess]);
+
+  // History only loads once the user opens that tab, and again on page/search change
+  // while it's active. Search is debounced; the first load on tab-open is immediate.
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const debounceMs = historyLoadedRef.current ? 300 : 0;
+    const timer = setTimeout(() => {
+      historyLoadedRef.current = true;
+      fetchHistory();
+    }, debounceMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyPage, searchTerm]);
+
+  // Changing search resets History back to page 0.
+  useEffect(() => {
+    setHistoryPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm]);
 
   const searchLower = useMemo(() => searchTerm.toLowerCase(), [searchTerm]);
 
@@ -198,10 +262,8 @@ export default function VendorPayment() {
     () => records.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
     [records, recordsAccess, role]
   );
-  const visibleHistoryRecords = useMemo(
-    () => historyRecords.filter((r) => canViewPurchaserRecord(r.purchaser, recordsAccess, role)),
-    [historyRecords, recordsAccess, role]
-  );
+  // historyRecords is already filtered/searched/paginated server-side (see fetchHistory
+  // above) — used as-is, no client-side re-filtering.
 
   const filteredRecords = useMemo(() => {
     let result = visibleRecords.filter(r => {
@@ -235,13 +297,7 @@ export default function VendorPayment() {
     return result;
   }, [visibleRecords, searchLower, sortConfig, showOverdueOnly]);
 
-  const filteredHistoryRecords = useMemo(() => {
-    if (!searchLower) return visibleHistoryRecords;
-    return visibleHistoryRecords.filter(rec =>
-      String(rec.invoiceNo || "").toLowerCase().includes(searchLower) ||
-      String(rec.vendor || "").toLowerCase().includes(searchLower)
-    );
-  }, [visibleHistoryRecords, searchLower]);
+  const filteredHistoryRecords = historyRecords;
 
   const uniqueVendors = useMemo(() => {
     const names = Array.from(new Set(visibleRecords.map(r => r.data.vendor).filter(Boolean)));
@@ -454,14 +510,17 @@ export default function VendorPayment() {
                   </SelectContent>
                 </Select>
 
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="icon"
-                  onClick={fetchData} 
-                  disabled={isLoading}
+                  onClick={() => {
+                    fetchData();
+                    if (activeTab === "history") fetchHistory();
+                  }}
+                  disabled={isLoading || isHistoryLoading}
                   className="h-10 w-10 rounded-xl bg-white hover:bg-slate-50 border-slate-200 flex-shrink-0"
                 >
-                  <RefreshCw className={`w-4 h-4 text-slate-600 ${isLoading ? "animate-spin" : ""}`} />
+                  <RefreshCw className={`w-4 h-4 text-slate-600 ${isLoading || isHistoryLoading ? "animate-spin" : ""}`} />
                 </Button>
               </div>
             </div>
@@ -470,17 +529,17 @@ export default function VendorPayment() {
           <div className="px-6 pb-2">
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
               <TabsList className="bg-slate-200/50 p-1 rounded-xl h-11 inline-flex w-auto mb-2">
-                <TabsTrigger 
-                  value="pending" 
+                <TabsTrigger
+                  value="pending"
                   className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-emerald-600 transition-all font-medium"
                 >
                   Pending Invoices ({filteredRecords.length})
                 </TabsTrigger>
-                <TabsTrigger 
+                <TabsTrigger
                   value="history"
                   className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-emerald-600 transition-all font-medium"
                 >
-                  Payment History ({filteredHistoryRecords.length})
+                  Payment History ({historyLoadedRef.current ? historyTotalCount : historyCount})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -513,12 +572,55 @@ export default function VendorPayment() {
               </TabsContent>
 
               <TabsContent value="history" className="flex-1 mt-0 focus-visible:outline-none">
-                <VendorPaymentHistory
-                  filteredHistoryRecords={filteredHistoryRecords}
-                  HISTORY_COLUMNS={HISTORY_COLUMNS}
-                  formatAmount={formatAmount}
-                  safeValue={safeValue}
-                />
+                {isHistoryLoading ? (
+                  <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+                    <Loader2 className="w-8 h-8 animate-spin mb-3 text-emerald-600" />
+                    <p className="font-medium">Loading payment history...</p>
+                  </div>
+                ) : (
+                  <>
+                    <VendorPaymentHistory
+                      filteredHistoryRecords={filteredHistoryRecords}
+                      HISTORY_COLUMNS={HISTORY_COLUMNS}
+                      formatAmount={formatAmount}
+                      safeValue={safeValue}
+                    />
+                    {historyTotalCount > historyLimit && (
+                      <div className="flex items-center justify-between mt-3 px-4 pb-4 text-sm text-slate-600">
+                        {historyHasSearch ? (
+                          <>
+                            <span>
+                              Showing {historyPage * historyLimit + 1}-
+                              {Math.min((historyPage + 1) * historyLimit, historyTotalCount)} of {historyTotalCount}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={historyPage === 0 || isHistoryLoading}
+                                onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                              >
+                                Previous
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={(historyPage + 1) * historyLimit >= historyTotalCount || isHistoryLoading}
+                                onClick={() => setHistoryPage((p) => p + 1)}
+                              >
+                                Next
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <span>
+                            Showing first {historyLimit} of {historyTotalCount} — search to see more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </TabsContent>
             </Tabs>
           </div>

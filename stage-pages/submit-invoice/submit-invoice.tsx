@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { parseSheetDate, getFmsTimestamp, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
+import { parseSheetDate, getFmsTimestamp, formatDateTimeDash } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -74,10 +74,18 @@ const historyColumns = [
   { key: "invoiceSubmissionDate", label: "Submission Date" },
 ] as const;
 
+const HISTORY_DEFAULT_LIMIT = 100;
+const HISTORY_FILTERED_LIMIT = 200;
+
 export default function SubmitInvoice() {
   const { role, records: recordsAccess } = useAuth();
-  const [sheetRecords, setSheetRecords] = useState<any[]>([]);
+  const [pendingRaw, setPendingRaw] = useState<any[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -102,10 +110,15 @@ export default function SubmitInvoice() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/submit-invoice");
+      const params = new URLSearchParams({ view: "pending" });
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/submit-invoice?${params.toString()}`);
       const json = await res.json();
       if (json.success) {
-        setSheetRecords([...(json.pending || []), ...(json.history || [])]);
+        setPendingRaw(json.pending || []);
+        setHistoryCount(json.historyCount || 0);
       } else {
         toast.error(json.error || "Failed to load submissions");
       }
@@ -116,76 +129,90 @@ export default function SubmitInvoice() {
     setIsLoading(false);
   };
 
+  const fetchHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        view: "history",
+        page: String(historyPage),
+      });
+      if (searchTerm) params.set("search", searchTerm);
+      if (warehouseFilter !== "All") params.set("warehouse", warehouseFilter);
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/submit-invoice?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRecords(json.history || []);
+        setHistoryTotalCount(json.totalCount || 0);
+      } else {
+        toast.error(json.error || "Failed to load history");
+      }
+    } catch (e) {
+      console.error("History fetch error:", e);
+      toast.error("Failed to load history");
+    }
+    setIsHistoryLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyPage, searchTerm, warehouseFilter, role, recordsAccess]);
+
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Purchaser-based record access: only show records this user is allowed to see.
-  const visibleRecords = useMemo(
-    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
-    [sheetRecords, recordsAccess, role]
-  );
+  const historyLoadedRef = React.useRef(false);
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const debounceMs = historyLoadedRef.current ? 350 : 0;
+    const timer = setTimeout(() => {
+      historyLoadedRef.current = true;
+      fetchHistory();
+    }, debounceMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyPage, searchTerm, warehouseFilter]);
 
+  useEffect(() => {
+    setHistoryPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, warehouseFilter]);
+
+  // Pending is a small, always-fully-loaded dataset (server already applies
+  // purchaser-visibility), so search/warehouse filtering here stays client-side —
+  // only History needs server-side filtering + pagination.
   const pending = useMemo(
     () =>
-      visibleRecords
-        .filter((r) => r.status === "pending")
-        .filter((r) => {
-          if (
-            warehouseFilter === "NE Warehouse" &&
-            r.data.warehouse !== "NE Warehouse"
-          )
-            return false;
-          if (
-            warehouseFilter === "Others" &&
-            r.data.warehouse === "NE Warehouse"
-          )
-            return false;
+      pendingRaw.filter((r) => {
+        if (
+          warehouseFilter === "NE Warehouse" &&
+          r.data.warehouse !== "NE Warehouse"
+        )
+          return false;
+        if (
+          warehouseFilter === "Others" &&
+          r.data.warehouse === "NE Warehouse"
+        )
+          return false;
 
-          const searchLower = searchTerm.toLowerCase();
-          return (
-            r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-            r.data.itemName?.toLowerCase().includes(searchLower) ||
-            r.data.vendorName?.toLowerCase().includes(searchLower) ||
-            String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-            String(r.data.invoiceNumber || "")
-              .toLowerCase()
-              .includes(searchLower)
-          );
-        }),
-    [visibleRecords, searchTerm, warehouseFilter]
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+          r.data.itemName?.toLowerCase().includes(searchLower) ||
+          r.data.vendorName?.toLowerCase().includes(searchLower) ||
+          String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+          String(r.data.invoiceNumber || "")
+            .toLowerCase()
+            .includes(searchLower)
+        );
+      }),
+    [pendingRaw, searchTerm, warehouseFilter]
   );
 
-  const completed = useMemo(
-    () =>
-      visibleRecords
-        .filter((r) => r.status === "completed")
-        .filter((r) => {
-          if (
-            warehouseFilter === "NE Warehouse" &&
-            r.data.warehouse !== "NE Warehouse"
-          )
-            return false;
-          if (
-            warehouseFilter === "Others" &&
-            r.data.warehouse === "NE Warehouse"
-          )
-            return false;
-
-          const searchLower = searchTerm.toLowerCase();
-          if (!searchLower) return true;
-          return (
-            r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-            r.data.itemName?.toLowerCase().includes(searchLower) ||
-            r.data.vendorName?.toLowerCase().includes(searchLower) ||
-            String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-            String(r.data.invoiceNumber || "")
-              .toLowerCase()
-              .includes(searchLower)
-          );
-        }),
-    [visibleRecords, searchTerm, warehouseFilter]
-  );
+  const hasHistoryFilter = !!searchTerm || warehouseFilter !== "All";
+  const historyLimit = hasHistoryFilter ? HISTORY_FILTERED_LIMIT : HISTORY_DEFAULT_LIMIT;
+  const completed = historyRecords;
 
   const toggleRow = useCallback((id: string) => {
     setSelectedRows((prev) => {
@@ -222,7 +249,7 @@ export default function SubmitInvoice() {
       return;
     }
 
-    const selectedRecords = sheetRecords.filter((r) => activeRows.has(r.id));
+    const selectedRecords = pending.filter((r) => activeRows.has(r.id));
     if (selectedRecords.length === 0) return;
 
     if (activeRows.size > 1) {
@@ -243,7 +270,7 @@ export default function SubmitInvoice() {
       invoiceSubmissionDate: new Date(),
     });
     setOpen(true);
-  }, [selectedRows, sheetRecords]);
+  }, [selectedRows, pending]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,7 +278,7 @@ export default function SubmitInvoice() {
 
     setIsSubmitting(true);
     try {
-      const selectedRecords = sheetRecords.filter((r) => selectedRows.has(r.id));
+      const selectedRecords = pending.filter((r) => selectedRows.has(r.id));
       if (selectedRecords.length === 0) return;
 
       const records = selectedRecords.map(rec => ({
@@ -501,13 +528,16 @@ export default function SubmitInvoice() {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={fetchData}
-                  disabled={isLoading}
+                  onClick={() => {
+                    fetchData();
+                    if (activeTab === "history") fetchHistory();
+                  }}
+                  disabled={isLoading || isHistoryLoading}
                   className="h-9 w-9 border-slate-200"
                 >
                   <RefreshCw
                     className={`w-4 h-4 ${
-                      isLoading ? "animate-spin text-blue-600" : "text-slate-600"
+                      isLoading || isHistoryLoading ? "animate-spin text-blue-600" : "text-slate-600"
                     }`}
                   />
                 </Button>
@@ -558,7 +588,7 @@ export default function SubmitInvoice() {
                   ? "bg-white text-emerald-600 shadow-xs"
                   : "bg-green-100 text-green-800"
               )}>
-                {completed.length}
+                {historyLoadedRef.current ? historyTotalCount : historyCount}
               </Badge>
             </TabsTrigger>
           </TabsList>
@@ -584,8 +614,42 @@ export default function SubmitInvoice() {
             selectedHistoryColumns={selectedHistoryColumns}
             historyColumns={historyColumns}
             safeValue={safeValue}
-            isLoading={isLoading}
+            isLoading={isHistoryLoading}
           />
+          {historyTotalCount > historyLimit && (
+            <div className="flex items-center justify-between mt-3 text-sm text-slate-600">
+              {hasHistoryFilter ? (
+                <>
+                  <span>
+                    Showing {historyPage * historyLimit + 1}-
+                    {Math.min((historyPage + 1) * historyLimit, historyTotalCount)} of {historyTotalCount}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historyPage === 0 || isHistoryLoading}
+                      onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={(historyPage + 1) * historyLimit >= historyTotalCount || isHistoryLoading}
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <span>
+                  Showing first {historyLimit} of {historyTotalCount} — apply a search or warehouse filter to see more
+                </span>
+              )}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -606,7 +670,7 @@ export default function SubmitInvoice() {
                   Invoice No.
                 </Label>
                 <p className="font-mono font-medium text-lg text-slate-900">
-                  {sheetRecords.find((r) => selectedRows.has(r.id))?.data
+                  {pending.find((r) => selectedRows.has(r.id))?.data
                     .invoiceNumber || "-"}
                 </p>
               </div>
@@ -615,7 +679,7 @@ export default function SubmitInvoice() {
                   Vendor
                 </Label>
                 <p className="font-medium text-lg text-gray-900">
-                  {sheetRecords.find((r) => selectedRows.has(r.id))?.data
+                  {pending.find((r) => selectedRows.has(r.id))?.data
                     .vendorName || "-"}
                 </p>
               </div>

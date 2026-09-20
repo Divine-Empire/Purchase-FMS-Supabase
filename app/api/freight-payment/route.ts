@@ -2,9 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { canViewPurchaserRecord } from "@/lib/utils";
 
-export async function GET() {
+// Same lazy-history pattern as Tally Entry/Vendor Payment: Pending stays small
+// (bounded by open freight invoices) and loads in full; the paid-freight-data
+// transaction log (History) grows unboundedly, so it's only fetched once the user
+// opens that tab, filtered + paginated server-side (100 default, 200 once searched).
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get("view") === "history" ? "history" : "pending";
+    const page = Math.max(0, parseInt(searchParams.get("page") || "0", 10) || 0);
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const limit = search ? 200 : 100;
+    const role = searchParams.get("role");
+    const records = searchParams.get("records");
+
     // 1. Fetch all freight payment details
     const { data: payDetails, error: payError } = await supabase
       .from("pfms_freight-payment-details")
@@ -76,6 +89,8 @@ export async function GET() {
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
       const indent = Array.isArray(lift.indent) ? (lift.indent[0] || {}) : (lift.indent || {});
 
+      if (!canViewPurchaserRecord(indent.purchaser, records, role)) continue;
+
       pending.push({
         id: pd.liftNo,
         rowIndex: pd.liftNo,
@@ -101,11 +116,20 @@ export async function GET() {
       });
     }
 
-    // Map history records
+    // Map history records. On a `view=pending` request only the count is needed (for
+    // the History tab's badge) — skip building the full row objects.
+    let historyCount = 0;
     for (const log of (paidLogs || [])) {
       const freightInvoice = log.freightInvoice || {};
       const lift = freightInvoice.lift || {};
       const indent = Array.isArray(lift.indent) ? (lift.indent[0] || {}) : (lift.indent || {});
+
+      if (!canViewPurchaserRecord(indent.purchaser, records, role)) continue;
+
+      if (view === "pending") {
+        historyCount++;
+        continue;
+      }
 
       history.push({
         id: log.id,
@@ -122,10 +146,29 @@ export async function GET() {
       });
     }
 
+    if (view === "pending") {
+      return NextResponse.json({
+        success: true,
+        pending,
+        historyCount,
+      });
+    }
+
+    const filteredHistory = search
+      ? history.filter((h: any) =>
+          String(h.lrNo || "").toLowerCase().includes(search) ||
+          String(h.transporter || "").toLowerCase().includes(search)
+        )
+      : history;
+
+    const totalCount = filteredHistory.length;
+    const pageStart = page * limit;
+    const pagedHistory = filteredHistory.slice(pageStart, pageStart + limit);
+
     return NextResponse.json({
       success: true,
-      pending,
-      history
+      history: pagedHistory,
+      totalCount,
     });
 
   } catch (error: any) {

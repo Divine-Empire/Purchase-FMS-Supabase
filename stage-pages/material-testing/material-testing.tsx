@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Loader2, Search, ClipboardCheck, RefreshCw, Eye, ClipboardList, History } from "lucide-react";
 import { toast } from "sonner";
-import { getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord, parseSheetDate } from "@/lib/utils";
+import { getFmsTimestamp, cn, formatDateTimeDash, parseSheetDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -137,13 +137,21 @@ const HISTORY_COLUMNS = [
 const FILE_FIELDS = new Set(["poCopy", "receivedItemImage", "billAttachment", "rejectPhoto", "damageImage"]);
 const AMOUNT_FIELDS = new Set(["freightAmount", "advanceAmount", "basicValue", "totalWithTax", "ratePerQty", "paymentAmountHydra", "paymentAmountLabour", "paymentAmountHamali"]);
 
+const HISTORY_DEFAULT_LIMIT = 100;
+const HISTORY_FILTERED_LIMIT = 200;
+
 export default function MaterialTesting() {
   const { role, records: recordsAccess } = useAuth();
   const [open, setOpen] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
-  const [sheetRecords, setSheetRecords] = useState<any[]>([]);
+  const [pendingRaw, setPendingRaw] = useState<any[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [qcEngineerList, setQcEngineerList] = useState<string[]>([]);
   const [checklistList, setChecklistList] = useState<string[]>([]);
@@ -182,9 +190,13 @@ export default function MaterialTesting() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const params = new URLSearchParams({ view: "pending" });
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
       const [dropRes, dataRes] = await Promise.all([
         fetch("/api/dropdowns"),
-        fetch("/api/material-testing"),
+        fetch(`/api/material-testing?${params.toString()}`),
       ]);
 
       const dropJson = await dropRes.json();
@@ -197,7 +209,8 @@ export default function MaterialTesting() {
       }
 
       if (dataJson.success) {
-        setSheetRecords([...(dataJson.pending || []), ...(dataJson.history || [])]);
+        setPendingRaw(dataJson.pending || []);
+        setHistoryCount(dataJson.historyCount || 0);
       } else {
         toast.error(dataJson.error || "Failed to load testing records");
       }
@@ -206,27 +219,69 @@ export default function MaterialTesting() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [role, recordsAccess]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  const fetchHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        view: "history",
+        page: String(historyPage),
+      });
+      if (searchTerm) params.set("search", searchTerm);
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/material-testing?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRecords(json.history || []);
+        setHistoryTotalCount(json.totalCount || 0);
+      } else {
+        toast.error(json.error || "Failed to load history");
+      }
+    } catch {
+      toast.error("Failed to load history");
+    } finally {
+      setIsHistoryLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyPage, searchTerm, role, recordsAccess]);
+
+  const historyLoadedRef = React.useRef(false);
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const debounceMs = historyLoadedRef.current ? 350 : 0;
+    const timer = setTimeout(() => {
+      historyLoadedRef.current = true;
+      fetchHistory();
+    }, debounceMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyPage, searchTerm]);
+
+  useEffect(() => {
+    setHistoryPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm]);
+
+  // `pending` also drives the QC-entry modal by looking up a record by id.
   const selectedRecord = useMemo(
-    () => sheetRecords.find((r) => r.id === selectedRecordId) ?? null,
-    [sheetRecords, selectedRecordId]
+    () => pendingRaw.find((r) => r.id === selectedRecordId) ?? null,
+    [pendingRaw, selectedRecordId]
   );
 
-  // Purchaser-based record access: only show records this user is allowed to see.
-  const visibleRecords = useMemo(
-    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
-    [sheetRecords, recordsAccess, role]
-  );
-
+  // Pending is a small, always-fully-loaded dataset (server already applies
+  // purchaser-visibility), so search filtering here stays client-side — only
+  // History needs server-side filtering + pagination.
   const pending = useMemo(() => {
     const searchLower = searchTerm.toLowerCase();
-    return visibleRecords.filter((r) => {
-      if (r.status !== "pending") return false;
+    return pendingRaw.filter((r) => {
       if (!searchLower) return true;
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
@@ -236,22 +291,11 @@ export default function MaterialTesting() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  }, [visibleRecords, searchTerm]);
+  }, [pendingRaw, searchTerm]);
 
-  const history = useMemo(() => {
-    const searchLower = searchTerm.toLowerCase();
-    return visibleRecords.filter((r) => {
-      if (r.status !== "completed") return false;
-      if (!searchLower) return true;
-      return (
-        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-        r.data.itemName?.toLowerCase().includes(searchLower) ||
-        r.data.vendorName?.toLowerCase().includes(searchLower) ||
-        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
-      );
-    });
-  }, [visibleRecords, searchTerm]);
+  const hasHistoryFilter = !!searchTerm;
+  const historyLimit = hasHistoryFilter ? HISTORY_FILTERED_LIMIT : HISTORY_DEFAULT_LIMIT;
+  const history = historyRecords;
 
   const fetchSerialsForRecord = useCallback(async (indentNumber: string, liftNo: string) => {
     setIsSerialsLoading(true);
@@ -269,7 +313,7 @@ export default function MaterialTesting() {
   }, []);
 
   const handleOpenForm = useCallback((recordId: string) => {
-    const record = sheetRecords.find((r) => r.id === recordId);
+    const record = pendingRaw.find((r) => r.id === recordId);
     if (!record) return;
 
     setSelectedRecordId(recordId);
@@ -291,7 +335,7 @@ export default function MaterialTesting() {
     setOpen(true);
 
     fetchSerialsForRecord(record.data.indentNumber, record.data.liftNo);
-  }, [sheetRecords, fetchSerialsForRecord]);
+  }, [pendingRaw, fetchSerialsForRecord]);
 
   const isFormValid = useMemo(() => {
     if (!formData.qcDate || !formData.workingCondition) return false;
@@ -586,11 +630,14 @@ export default function MaterialTesting() {
             <Button
               variant="outline"
               size="icon"
-              onClick={fetchData}
-              disabled={isLoading}
+              onClick={() => {
+                fetchData();
+                if (activeTab === "history") fetchHistory();
+              }}
+              disabled={isLoading || isHistoryLoading}
               className="bg-white hover:bg-slate-50 shrink-0 border-indigo-100/80 text-indigo-700"
             >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${isLoading || isHistoryLoading ? "animate-spin" : ""}`} />
             </Button>
           </div>
         </div>
@@ -632,14 +679,14 @@ export default function MaterialTesting() {
                   ? "bg-white text-emerald-600 shadow-xs"
                   : "bg-green-100 text-green-800"
               )}>
-                {history.length}
+                {historyLoadedRef.current ? historyTotalCount : historyCount}
               </Badge>
             </TabsTrigger>
           </TabsList>
         </div>
 
       <div className="flex-1 overflow-hidden">
-        {isLoading && sheetRecords.length === 0 ? (
+        {isLoading && pendingRaw.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-[400px] text-slate-500 bg-white m-6 rounded-xl border border-dashed">
             <div className="relative">
               <div className="w-12 h-12 border-4 border-blue-100 rounded-full animate-pulse"></div>
@@ -660,12 +707,55 @@ export default function MaterialTesting() {
             </TabsContent>
 
             <TabsContent value="history" className="mt-0 focus-visible:outline-none">
-              <MaterialTestingHistory
-                history={history}
-                selectedHistoryColumns={selectedHistoryColumns}
-                HISTORY_COLUMNS={HISTORY_COLUMNS}
-                safeValue={safeValue}
-              />
+              {isHistoryLoading ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3 text-blue-600" />
+                  <p className="font-medium">Loading history...</p>
+                </div>
+              ) : (
+                <>
+                  <MaterialTestingHistory
+                    history={history}
+                    selectedHistoryColumns={selectedHistoryColumns}
+                    HISTORY_COLUMNS={HISTORY_COLUMNS}
+                    safeValue={safeValue}
+                  />
+                  {historyTotalCount > historyLimit && (
+                    <div className="flex items-center justify-between mt-3 text-sm text-slate-600">
+                      {hasHistoryFilter ? (
+                        <>
+                          <span>
+                            Showing {historyPage * historyLimit + 1}-
+                            {Math.min((historyPage + 1) * historyLimit, historyTotalCount)} of {historyTotalCount}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={historyPage === 0 || isHistoryLoading}
+                              onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={(historyPage + 1) * historyLimit >= historyTotalCount || isHistoryLoading}
+                              onClick={() => setHistoryPage((p) => p + 1)}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <span>
+                          Showing first {historyLimit} of {historyTotalCount} — search to see more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </TabsContent>
           </div>
         )}

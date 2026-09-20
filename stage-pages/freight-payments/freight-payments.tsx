@@ -75,12 +75,23 @@ const defaultForm = () => ({
   paymentProof: null as File | null,
 });
 
+// History (the payment-log tab) is fetched lazily — only once the user opens that
+// tab — and paginated server-side, since it grows unboundedly over time unlike
+// Pending (bounded by open freight invoices). Default page size stays small (100)
+// until search narrows it (200).
+const HISTORY_DEFAULT_LIMIT = 100;
+const HISTORY_FILTERED_LIMIT = 200;
+
 export default function FreightPayments() {
   const { role, records: recordsAccess } = useAuth();
   const [records, setRecords] = useState<any[]>([]);
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -92,11 +103,15 @@ export default function FreightPayments() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/freight-payment");
+      const params = new URLSearchParams({ view: "pending" });
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/freight-payment?${params.toString()}`);
       const json = await res.json();
       if (json.success) {
         setRecords(json.pending || []);
-        setHistoryRecords(json.history || []);
+        setHistoryCount(json.historyCount || 0);
       } else {
         throw new Error(json.error || "Failed to fetch data");
       }
@@ -106,9 +121,59 @@ export default function FreightPayments() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [role, recordsAccess]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const historyLoadedRef = React.useRef(false);
+  const historyHasSearch = activeTab === "history" && !!searchTerm;
+  const historyLimit = historyHasSearch ? HISTORY_FILTERED_LIMIT : HISTORY_DEFAULT_LIMIT;
+
+  const fetchHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        view: "history",
+        page: String(historyPage),
+      });
+      if (searchTerm) params.set("search", searchTerm);
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/freight-payment?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRecords(json.history || []);
+        setHistoryTotalCount(json.totalCount || 0);
+      } else {
+        toast.error(json.error || "Failed to load payment history");
+      }
+    } catch (e) {
+      console.error("History fetch error:", e);
+      toast.error("Failed to load payment history");
+    }
+    setIsHistoryLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyPage, searchTerm, role, recordsAccess]);
+
+  // History only loads once the user opens that tab, and again on page/search change
+  // while it's active. Search is debounced; the first load on tab-open is immediate.
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const debounceMs = historyLoadedRef.current ? 300 : 0;
+    const timer = setTimeout(() => {
+      historyLoadedRef.current = true;
+      fetchHistory();
+    }, debounceMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyPage, searchTerm]);
+
+  // Changing search resets History back to page 0.
+  useEffect(() => {
+    setHistoryPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm]);
 
   const searchLower = useMemo(() => searchTerm.toLowerCase(), [searchTerm]);
 
@@ -116,10 +181,6 @@ export default function FreightPayments() {
   const visibleRecords = useMemo(
     () => records.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
     [records, recordsAccess, role]
-  );
-  const visibleHistoryRecords = useMemo(
-    () => historyRecords.filter((r) => canViewPurchaserRecord(r.purchaser, recordsAccess, role)),
-    [historyRecords, recordsAccess, role]
   );
 
   const filteredPending = useMemo(() =>
@@ -134,15 +195,9 @@ export default function FreightPayments() {
     }),
     [visibleRecords, searchLower]);
 
-  const filteredHistory = useMemo(() =>
-    visibleHistoryRecords.filter(r => {
-      if (!searchLower) return true;
-      return (
-        String(r.lrNo || "").toLowerCase().includes(searchLower) ||
-        String(r.transporter || "").toLowerCase().includes(searchLower)
-      );
-    }),
-    [visibleHistoryRecords, searchLower]);
+  // historyRecords is already filtered/searched/paginated server-side (see
+  // fetchHistory above) — used as-is, no client-side re-filtering.
+  const filteredHistory = historyRecords;
 
   const visibleColumns = useMemo(() =>
     COLUMNS.filter(c => selectedColumns.includes(c.key)),
@@ -368,11 +423,14 @@ export default function FreightPayments() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={fetchData}
-                disabled={isLoading}
+                onClick={() => {
+                  fetchData();
+                  if (activeTab === "history") fetchHistory();
+                }}
+                disabled={isLoading || isHistoryLoading}
                 className="bg-white hover:bg-slate-50 shrink-0 border-indigo-100/80 text-indigo-700"
               >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                <RefreshCw className={`h-4 w-4 ${isLoading || isHistoryLoading ? "animate-spin" : ""}`} />
               </Button>
             </div>
           </div>
@@ -413,7 +471,7 @@ export default function FreightPayments() {
                   ? "bg-white text-emerald-600 shadow-xs"
                   : "bg-green-100 text-green-800"
               )}>
-                {filteredHistory.length}
+                {historyLoadedRef.current ? historyTotalCount : historyCount}
               </Badge>
             </TabsTrigger>
           </TabsList>
@@ -442,12 +500,55 @@ export default function FreightPayments() {
               </TabsContent>
 
               <TabsContent value="history" className="mt-0 focus-visible:outline-none">
-                <FreightPaymentsHistory
-                  filteredHistory={filteredHistory}
-                  visibleHistoryColumns={visibleHistoryColumns}
-                  parseNum={parseNum}
-                  safeValue={safeValue}
-                />
+                {isHistoryLoading ? (
+                  <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+                    <Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-600" />
+                    <p className="font-medium">Loading payment history...</p>
+                  </div>
+                ) : (
+                  <>
+                    <FreightPaymentsHistory
+                      filteredHistory={filteredHistory}
+                      visibleHistoryColumns={visibleHistoryColumns}
+                      parseNum={parseNum}
+                      safeValue={safeValue}
+                    />
+                    {historyTotalCount > historyLimit && (
+                      <div className="flex items-center justify-between mt-3 px-4 pb-4 text-sm text-slate-600">
+                        {historyHasSearch ? (
+                          <>
+                            <span>
+                              Showing {historyPage * historyLimit + 1}-
+                              {Math.min((historyPage + 1) * historyLimit, historyTotalCount)} of {historyTotalCount}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={historyPage === 0 || isHistoryLoading}
+                                onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                              >
+                                Previous
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={(historyPage + 1) * historyLimit >= historyTotalCount || isHistoryLoading}
+                                onClick={() => setHistoryPage((p) => p + 1)}
+                              >
+                                Next
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <span>
+                            Showing first {historyLimit} of {historyTotalCount} — search to see more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </TabsContent>
             </div>
           )}

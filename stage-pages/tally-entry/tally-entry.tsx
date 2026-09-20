@@ -81,7 +81,10 @@ const historyColumns = [
   { key: "checkedByAcc", label: "Checked By" },
 ] as const;
 
-const HISTORY_PAGE_SIZE = 200;
+// Default (no search/warehouse filter) History load stays capped at 100 rows —
+// once the user applies a filter, the page size opens up to 200 for the filtered set.
+const HISTORY_DEFAULT_LIMIT = 100;
+const HISTORY_FILTERED_LIMIT = 200;
 
 export default function TallyEntry() {
   const { role, records: recordsAccess } = useAuth();
@@ -249,13 +252,16 @@ export default function TallyEntry() {
     setIsLoading(false);
   };
 
+  const hasHistoryFilter = !!searchTerm || warehouseFilter !== "All";
+  const historyPageSize = hasHistoryFilter ? HISTORY_FILTERED_LIMIT : HISTORY_DEFAULT_LIMIT;
+
   const fetchHistory = useCallback(async () => {
     setIsHistoryLoading(true);
     try {
       const params = new URLSearchParams({
         view: "history",
         page: String(historyPage),
-        limit: String(HISTORY_PAGE_SIZE),
+        limit: String(historyPageSize),
       });
       if (searchTerm) params.set("search", searchTerm);
       if (warehouseFilter !== "All") params.set("warehouse", warehouseFilter);
@@ -275,7 +281,7 @@ export default function TallyEntry() {
       toast.error("Failed to load tally history");
     }
     setIsHistoryLoading(false);
-  }, [historyPage, searchTerm, warehouseFilter, role, recordsAccess]);
+  }, [historyPage, historyPageSize, searchTerm, warehouseFilter, role, recordsAccess]);
 
   useEffect(() => {
     fetchData();
@@ -797,30 +803,40 @@ export default function TallyEntry() {
             safeValue={safeValue}
             isLoading={isHistoryLoading}
           />
-          {historyTotalCount > HISTORY_PAGE_SIZE && (
+          {historyTotalCount > historyPageSize && (
             <div className="flex items-center justify-between mt-3 text-sm text-slate-600">
-              <span>
-                Showing {historyPage * HISTORY_PAGE_SIZE + 1}-
-                {Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, historyTotalCount)} of {historyTotalCount}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={historyPage === 0 || isHistoryLoading}
-                  onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={(historyPage + 1) * HISTORY_PAGE_SIZE >= historyTotalCount || isHistoryLoading}
-                  onClick={() => setHistoryPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
+              {hasHistoryFilter ? (
+                <>
+                  <span>
+                    Showing {historyPage * historyPageSize + 1}-
+                    {Math.min((historyPage + 1) * historyPageSize, historyTotalCount)} of {historyTotalCount}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historyPage === 0 || isHistoryLoading}
+                      onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={(historyPage + 1) * historyPageSize >= historyTotalCount || isHistoryLoading}
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                // No filter applied yet: capped at the first 100, no paging — search or
+                // filter by warehouse to browse the rest.
+                <span>
+                  Showing first {historyPageSize} of {historyTotalCount} — apply a search or warehouse filter to see more
+                </span>
+              )}
             </div>
           )}
         </TabsContent>

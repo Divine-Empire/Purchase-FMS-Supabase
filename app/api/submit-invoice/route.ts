@@ -2,9 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { canViewPurchaserRecord } from "@/lib/utils";
 
-export async function GET() {
+// Same lazy-history pattern as Tally Entry: `view=pending` (default) only builds
+// Pending + a cheap `historyCount`; `view=history` is only requested once the user
+// opens that tab, and returns at most `limit` (100 default, 200 once searched) rows,
+// filtered server-side.
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get("view") === "history" ? "history" : "pending";
+    const page = Math.max(0, parseInt(searchParams.get("page") || "0", 10) || 0);
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const warehouse = searchParams.get("warehouse") || "All";
+    const limit = search || warehouse !== "All" ? 200 : 100;
+    const role = searchParams.get("role");
+    const records = searchParams.get("records");
+
     // 1. Fetch lifts that have completed the submit-invoice-ho stage (i.e. submitInvoiceHO is not null)
     const { data: lifts, error: liftError } = await supabase
       .from("pfms_lift")
@@ -52,6 +66,7 @@ export async function GET() {
 
     const pending = [];
     const history = [];
+    let historyCount = 0;
 
     for (const lift of (lifts || [])) {
       const indent = lift.indent || {};
@@ -86,6 +101,8 @@ export async function GET() {
         purchaser: indent.purchaser || null,
       };
 
+      if (!canViewPurchaserRecord(itemData.purchaser, records, role)) continue;
+
       const mappedRecord = {
         id: lift.liftNo,
         rowIndex: lift.liftNo,
@@ -94,7 +111,11 @@ export async function GET() {
       };
 
       if (subInv) {
-        history.push(mappedRecord);
+        if (view === "history") {
+          history.push(mappedRecord);
+        } else {
+          historyCount++;
+        }
       } else {
         pending.push(mappedRecord);
       }
@@ -108,10 +129,35 @@ export async function GET() {
 
     const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
 
+    if (view === "pending") {
+      return NextResponse.json({
+        success: true,
+        pending: filteredPending,
+        historyCount,
+      });
+    }
+
+    const filteredHistory = history.filter((row: any) => {
+      if (warehouse === "NE Warehouse" && row.data.warehouse !== "NE Warehouse") return false;
+      if (warehouse === "Others" && row.data.warehouse === "NE Warehouse") return false;
+      if (!search) return true;
+      return (
+        row.data.indentNumber?.toLowerCase().includes(search) ||
+        row.data.itemName?.toLowerCase().includes(search) ||
+        row.data.vendorName?.toLowerCase().includes(search) ||
+        String(row.data.poNumber || "").toLowerCase().includes(search) ||
+        String(row.data.invoiceNumber || "").toLowerCase().includes(search)
+      );
+    });
+
+    const totalCount = filteredHistory.length;
+    const pageStart = page * limit;
+    const pagedHistory = filteredHistory.slice(pageStart, pageStart + limit);
+
     return NextResponse.json({
       success: true,
-      pending: filteredPending,
-      history
+      history: pagedHistory,
+      totalCount,
     });
 
   } catch (error: any) {

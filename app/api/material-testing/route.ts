@@ -2,9 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { supabase } from "@/utils/supabase/server";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { canViewPurchaserRecord } from "@/lib/utils";
 
-export async function GET() {
+// Same lazy-history pattern as Tally Entry: `view=pending` (default) only builds
+// Pending + a cheap `historyCount`; `view=history` is only requested once the user
+// opens that tab, and returns at most `limit` (100 default, 200 once searched) rows,
+// filtered server-side.
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get("view") === "history" ? "history" : "pending";
+    const page = Math.max(0, parseInt(searchParams.get("page") || "0", 10) || 0);
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const limit = search ? 200 : 100;
+    const role = searchParams.get("role");
+    const records = searchParams.get("records");
+
     // Fetch all records from material-testing
     const { data: testings, error: testingError } = await supabase
       .from("pfms_material-testing")
@@ -44,6 +57,7 @@ export async function GET() {
 
     const pending = [];
     const history = [];
+    let historyCount = 0;
 
     for (const testing of (testings || [])) {
       const lift = testing.lift || {};
@@ -94,6 +108,8 @@ export async function GET() {
         purchaser: indent.purchaser || null,
       };
 
+      if (!canViewPurchaserRecord(itemData.purchaser, records, role)) continue;
+
       const mappedRecord = {
         id: lift.liftNo,
         rowIndex: lift.liftNo,
@@ -103,8 +119,10 @@ export async function GET() {
 
       if (pendingQty > 0) {
         pending.push(mappedRecord);
-      } else {
+      } else if (view === "history") {
         history.push(mappedRecord);
+      } else {
+        historyCount++;
       }
     }
 
@@ -116,10 +134,32 @@ export async function GET() {
 
     const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
 
+    if (view === "pending") {
+      return NextResponse.json({
+        success: true,
+        pending: filteredPending,
+        historyCount,
+      });
+    }
+
+    const filteredHistory = search
+      ? history.filter((row: any) =>
+          row.data.indentNumber?.toLowerCase().includes(search) ||
+          row.data.itemName?.toLowerCase().includes(search) ||
+          row.data.vendorName?.toLowerCase().includes(search) ||
+          String(row.data.poNumber || "").toLowerCase().includes(search) ||
+          String(row.data.invoiceNumber || "").toLowerCase().includes(search)
+        )
+      : history;
+
+    const totalCount = filteredHistory.length;
+    const pageStart = page * limit;
+    const pagedHistory = filteredHistory.slice(pageStart, pageStart + limit);
+
     return NextResponse.json({
       success: true,
-      pending: filteredPending,
-      history,
+      history: pagedHistory,
+      totalCount,
     });
 
   } catch (error: any) {

@@ -2,13 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { canViewPurchaserRecord, sortByIndentNumber, isWarrantyExpiringSoon } from "@/lib/utils";
 
-export async function GET() {
+// Pending here is the stage's big list (thousands of serials awaiting a claim decision —
+// unlike Tally Entry, where Pending was small and History was the big one). The
+// underlying Supabase fetch (all `pfms_serial-number` rows with plannedWarrantyClaim set)
+// is unavoidable without a DB-side anti-join/view, but building full display objects for
+// and sending all of them on every load was the bulk of the actual cost. This paginates
+// the *response*: purchaser-visibility, cancellation, search and the expiring-only filter
+// all now run server-side before slicing to `limit` (default 100, opens to 200 once a
+// search/expiring filter is applied) — ClosurePending/History stay as one-shot fetches
+// since their source table (`pfms_warranty-claim`, one row per filed claim) is small.
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(0, parseInt(searchParams.get("page") || "0", 10) || 0);
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const expiringOnly = searchParams.get("expiringOnly") === "true";
+    const sortDir = searchParams.get("sort") === "desc" ? "desc" : "asc";
+    const hasPendingFilter = !!search || expiringOnly;
+    const limit = hasPendingFilter ? 200 : 100;
+    const role = searchParams.get("role");
+    const records = searchParams.get("records");
+
     // 1. Fetch pending serials (plannedWarrantyClaim is not null, left-join warranty-claim and check null)
     const serials: any[] = [];
-    let page = 0;
-    const pageSize = 1000;
+    let dbPage = 0;
+    const dbPageSize = 1000;
     let hasMore = true;
     while (hasMore) {
       const { data: pageSerials, error: pageError } = await supabase
@@ -36,17 +56,17 @@ export async function GET() {
           )
         `)
         .not("plannedWarrantyClaim", "is", null)
-        .range(page * pageSize, (page + 1) * pageSize - 1) as any;
+        .range(dbPage * dbPageSize, (dbPage + 1) * dbPageSize - 1) as any;
 
       if (pageError) throw pageError;
       if (!pageSerials || pageSerials.length === 0) {
         hasMore = false;
       } else {
         serials.push(...pageSerials);
-        if (pageSerials.length < pageSize) {
+        if (pageSerials.length < dbPageSize) {
           hasMore = false;
         } else {
-          page++;
+          dbPage++;
         }
       }
     }
@@ -62,24 +82,25 @@ export async function GET() {
           ? (lift.materialReceived[0] || {})
           : (lift.materialReceived || {});
 
-        pending.push({
-          id: `pending_${s.serialNo}`,
-          data: {
-            indentNo: indent.indentNo || "",
-            liftNo: s.liftNo || "",
-            serialCode: s.qrLink || "",
-            serialNo: s.serialNo || "",
-            vendorName: negotiation.selectedVendorName || "-",
-            itemName: indent.itemName || "-",
-            invoiceDate: matRecd.invoiceDate || "",
-            invoiceNo: matRecd.invoiceNumber || "",
-            invoiceCopy: matRecd.billAttachment || "",
-            warrantyEnd: s.warrantyExpiry || "",
-            planned: s.plannedWarrantyClaim || "",
-            actual: null,
-            purchaser: indent.purchaser || null,
-          }
-        });
+        const data = {
+          indentNo: indent.indentNo || "",
+          liftNo: s.liftNo || "",
+          serialCode: s.qrLink || "",
+          serialNo: s.serialNo || "",
+          vendorName: negotiation.selectedVendorName || "-",
+          itemName: indent.itemName || "-",
+          invoiceDate: matRecd.invoiceDate || "",
+          invoiceNo: matRecd.invoiceNumber || "",
+          invoiceCopy: matRecd.billAttachment || "",
+          warrantyEnd: s.warrantyExpiry || "",
+          planned: s.plannedWarrantyClaim || "",
+          actual: null,
+          purchaser: indent.purchaser || null,
+        };
+
+        if (!canViewPurchaserRecord(data.purchaser, records, role)) continue;
+
+        pending.push({ id: `pending_${s.serialNo}`, data });
       }
     }
 
@@ -166,12 +187,35 @@ export async function GET() {
       .select("indentNo");
     const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
 
-    const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNo));
     const filteredClosurePending = closurePending.filter((row: any) => !cancelledNos.has(row.data.indentNo));
+
+    // Pending: cancellation + search + expiring-only filters, sorted, then paged
+    // server-side — this is the stage's big list (thousands of serials), so only a
+    // `limit`-sized slice (default 100, 200 once search/expiring is applied) is ever
+    // built into full row objects and sent over the wire.
+    let filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNo));
+    if (search) {
+      filteredPending = filteredPending.filter((r: any) =>
+        String(r.data.indentNo || "").toLowerCase().includes(search) ||
+        String(r.data.itemName || "").toLowerCase().includes(search) ||
+        String(r.data.vendorName || "").toLowerCase().includes(search) ||
+        String(r.data.serialNo || "").toLowerCase().includes(search) ||
+        String(r.data.invoiceNo || "").toLowerCase().includes(search)
+      );
+    }
+    if (expiringOnly) {
+      filteredPending = filteredPending.filter((r: any) => isWarrantyExpiringSoon(r.data.warrantyEnd));
+    }
+    filteredPending = sortByIndentNumber(filteredPending, sortDir);
+
+    const pendingTotalCount = filteredPending.length;
+    const pageStart = page * limit;
+    const pagedPending = filteredPending.slice(pageStart, pageStart + limit);
 
     return NextResponse.json({
       success: true,
-      pending: filteredPending,
+      pending: pagedPending,
+      pendingTotalCount,
       closurePending: filteredClosurePending,
       history
     });

@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Search, ShieldAlert, ClipboardList, History, AlertCircle } from "lucide-react";
-import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon, formatDateTimeDash, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, formatDateTimeDash, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -62,9 +62,19 @@ const HISTORY_COLUMNS = [
     { key: "warrantyEnd", label: "Warranty End" },
 ] as const;
 
+// Pending is this stage's big list (thousands of serials awaiting a claim) — unlike
+// Tally Entry where Pending was small, here it's Pending that's paginated server-side.
+// Default page size stays small (100) until a search/expiring filter narrows things down
+// (200), matching the same "capped until filtered" behavior used on Tally Entry's History.
+const PENDING_DEFAULT_LIMIT = 100;
+const PENDING_FILTERED_LIMIT = 200;
+
 export default function WarrantyClaim() {
     const { role, records: recordsAccess } = useAuth();
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
+    const [pendingTotalCount, setPendingTotalCount] = useState(0);
+    const [pendingPage, setPendingPage] = useState(0);
+    const [isPendingLoading, setIsPendingLoading] = useState(false);
     const [closurePendingRecords, setClosurePendingRecords] = useState<any[]>([]);
     const [historyRecords, setHistoryRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -93,13 +103,46 @@ export default function WarrantyClaim() {
         remarks: ""
     });
 
+    const sortDir = indentFilter === "decreasing" ? "desc" : "asc";
+    const hasPendingFilter = !!searchTerm || showExpiringOnly;
+    const pendingLimit = hasPendingFilter ? PENDING_FILTERED_LIMIT : PENDING_DEFAULT_LIMIT;
+
+    const fetchPending = useCallback(async () => {
+        setIsPendingLoading(true);
+        try {
+            const params = new URLSearchParams({
+                page: String(pendingPage),
+                sort: sortDir,
+            });
+            if (searchTerm) params.set("search", searchTerm);
+            if (showExpiringOnly) params.set("expiringOnly", "true");
+            if (role) params.set("role", role);
+            if (recordsAccess) params.set("records", recordsAccess);
+
+            const res = await fetch(`/api/warranty-claim?${params.toString()}`);
+            const json = await res.json();
+            if (json.success) {
+                setPendingRecords(json.pending || []);
+                setPendingTotalCount(json.pendingTotalCount || 0);
+            } else {
+                toast.error(json.error || "Failed to load pending claims");
+            }
+        } catch (e) {
+            console.error("Pending fetch error:", e);
+            toast.error("Failed to load pending claims");
+        }
+        setIsPendingLoading(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingPage, sortDir, searchTerm, showExpiringOnly, role, recordsAccess]);
+
+    // closurePending/history come along on this same call (their source table is small,
+    // no need to defer or paginate them) — only Pending is fetched separately/paginated.
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
             const res = await fetch("/api/warranty-claim");
             const json = await res.json();
             if (json.success) {
-                setPendingRecords(json.pending || []);
                 setClosurePendingRecords(json.closurePending || []);
                 setHistoryRecords(json.history || []);
             } else {
@@ -114,6 +157,25 @@ export default function WarrantyClaim() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    // Debounce search/expiring/sort changes so typing doesn't fire a request per
+    // keystroke; the very first load (mount) fetches immediately.
+    const pendingLoadedRef = React.useRef(false);
+    useEffect(() => {
+        const debounceMs = pendingLoadedRef.current ? 300 : 0;
+        const timer = setTimeout(() => {
+            pendingLoadedRef.current = true;
+            fetchPending();
+        }, debounceMs);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingPage, sortDir, searchTerm, showExpiringOnly, role, recordsAccess]);
+
+    // Changing search/expiring resets back to page 0.
+    useEffect(() => {
+        setPendingPage(0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchTerm, showExpiringOnly, sortDir]);
+
     const applySearch = useCallback((records: any[]) => {
         if (!searchTerm) return records;
         const lower = searchTerm.toLowerCase();
@@ -127,10 +189,10 @@ export default function WarrantyClaim() {
     }, [searchTerm]);
 
     // Purchaser-based record access: only show records this user is allowed to see.
-    const visiblePendingRecords = useMemo(
-        () => pendingRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
-        [pendingRecords, recordsAccess, role]
-    );
+    // Pending is already filtered/searched/sorted/paginated server-side (see
+    // fetchPending above) — used as-is here, no client-side re-filtering.
+    const pending = pendingRecords;
+
     const visibleClosurePendingRecords = useMemo(
         () => closurePendingRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
         [closurePendingRecords, recordsAccess, role]
@@ -139,15 +201,6 @@ export default function WarrantyClaim() {
         () => historyRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
         [historyRecords, recordsAccess, role]
     );
-
-    const pending = useMemo(() => {
-        let filtered = applySearch(visiblePendingRecords);
-        if (showExpiringOnly) {
-            filtered = filtered.filter(r => isWarrantyExpiringSoon(r.data.warrantyEnd));
-        }
-
-        return sortByIndentNumber(filtered, indentFilter === "decreasing" ? "desc" : "asc");
-    }, [visiblePendingRecords, applySearch, showExpiringOnly, indentFilter]);
 
     const closurePending = useMemo(() => {
         const items = applySearch(visibleClosurePendingRecords);
@@ -217,13 +270,14 @@ export default function WarrantyClaim() {
             setIsModalOpen(false);
             toast.success("Claim submitted successfully!", { id: toastId, duration: 2000 });
             fetchData();
+            fetchPending();
         } catch (e: any) {
             console.error("Submit error:", e);
             toast.error(e.message || "Failed to submit claim", { id: toastId });
         } finally {
             setIsSubmitting(false);
         }
-    }, [selectedRecord, formData, fetchData, uploadFile]);
+    }, [selectedRecord, formData, fetchData, fetchPending, uploadFile]);
 
     const handleClosureSubmit = useCallback(async () => {
         if (!selectedRecord) return;
@@ -391,7 +445,7 @@ export default function WarrantyClaim() {
                                         ? "bg-white text-red-600 shadow-xs"
                                         : "bg-red-100 text-red-700"
                                 )}>
-                                    {pending.length}
+                                    {pendingTotalCount}
                                 </Badge>
                             </TabsTrigger>
                             <TabsTrigger
@@ -448,20 +502,20 @@ export default function WarrantyClaim() {
                     </div>
                 </div>
 
-                {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-24 text-gray-500">
-                        <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-600" />
-                        <p className="text-lg animate-pulse text-indigo-900 font-medium">Loading records...</p>
-                    </div>
-                ) : (
-                    <>
-                        <TabsContent value="pending" className="mt-0 outline-none">
-                            {pending.length === 0 ? (
-                                <div className="text-center py-12 text-gray-500">
-                                    <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                                    <p className="text-lg text-black">No pending Warranty Claims</p>
-                                </div>
-                            ) : (
+                <>
+                    <TabsContent value="pending" className="mt-0 outline-none">
+                        {isPendingLoading ? (
+                            <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+                                <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-600" />
+                                <p className="text-lg animate-pulse text-indigo-900 font-medium">Loading records...</p>
+                            </div>
+                        ) : pending.length === 0 ? (
+                            <div className="text-center py-12 text-gray-500">
+                                <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                                <p className="text-lg text-black">No pending Warranty Claims</p>
+                            </div>
+                        ) : (
+                            <>
                                 <WarrantyClaimPending
                                     pending={pending}
                                     closurePending={closurePending}
@@ -472,9 +526,51 @@ export default function WarrantyClaim() {
                                     onAction={onAction}
                                     onClosureAction={onClosureAction}
                                 />
-                            )}
-                        </TabsContent>
+                                {pendingTotalCount > pendingLimit && (
+                                    <div className="flex items-center justify-between mt-3 text-sm text-slate-600">
+                                        {hasPendingFilter ? (
+                                            <>
+                                                <span>
+                                                    Showing {pendingPage * pendingLimit + 1}-
+                                                    {Math.min((pendingPage + 1) * pendingLimit, pendingTotalCount)} of {pendingTotalCount}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={pendingPage === 0 || isPendingLoading}
+                                                        onClick={() => setPendingPage((p) => Math.max(0, p - 1))}
+                                                    >
+                                                        Previous
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={(pendingPage + 1) * pendingLimit >= pendingTotalCount || isPendingLoading}
+                                                        onClick={() => setPendingPage((p) => p + 1)}
+                                                    >
+                                                        Next
+                                                    </Button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <span>
+                                                Showing first {pendingLimit} of {pendingTotalCount} — apply a search or the expiring filter to see more
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </TabsContent>
 
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+                            <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-600" />
+                            <p className="text-lg animate-pulse text-indigo-900 font-medium">Loading records...</p>
+                        </div>
+                    ) : (
+                    <>
                         <TabsContent value="closurePending" className="mt-0 outline-none">
                             {closurePending.length === 0 ? (
                                 <div className="text-center py-12 text-gray-500">
@@ -511,6 +607,7 @@ export default function WarrantyClaim() {
                         </TabsContent>
                     </>
                 )}
+                </>
             </Tabs>
 
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

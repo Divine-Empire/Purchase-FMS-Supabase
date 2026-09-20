@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { canViewPurchaserRecord } from "@/lib/utils";
 
-export async function GET() {
+// `view=pending` (default) is what loads on every page open/poll — Pending stays small
+// enough (bounded by open invoices) to load in full, since the bulk-payment vendor
+// picker needs the whole set. It only builds a cheap `historyCount`, never the (often
+// much larger, ever-growing) payment-log History rows. `view=history` is only requested
+// once the user opens that tab, and returns at most `limit` (100 default, 200 once a
+// search is applied) rows, filtered server-side — so History no longer rides along on
+// every Pending load/poll, and its payload is capped regardless of how many payments
+// have ever been logged.
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get("view") === "history" ? "history" : "pending";
+    const page = Math.max(0, parseInt(searchParams.get("page") || "0", 10) || 0);
+    const search = (searchParams.get("search") || "").toLowerCase().trim();
+    const limit = search ? 200 : 100;
+    const role = searchParams.get("role");
+    const records = searchParams.get("records");
+
     // 1. Fetch Turn Around Time (TAT) for vendor-payments
     const { data: tatData } = await supabase
       .from("pfms_tat")
@@ -99,6 +116,7 @@ export async function GET() {
       const indent = lift.indent || {};
 
       if (cancelledNos.has(indent.indentNo)) continue;
+      if (!canViewPurchaserRecord(indent.purchaser, records, role)) continue;
       const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
       const poEntry = Array.isArray(indent.poEntry) ? (indent.poEntry[0] || {}) : (indent.poEntry || {});
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
@@ -142,11 +160,21 @@ export async function GET() {
       });
     }
 
-    // Map history records
+    // Map history records. On a `view=pending` request only the count is needed (for
+    // the History tab's badge) — skip building the full row objects.
+    let historyCount = 0;
     for (const log of (paidLogs || [])) {
       const vendorInvoice = log.vendorInvoice || {};
       const lift = vendorInvoice.lift || {};
       const indent = lift.indent || {};
+
+      if (!canViewPurchaserRecord(indent.purchaser, records, role)) continue;
+
+      if (view === "pending") {
+        historyCount++;
+        continue;
+      }
+
       const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
       const verification = Array.isArray(lift.accountsVerification) ? (lift.accountsVerification[0] || {}) : (lift.accountsVerification || {});
@@ -174,10 +202,32 @@ export async function GET() {
       });
     }
 
+    if (view === "pending") {
+      return NextResponse.json({
+        success: true,
+        pending,
+        historyCount,
+      });
+    }
+
+    // view === "history": apply the same search the page used to run client-side over
+    // the full list, then page the result server-side (default 100/page, 200 once
+    // searched) so at most `limit` rows ever go over the wire.
+    const filteredHistory = search
+      ? history.filter((h: any) =>
+          String(h.invoiceNo || "").toLowerCase().includes(search) ||
+          String(h.vendor || "").toLowerCase().includes(search)
+        )
+      : history;
+
+    const totalCount = filteredHistory.length;
+    const pageStart = page * limit;
+    const pagedHistory = filteredHistory.slice(pageStart, pageStart + limit);
+
     return NextResponse.json({
       success: true,
-      pending,
-      history
+      history: pagedHistory,
+      totalCount,
     });
 
   } catch (error: any) {

@@ -99,10 +99,30 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. Fetch item codes
-    const { data: itemsMaster } = await supabase
-      .from("pfms_item_master")
-      .select('"ITEM CODE", "ITEM NAME"');
+    // 3. Fetch item codes using pagination to bypass PostgREST default limit
+    const itemsMaster: any[] = [];
+    {
+      let itemPage = 0;
+      let itemHasMore = true;
+      while (itemHasMore) {
+        const { data: pageItems, error: itemPageError } = await supabase
+          .from("pfms_item_master")
+          .select('"ITEM CODE", "ITEM NAME"')
+          .range(itemPage * pageSize, (itemPage + 1) * pageSize - 1);
+
+        if (itemPageError) throw itemPageError;
+        if (!pageItems || pageItems.length === 0) {
+          itemHasMore = false;
+        } else {
+          itemsMaster.push(...pageItems);
+          if (pageItems.length < pageSize) {
+            itemHasMore = false;
+          } else {
+            itemPage++;
+          }
+        }
+      }
+    }
 
     // 4. Fetch vendor codes
     const { data: vendorsMaster } = await supabase

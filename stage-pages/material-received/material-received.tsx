@@ -73,10 +73,73 @@ const convertToDownloadUrl = (url: string) => {
     return url;
 };
 
+// Camera photos routinely come in at 3-10MB, and the bulk form can fire off
+// up to 6 of these in one submit (item image + damage image x 3 rows).
+// Vercel's serverless functions hard-cap request bodies at ~4.5MB regardless
+// of any Next.js config, so anything over that returns a plain-text 413
+// before our route code even runs. Downscaling images client-side keeps
+// each upload well under that ceiling.
+const MAX_IMAGE_DIMENSION = 1600;
+const IMAGE_JPEG_QUALITY = 0.75;
+
+const compressImageFile = (file: File): Promise<File> =>
+    new Promise((resolve) => {
+        if (!file.type.startsWith("image/") || file.type === "image/gif") {
+            resolve(file);
+            return;
+        }
+
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+
+            const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(img.width, img.height));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+                resolve(file);
+                return;
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) {
+                        resolve(file);
+                        return;
+                    }
+                    resolve(new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }));
+                },
+                "image/jpeg",
+                IMAGE_JPEG_QUALITY
+            );
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(file);
+        };
+        img.src = objectUrl;
+    });
+
 const uploadFileToDrive = async (file: File): Promise<string> => {
+    const uploadFile = await compressImageFile(file);
     const formDataUpload = new FormData();
-    formDataUpload.append("file", file);
+    formDataUpload.append("file", uploadFile);
     const res = await fetch("/api/upload-supabase", { method: "POST", body: formDataUpload });
+
+    if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(
+            res.status === 413
+                ? "Image is too large to upload even after compression. Please use a smaller file."
+                : text || `Upload failed with status ${res.status}`
+        );
+    }
+
     const json = await res.json();
     return json.success ? (json.fileUrl || json.url || "") : "";
 };

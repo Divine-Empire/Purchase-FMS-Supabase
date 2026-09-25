@@ -1,21 +1,37 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, RefreshCw, AlertCircle, Download, FileSpreadsheet } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Loader2, RefreshCw, AlertCircle, Download, Search } from "lucide-react";
 import { toast } from "sonner";
 
+interface Balance {
+  item_key: string;
+  item_name: string;
+  item_code: string | null;
+  category: string | null;
+  group_name: string | null;
+  location_code: string;
+  location_label: string;
+  balance: number;
+  max_level: number | null;
+}
+
+// Same UI/shape as OTP_Supabase's own /inventory page (that's where this
+// data actually lives and gets written — see app/api/ims/route.ts) — just
+// read-only here, with Export CSV instead of the CSV import controls.
 export default function ImsPage() {
-  const [data, setData] = useState<any[]>([]);
+  const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [filters, setFilters] = useState({
-    group: "All",
-    category: "All",
-    itemSearch: ""
-  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
 
   const fetchData = async () => {
     setLoading(true);
@@ -25,7 +41,7 @@ export default function ImsPage() {
       const result = await response.json();
 
       if (result.success && Array.isArray(result.data)) {
-        setData(result.data);
+        setBalances(result.data);
       } else {
         throw new Error(result.error || "Failed to fetch IMS data");
       }
@@ -42,101 +58,69 @@ export default function ImsPage() {
     fetchData();
   }, []);
 
-  const exportToExcel = () => {
-    if (filteredData.length === 0) {
+  const groupOptions = useMemo(
+    () => Array.from(new Set(balances.map((b) => b.group_name).filter((v): v is string => !!v))).sort(),
+    [balances]
+  );
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(balances.map((b) => b.category).filter((v): v is string => !!v))).sort(),
+    [balances]
+  );
+  const locationOptions = useMemo(
+    () => Array.from(new Set(balances.map((b) => b.location_label).filter((v): v is string => !!v))).sort(),
+    [balances]
+  );
+
+  const filteredBalances = useMemo(() => {
+    return balances.filter((b) => {
+      if (groupFilter !== "all" && b.group_name !== groupFilter) return false;
+      if (categoryFilter !== "all" && b.category !== categoryFilter) return false;
+      if (locationFilter !== "all" && b.location_label !== locationFilter) return false;
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const haystack = `${b.item_name} ${b.item_code || ""} ${b.group_name || ""} ${b.category || ""}`.toLowerCase();
+        if (!haystack.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [balances, groupFilter, categoryFilter, locationFilter, searchTerm]);
+
+  const exportToCsv = () => {
+    if (filteredBalances.length === 0) {
       toast.error("No data to export");
       return;
     }
 
-    const headers = [
-      "Group",
-      "Category",
-      "Item Code",
-      "Name of Item",
-      "CG",
-      "NE",
-      "Maniquip",
-      "Head Office"
-    ];
-
+    const headers = ["Group", "Category", "Item Code", "Item Name", "Location", "Balance", "Max Level"];
     const csvContent = [
       headers.join(","),
-      ...filteredData.map((row) => {
-        const group = row.group !== undefined ? `"${String(row.group).replace(/"/g, '""')}"` : "";
-        const category = row.category !== undefined ? `"${String(row.category).replace(/"/g, '""')}"` : "";
-        const itemCode = row.itemCode !== undefined ? `"${String(row.itemCode).replace(/"/g, '""')}"` : "";
-        const itemName = row.itemName !== undefined ? `"${String(row.itemName).replace(/"/g, '""')}"` : "";
-        const cg = row.cg !== null ? String(row.cg) : "0";
-        const ne = row.ne !== null ? String(row.ne) : "0";
-        const maniquip = row.maniquip !== null ? String(row.maniquip) : "0";
-        const headOffice = row.headOffice !== null ? String(row.headOffice) : "0";
-        
-        return [
-          group,
-          category,
-          itemCode,
-          itemName,
-          cg,
-          ne,
-          maniquip,
-          headOffice
-        ].join(",");
-      })
+      ...filteredBalances.map((b) =>
+        [
+          `"${(b.group_name || "").replace(/"/g, '""')}"`,
+          `"${(b.category || "").replace(/"/g, '""')}"`,
+          `"${(b.item_code || "").replace(/"/g, '""')}"`,
+          `"${b.item_name.replace(/"/g, '""')}"`,
+          `"${b.location_label.replace(/"/g, '""')}"`,
+          String(b.balance),
+          b.max_level ?? "",
+        ].join(",")
+      ),
     ].join("\n");
 
-    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `IMS_Stock_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `IMS_Stock_Report_${new Date().toISOString().split("T")[0]}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Excel report exported successfully");
+    URL.revokeObjectURL(url);
+    toast.success("Report exported successfully");
   };
 
-  // Extract unique filters from data dynamically
-  const uniqueGroups = useMemo(() => {
-    const list = data.map((row) => row.group?.trim()).filter(Boolean);
-    return Array.from(new Set(list)).sort();
-  }, [data]);
-
-  const uniqueCategories = useMemo(() => {
-    const list = data.map((row) => row.category?.trim()).filter(Boolean);
-    return Array.from(new Set(list)).sort();
-  }, [data]);
-
-  // Filtering Logic
-  const filteredData = useMemo(() => {
-    return data.filter((row) => {
-      const matchGroup =
-        filters.group === "All" ||
-        (row.group || "").trim() === filters.group;
-      const matchCategory =
-        filters.category === "All" ||
-        (row.category || "").trim() === filters.category;
-      
-      const searchLower = filters.itemSearch.toLowerCase().trim();
-      const matchSearch =
-        !searchLower ||
-        (row.itemCode || "").toLowerCase().includes(searchLower) ||
-        (row.itemName || "").toLowerCase().includes(searchLower);
-        
-      return matchGroup && matchCategory && matchSearch;
-    });
-  }, [data, filters]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-slate-800" />
-        <p className="text-slate-900 font-semibold animate-pulse">Fetching Stock Analysis Data...</p>
-      </div>
-    );
-  }
-
-  if (error) {
+  if (error && !loading) {
     return (
       <div className="p-6">
         <Card className="border-red-300 bg-red-50/50">
@@ -146,7 +130,7 @@ export default function ImsPage() {
               <h3 className="text-lg font-bold text-red-950">Error Loading Data</h3>
               <p className="text-sm text-slate-700 mt-1 font-semibold">{error}</p>
             </div>
-            <Button variant="outline" onClick={fetchData} className="mt-2 border-slate-350 hover:bg-slate-100 font-bold">
+            <Button variant="outline" onClick={fetchData} className="mt-2">
               <RefreshCw className="w-4 h-4 mr-2" />
               Try Again
             </Button>
@@ -157,195 +141,123 @@ export default function ImsPage() {
   }
 
   return (
-    <div className="p-6 flex flex-col gap-5 animate-in fade-in duration-500 max-w-7xl mx-auto h-[calc(100vh-2rem)] overflow-hidden">
-      {/* Header & Filter Controls Section */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-1.5 h-8 bg-blue-600 rounded-full" />
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-wider uppercase font-sans">
-            Stock Analysis
-          </h2>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 flex-grow md:flex-grow-0 justify-end">
-          {/* Group Filter */}
-          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Group</span>
-            <select
-              className="bg-transparent border-none text-xs font-extrabold text-slate-800 focus:ring-0 outline-none cursor-pointer min-w-[125px]"
-              value={filters.group}
-              onChange={(e) => setFilters((prev) => ({ ...prev, group: e.target.value }))}
-            >
-              <option value="All">All Groups</option>
-              {uniqueGroups.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
+    <div className="p-6">
+      <Card>
+        <CardHeader className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle>Current Stock Balance</CardTitle>
+              <CardDescription>Live from IMS (all IN/OUT recorded so far)</CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search item, code..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 w-80"
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={exportToCsv} className="gap-2">
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button size="sm" variant="outline" onClick={fetchData} className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
           </div>
 
-          {/* Category Filter */}
-          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Category</span>
-            <select
-              className="bg-transparent border-none text-xs font-extrabold text-slate-800 focus:ring-0 outline-none cursor-pointer max-w-[200px]"
-              value={filters.category}
-              onChange={(e) => setFilters((prev) => ({ ...prev, category: e.target.value }))}
-            >
-              <option value="All">All Categories</option>
-              {uniqueCategories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={groupFilter} onValueChange={setGroupFilter}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Group" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Groups</SelectItem>
+                {groupOptions.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categoryOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                {locationOptions.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-
-          {/* Item Filter (Search Input) */}
-          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Item</span>
-            <input
-              type="text"
-              placeholder="Search Code or Name..."
-              className="bg-transparent border-none text-xs font-extrabold text-slate-800 focus:ring-0 outline-none w-44 placeholder-slate-400"
-              value={filters.itemSearch}
-              onChange={(e) => setFilters((prev) => ({ ...prev, itemSearch: e.target.value }))}
-            />
-          </div>
-
-          {/* Items Found Badge */}
-          <div className="bg-[#E6F4EA] text-[#137333] border border-emerald-250/20 font-extrabold rounded-full px-4 py-1.5 text-[11px] tracking-wider uppercase shadow-xs">
-            {filteredData.length} Items Found
-          </div>
-        </div>
-      </div>
-
-      {/* Toolbar / Actions */}
-      <div className="flex items-center justify-between shrink-0 bg-slate-50 border border-slate-350 rounded-lg p-2.5">
-        <div className="flex items-center gap-2">
-          <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-          <span className="text-xs font-bold text-slate-700">Stock Inventory Database</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={exportToExcel}
-            size="sm"
-            className="bg-white hover:bg-slate-100 border-slate-350 text-slate-900 font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={fetchData}
-            size="sm"
-            className="bg-white hover:bg-slate-100 border-slate-350 text-slate-900 font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* Table Container Card */}
-      <Card className="border border-slate-350 shadow-xs bg-white overflow-hidden flex-grow flex flex-col min-h-0">
-        <CardContent className="p-0 flex-grow flex flex-col overflow-hidden min-h-0">
-          <div className="flex-grow overflow-auto relative">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-300 bg-slate-100">
-                  <th colSpan={4} className="px-4 py-3 text-left text-xs font-extrabold text-slate-700 border-r border-slate-300 uppercase tracking-wider bg-slate-50 select-none">
-                    Item Details
-                  </th>
-                  <th rowSpan={2} className="bg-[#0B3C5D] text-white text-center font-bold px-3 py-4 w-44 border-r border-white/20 align-top">
-                    <div className="text-sm tracking-wider font-extrabold">CG</div>
-                    <div className="text-[9.5px] leading-tight font-bold text-blue-200 mt-2 font-sans select-none uppercase tracking-wide">
-                      Reorder Quantity<br/>= Max Level - Live<br/>Stock - Indent Raised
-                    </div>
-                  </th>
-                  <th rowSpan={2} className="bg-[#1D0C30] text-white text-center font-bold px-3 py-4 w-44 border-r border-white/20 align-top">
-                    <div className="text-sm tracking-wider font-extrabold">NE</div>
-                    <div className="text-[9.5px] leading-tight font-bold text-purple-200 mt-2 font-sans select-none uppercase tracking-wide">
-                      Reorder Quantity<br/>= Max Level - Live<br/>Stock - Indent Raised
-                    </div>
-                  </th>
-                  <th rowSpan={2} className="bg-[#5D001E] text-white text-center font-bold px-3 py-4 w-44 border-r border-white/20 align-top">
-                    <div className="text-sm tracking-wider font-extrabold">Maniquip</div>
-                    <div className="text-[9.5px] leading-tight font-bold text-red-200 mt-2 font-sans select-none uppercase tracking-wide">
-                      Reorder Quantity<br/>= Max Level - Live Stock<br/>- Indent Raised
-                    </div>
-                  </th>
-                  <th rowSpan={2} className="bg-[#005B54] text-white text-center font-bold px-3 py-4 w-44 align-top">
-                    <div className="text-sm tracking-wider font-extrabold">Head Office</div>
-                    <div className="text-[9.5px] leading-tight font-bold text-teal-200 mt-2 font-sans select-none uppercase tracking-wide">
-                      Reorder Quantity<br/>= Max Level - Live<br/>Stock - Indent Raised
-                    </div>
-                  </th>
-                </tr>
-                <tr className="border-b border-slate-300 bg-slate-50">
-                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Group</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Category</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Item Code</th>
-                  <th className="px-4 py-2 text-left text-[11px] font-extrabold text-slate-600 border-r border-slate-300 uppercase tracking-wider select-none bg-slate-100">Name of Item</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-200">
-                {filteredData.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="h-40 text-center text-slate-500 font-bold text-sm bg-slate-50/50">
-                      No matching records found
-                    </td>
-                  </tr>
-                ) : (
-                  filteredData.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-bold text-slate-900 font-mono">
-                        {row.group || "-"}
-                      </td>
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-semibold text-slate-800">
-                        {row.category || "-"}
-                      </td>
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-bold text-slate-900 font-mono">
-                        {row.itemCode || "-"}
-                      </td>
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 font-bold text-slate-900 truncate max-w-[280px]" title={row.itemName}>
-                        {row.itemName || "-"}
-                      </td>
-                      
-                      {/* Calculated locations */}
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 text-center font-bold font-mono">
-                        <span className={row.cg < 0 ? "text-red-600" : "text-green-600"}>
-                          {row.cg}
-                        </span>
-                      </td>
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 text-center font-bold font-mono">
-                        <span className={row.ne < 0 ? "text-red-600" : "text-green-600"}>
-                          {row.ne}
-                        </span>
-                      </td>
-                      <td className="border-r border-slate-200 text-xs px-4 py-2.5 text-center font-bold font-mono">
-                        <span className={row.maniquip < 0 ? "text-red-600" : "text-green-600"}>
-                          {row.maniquip}
-                        </span>
-                      </td>
-                      <td className="text-xs px-4 py-2.5 text-center font-bold font-mono">
-                        <span className={row.headOffice < 0 ? "text-red-600" : "text-green-600"}>
-                          {row.headOffice}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="border rounded-md overflow-hidden">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    <TableHead>Group</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Item Name</TableHead>
+                    <TableHead>Item Code</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="text-right">Max Level</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredBalances.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        {balances.length === 0 ? "No stock recorded yet" : "No rows match the current filters"}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredBalances.map((b, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{b.group_name || ""}</TableCell>
+                        <TableCell>{b.category || ""}</TableCell>
+                        <TableCell>{b.item_name}</TableCell>
+                        <TableCell>{b.item_code || ""}</TableCell>
+                        <TableCell>{b.location_label}</TableCell>
+                        <TableCell className={`text-right font-medium ${b.balance < 0 ? "text-destructive" : ""}`}>
+                          {b.balance}
+                        </TableCell>
+                        <TableCell className="text-right">{b.max_level ?? ""}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
-        <div className="bg-slate-100 px-4 py-3 border-t border-slate-350 flex items-center justify-between shrink-0">
-          <p className="text-[11px] text-slate-700 font-bold">Showing: {filteredData.length} records</p>
-          <p className="text-[11px] text-slate-800 font-bold italic">Powered by Botivate Inventory Engine</p>
-        </div>
       </Card>
     </div>
   );

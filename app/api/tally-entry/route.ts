@@ -225,6 +225,78 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Records this lift's item into OTP_Supabase's IMS as one INN batch (FIFO,
+// keyed by invoice_date) — best-effort: a failure here never blocks the
+// Tally Entry submission itself, it just gets logged.
+//
+// Purchase-FMS-Supabase (this project, zpkikvgmmbtekbcuqahf) and
+// OTP_Supabase (nfwtbrmqvsejwwvraanf) are SEPARATE Supabase projects — the
+// IMS schema only exists in OTP_Supabase's DB, so this can't be a direct
+// Postgres RPC; it's an HTTP call to OTP_Supabase's own IMS sync endpoint
+// instead (mirrors the existing PFMS-indent / webhook integration pattern
+// already used elsewhere between these two apps).
+async function recordImsReceipt(liftNo: string, createdBy: string | null) {
+  try {
+    const { data: mat, error: matError } = await supabase
+      .from("pfms_material-received")
+      .select(`
+        receivedQty, invoiceDate, invoiceNumber, qcRequired,
+        lift:pfms_lift!inner (
+          liftNo,
+          indent:"pfms_indent_generation"!inner ( itemName, warehouseLocation )
+        )
+      `)
+      .eq("liftNo", liftNo)
+      .maybeSingle() as any;
+    if (matError || !mat) {
+      console.error(`IMS receipt skipped for lift ${liftNo}: material-received row not found`, matError);
+      return;
+    }
+
+    const indent = mat.lift?.indent || {};
+    let qty = mat.receivedQty || 0;
+    if (mat.qcRequired === "yes") {
+      const { data: ledger } = await supabase
+        .from("pfms_lift_qc_resolution")
+        .select("passedQty, repairedQty, isFullyResolved")
+        .eq("liftNo", liftNo)
+        .maybeSingle();
+      if (!ledger?.isFullyResolved) {
+        console.error(`IMS receipt skipped for lift ${liftNo}: QC not yet fully resolved`);
+        return;
+      }
+      qty = (ledger.passedQty || 0) + (ledger.repairedQty || 0);
+    }
+
+    if (!indent.itemName || !qty) {
+      console.error(`IMS receipt skipped for lift ${liftNo}: missing item name or qty`);
+      return;
+    }
+
+    const imsBaseUrl = process.env.OTP_SUPABASE_APP_URL || "https://otp-supabase.vercel.app";
+    const response = await fetch(`${imsBaseUrl}/api/otp-supabase/ims/receive`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.IMS_SYNC_SECRET ? { "x-ims-secret": process.env.IMS_SYNC_SECRET } : {}),
+      },
+      body: JSON.stringify({
+        itemName: indent.itemName,
+        locationLabel: indent.warehouseLocation,
+        invoiceDate: mat.invoiceDate || null,
+        qty,
+        sourceType: "tally_entry",
+        sourceRef: `lift:${liftNo}|invoice:${mat.invoiceNumber || ""}`,
+        createdBy: createdBy || null,
+      }),
+    });
+    const result = await response.json();
+    if (!result.success) console.error(`IMS receipt failed for lift ${liftNo}:`, result.error);
+  } catch (err) {
+    console.error(`IMS receipt exception for lift ${liftNo}:`, err);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -259,6 +331,9 @@ export async function POST(request: NextRequest) {
       .insert(inserts);
 
     if (insertError) throw insertError;
+
+    // IMS INN — one stock batch per lift, best-effort (see recordImsReceipt).
+    await Promise.all(records.map((rec: any) => recordImsReceipt(rec.liftNo, rec.doneBy)));
 
     return NextResponse.json({ success: true });
 

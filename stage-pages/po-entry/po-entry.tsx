@@ -28,29 +28,55 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatDate, parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import BackgroundSyncBanner from "@/components/background-sync-banner";
 import PoEntryPending from "./po-entry-pending";
 import PoEntryHistory from "./po-entry-history";
+
+const HISTORY_DEFAULT_LIMIT = 100;
+const HISTORY_FILTERED_LIMIT = 200;
 
 export default function Stage5() {
   const { role, records: recordsAccess } = useAuth();
   const isAdmin = role?.toUpperCase() === "ADMIN";
   const [open, setOpen] = useState(false);
 
-  // Admin-only History edit modal
+  // Admin-only History edit modal — mirrors the Bulk PO creation form: every indent
+  // sharing the clicked record's PO Number opens together, Basic Value/GST% are edited
+  // per item, and Pkg Amount/Pkg GST%/PO Copy are shared across the whole group (same as
+  // at creation time). Editing Basic Value cascades into Update-3-Vendors' rate for that
+  // indent (rate = basicValue / approvedQty) so the two never drift apart again.
   const [openEditModal, setOpenEditModal] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [isLoadingEditGroup, setIsLoadingEditGroup] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [editFormData, setEditFormData] = useState({
-    poNumber: "", basicValue: "", totalWithTax: "", poCopy: null as File | string | null,
-  });
+  const [editGroupPoNumber, setEditGroupPoNumber] = useState("");
+  const [editGroupItems, setEditGroupItems] = useState<Array<{
+    indentNo: string;
+    itemName: string;
+    quantity: number;
+    vendorName: string;
+    vendorRate: number | null;
+    basicValue: string;
+    gst: string;
+  }>>([]);
+  const [editGroupPkgAmount, setEditGroupPkgAmount] = useState("");
+  const [editGroupPkgGST, setEditGroupPkgGST] = useState("");
+  const [editGroupPoCopy, setEditGroupPoCopy] = useState<File | string | null>(null);
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [bulkFormData, setBulkFormData] = useState<Record<string, any>>({});
-  const [sheetRecords, setSheetRecords] = useState<any[]>([]);
+  // Pending stays fully loaded (small, bounded by open indents at PO Entry stage) —
+  // History is fetched lazily, only once that tab is opened, and paginated server-side
+  // (100 default, 200 once searched) since it only ever grows over time.
+  const [pendingRaw, setPendingRaw] = useState<any[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [poTotalMap, setPoTotalMap] = useState<Map<string, number>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -76,13 +102,21 @@ export default function Stage5() {
     return { totalPkg, perItemPkgTotal, perItemPkgBase };
   };
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
+
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/po-entry?_t=${Date.now()}`);
+      const params = new URLSearchParams({ view: "pending", _t: String(Date.now()) });
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/po-entry?${params.toString()}`);
       const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setSheetRecords(json.data);
+      if (json.success) {
+        setPendingRaw(json.pending || []);
+        setHistoryCount(json.historyCount || 0);
       }
     } catch (e) {
       console.error("Fetch error Stage 5:", e);
@@ -92,28 +126,113 @@ export default function Stage5() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Admin: edit a completed History record ----
-  const handleOpenEditHistory = (record: any) => {
-    setEditingRecord(record);
-    setEditFormData({
-      poNumber: record.data.poNumber || "",
-      basicValue: record.data.basicValue || "",
-      totalWithTax: record.data.totalWithTax || "",
-      poCopy: record.data.poCopy || null,
-    });
+  const historyLoadedRef = React.useRef(false);
+  const hasHistoryFilter = !!searchTerm;
+  const historyLimit = hasHistoryFilter ? HISTORY_FILTERED_LIMIT : HISTORY_DEFAULT_LIMIT;
+
+  const fetchHistory = React.useCallback(async () => {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        view: "history",
+        page: String(historyPage),
+        sort: indentFilter === "decreasing" ? "desc" : "asc",
+      });
+      if (searchTerm) params.set("search", searchTerm);
+      if (role) params.set("role", role);
+      if (recordsAccess) params.set("records", recordsAccess);
+
+      const res = await fetch(`/api/po-entry?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRecords(json.history || []);
+        setHistoryTotalCount(json.totalCount || 0);
+        setPoTotalMap(new Map(Object.entries(json.poTotals || {})));
+      } else {
+        toast.error(json.error || "Failed to load history");
+      }
+    } catch (e) {
+      console.error("History fetch error:", e);
+      toast.error("Failed to load history");
+    }
+    setIsHistoryLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyPage, searchTerm, indentFilter, role, recordsAccess]);
+
+  useEffect(() => {
+    if (activeTab !== "history") return;
+    const debounceMs = historyLoadedRef.current ? 350 : 0;
+    const timer = setTimeout(() => {
+      historyLoadedRef.current = true;
+      fetchHistory();
+    }, debounceMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyPage, searchTerm, indentFilter]);
+
+  useEffect(() => {
+    setHistoryPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, indentFilter]);
+
+  // ---- Admin: edit every indent under a completed record's PO Number ----
+  const handleOpenEditHistory = async (record: any) => {
+    const poNumber = record.data.poNumber;
+    if (!poNumber) {
+      toast.error("This record has no PO Number to group by");
+      return;
+    }
     setOpenEditModal(true);
+    setIsLoadingEditGroup(true);
+    try {
+      const res = await fetch(`/api/po-entry?poNumber=${encodeURIComponent(poNumber)}`);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to load PO group");
+
+      setEditGroupPoNumber(json.poNumber);
+      setEditGroupPoCopy(json.poCopy || null);
+      setEditGroupPkgAmount(json.pkgAmount != null && json.pkgAmount !== "" ? String(json.pkgAmount) : "");
+      setEditGroupPkgGST(json.pkgGST || "");
+      setEditGroupItems(
+        (json.items || []).map((it: any) => ({
+          ...it,
+          basicValue: it.basicValue != null && it.basicValue !== "" ? String(it.basicValue) : "",
+          gst: it.gst || "",
+        }))
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load PO group");
+      setOpenEditModal(false);
+    } finally {
+      setIsLoadingEditGroup(false);
+    }
   };
 
-  const handleSaveEditHistory = async () => {
-    if (!editingRecord) return;
+  const updateEditGroupItem = (indentNo: string, field: "basicValue" | "gst", value: string) => {
+    setEditGroupItems((prev) =>
+      prev.map((it) => (it.indentNo === indentNo ? { ...it, [field]: value } : it))
+    );
+  };
+
+  // Live preview only — mirrors the server's own formula in editHistoryGroup so what the
+  // admin sees before saving matches what actually gets written.
+  const previewTotalWithTax = (basicValue: string, gst: string) => {
+    const basic = parseFloat(basicValue) || 0;
+    const gstRate = (parseFloat(String(gst || "").replace("%", "")) || 0) / 100;
+    const { perItemPkgTotal } = getPkgTotals(editGroupPkgAmount, editGroupPkgGST, editGroupItems.length || 1);
+    return basic * (1 + gstRate) + perItemPkgTotal;
+  };
+
+  const handleSaveEditGroupHistory = async () => {
     setIsSavingEdit(true);
     try {
-      let poCopyUrl: string | null = typeof editFormData.poCopy === "string" ? editFormData.poCopy : null;
-      if (editFormData.poCopy instanceof File) {
+      let poCopyUrl: string | null = typeof editGroupPoCopy === "string" ? editGroupPoCopy : null;
+      if (editGroupPoCopy instanceof File) {
         const fileData = new FormData();
-        fileData.append("file", editFormData.poCopy);
+        fileData.append("file", editGroupPoCopy);
         const uploadRes = await fetch("/api/upload-supabase", { method: "POST", body: fileData });
         const uploadJson = await uploadRes.json();
         if (!uploadJson.success) throw new Error(uploadJson.error || "PO Copy upload failed");
@@ -124,21 +243,24 @@ export default function Stage5() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "editHistory",
-          indentNo: editingRecord.data.indentNumber,
-          poNumber: editFormData.poNumber,
-          basicValue: editFormData.basicValue,
-          totalWithTax: editFormData.totalWithTax,
+          action: "editHistoryGroup",
+          poNumber: editGroupPoNumber,
           poCopy: poCopyUrl,
+          pkgAmount: editGroupPkgAmount,
+          pkgGST: editGroupPkgGST,
+          items: editGroupItems.map((it) => ({
+            indentNo: it.indentNo,
+            basicValue: it.basicValue,
+            gst: it.gst,
+          })),
         }),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to save changes");
 
-      toast.success("PO Entry record updated");
+      toast.success(`PO ${editGroupPoNumber} updated (${editGroupItems.length} item${editGroupItems.length === 1 ? "" : "s"})`);
       setOpenEditModal(false);
-      setEditingRecord(null);
-      await fetchData();
+      await fetchHistory();
     } catch (err: any) {
       toast.error(err.message || "Failed to save changes");
     } finally {
@@ -146,67 +268,30 @@ export default function Stage5() {
     }
   };
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
-
-  // Purchaser-based record access: only show records this user is allowed to see.
-  const visibleRecords = useMemo(
-    () => sheetRecords.filter((r) => canViewPurchaserRecord(r.data?.purchaser, recordsAccess, role)),
-    [sheetRecords, recordsAccess, role]
-  );
-
+  // Pending is a small, always-fully-loaded dataset (server already applies
+  // purchaser-visibility), so search/sort filtering here stays client-side — only
+  // History needs server-side filtering/sorting + pagination.
   const pending = useMemo(() => {
-    const records = visibleRecords
-      .filter((r) => r.status === "pending")
-      .filter((r) => {
-        const searchLower = searchTerm.toLowerCase();
-        const selectedId = String(r.data.selectedVendor || "1");
-        const idx = parseInt(selectedId.toLowerCase().replace("vendor", "").trim(), 10) || 1;
-        const vName = r.data[`vendor${idx}Name`] || "";
+    const records = pendingRaw.filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      const selectedId = String(r.data.selectedVendor || "1");
+      const idx = parseInt(selectedId.toLowerCase().replace("vendor", "").trim(), 10) || 1;
+      const vName = r.data[`vendor${idx}Name`] || "";
 
-        return (
-          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-          r.data.itemName?.toLowerCase().includes(searchLower) ||
-          vName.toLowerCase().includes(searchLower) ||
-          String(r.data.poNumber || "").toLowerCase().includes(searchLower)
-        );
-      });
-
-    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
-  }, [visibleRecords, searchTerm, indentFilter]);
-
-  const completed = useMemo(() => {
-    const records = visibleRecords
-      .filter((r) => r.status === "completed")
-      .filter((r) => {
-        const searchLower = searchTerm.toLowerCase();
-        if (!searchLower) return true;
-        const selectedId = String(r.data.selectedVendor || "1");
-        const idx = parseInt(selectedId.toLowerCase().replace("vendor", "").trim(), 10) || 1;
-        const vName = r.data[`vendor${idx}Name`] || "";
-
-        return (
-          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-          r.data.itemName?.toLowerCase().includes(searchLower) ||
-          vName.toLowerCase().includes(searchLower) ||
-          String(r.data.poNumber || "").toLowerCase().includes(searchLower)
-        );
-      });
-
-    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
-  }, [visibleRecords, searchTerm, indentFilter]);
-
-  const poTotalMap = useMemo(() => {
-    const totals = new Map<string, number>();
-    completed.forEach(record => {
-      const po = record.data.poNumber;
-      if (po && po !== "-") {
-        const amount = parseFloat(String(record.data.totalWithTax || "0").replace(/[^0-9.]/g, "")) || 0;
-        totals.set(po, (totals.get(po) || 0) + amount);
-      }
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        vName.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+      );
     });
-    return totals;
-  }, [completed]);
+
+    return sortByIndentNumber(records, indentFilter === "decreasing" ? "desc" : "asc");
+  }, [pendingRaw, searchTerm, indentFilter]);
+
+  // historyRecords/poTotalMap are already filtered/searched/sorted/paginated
+  // server-side (see fetchHistory above) — used as-is, no client-side re-filtering.
+  const completed = historyRecords;
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent-No", icon: null },
@@ -234,7 +319,7 @@ export default function Stage5() {
 
     const initialData: Record<string, any> = {};
     selectedRecordIds.forEach((id) => {
-      const record = sheetRecords.find((r) => r.id === id);
+      const record = pending.find((r) => r.id === id);
       const vendorData = record ? getVendorData(record) : { rate: 0 };
       const rate = parseFloat(vendorData.rate) || 0;
       const quantity = parseFloat(record?.data?.quantity) || 0;
@@ -286,7 +371,7 @@ export default function Stage5() {
     setSubmitError(null);
 
     const recordsToProcess = selectedRecordIds.map((id) => {
-      const record = sheetRecords.find((r) => r.id === id);
+      const record = pending.find((r) => r.id === id);
       const data = bulkFormData[id];
       return { record, data };
     }).filter((item) => item.record);
@@ -532,7 +617,7 @@ export default function Stage5() {
                     ? "bg-white text-emerald-600 shadow-xs"
                     : "bg-green-100 text-green-800"
                 )}>
-                  {completed.length}
+                  {historyLoadedRef.current ? historyTotalCount : historyCount}
                 </Badge>
               </TabsTrigger>
             </TabsList>
@@ -590,7 +675,7 @@ export default function Stage5() {
 
         {/* HISTORY */}
         <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
-          {isLoading ? (
+          {isHistoryLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
               <p className="text-lg font-medium text-gray-900">Loading History...</p>
@@ -601,14 +686,50 @@ export default function Stage5() {
               <p className="text-lg">No completed POs</p>
             </div>
           ) : (
-            <PoEntryHistory
-              completed={completed}
-              getVendorData={getVendorData}
-              paymentTermsList={paymentTermsList}
-              poTotalMap={poTotalMap}
-              isAdmin={isAdmin}
-              onEdit={handleOpenEditHistory}
-            />
+            <>
+              <PoEntryHistory
+                completed={completed}
+                getVendorData={getVendorData}
+                paymentTermsList={paymentTermsList}
+                poTotalMap={poTotalMap}
+                isAdmin={isAdmin}
+                onEdit={handleOpenEditHistory}
+              />
+              {historyTotalCount > historyLimit && (
+                <div className="flex items-center justify-between mt-3 text-sm text-slate-600 shrink-0">
+                  {hasHistoryFilter ? (
+                    <>
+                      <span>
+                        Showing {historyPage * historyLimit + 1}-
+                        {Math.min((historyPage + 1) * historyLimit, historyTotalCount)} of {historyTotalCount}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={historyPage === 0 || isHistoryLoading}
+                          onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(historyPage + 1) * historyLimit >= historyTotalCount || isHistoryLoading}
+                          onClick={() => setHistoryPage((p) => p + 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <span>
+                      Showing first {historyLimit} of {historyTotalCount} — search to see more
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
       </Tabs>
@@ -714,7 +835,7 @@ export default function Stage5() {
 
             {/* PER-ITEM SECTIONS */}
             {selectedRecordIds.map((recordId) => {
-              const record = sheetRecords.find((r) => r.id === recordId);
+              const record = pending.find((r) => r.id === recordId);
               if (!record) return null;
               const v = getVendorData(record);
               const data = bulkFormData[recordId] || {};
@@ -912,67 +1033,190 @@ export default function Stage5() {
         </DialogContent>
       </Dialog>
 
-      {/* Admin: Edit History record modal */}
+      {/* Admin: Edit History PO group modal — every indent under this PO Number, same
+          shape as the Bulk PO creation form above. */}
       <Dialog open={openEditModal} onOpenChange={setOpenEditModal}>
-        <DialogContent className="max-w-md bg-white">
-          <DialogHeader>
-            <DialogTitle className="text-indigo-950">
-              Edit PO Entry — {editingRecord?.data?.indentNumber}
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-xl border border-indigo-150">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-4 flex flex-col gap-1 flex-shrink-0">
+            <DialogTitle className="text-white text-lg font-bold">
+              Edit PO {editGroupPoNumber} ({editGroupItems.length} item{editGroupItems.length === 1 ? "" : "s"})
             </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-700">PO Number</Label>
-              <Input
-                value={editFormData.poNumber}
-                onChange={(e) => setEditFormData((prev) => ({ ...prev, poNumber: e.target.value }))}
-                className="h-9 text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Basic Value</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editFormData.basicValue}
-                  onChange={(e) => setEditFormData((prev) => ({ ...prev, basicValue: e.target.value }))}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Total Value</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editFormData.totalWithTax}
-                  onChange={(e) => setEditFormData((prev) => ({ ...prev, totalWithTax: e.target.value }))}
-                  className="h-9 text-sm"
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-700">PO Copy</Label>
-              <Input
-                type="file"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                onChange={(e) => setEditFormData((prev) => ({ ...prev, poCopy: e.target.files?.[0] || prev.poCopy }))}
-                className="h-9 text-sm"
-              />
-              {typeof editFormData.poCopy === "string" && editFormData.poCopy && (
-                <a href={editFormData.poCopy} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline">
-                  View current PO Copy
-                </a>
-              )}
-            </div>
+            <p className="text-slate-400 text-xs">Every indent under this PO Number — Basic Value edits also update Update-3-Vendors' rate</p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>Cancel</Button>
-            <Button onClick={handleSaveEditHistory} disabled={isSavingEdit} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-              {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
-              Save Changes
-            </Button>
-          </DialogFooter>
+
+          {isLoadingEditGroup ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+              <Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-600" />
+              <p className="font-medium">Loading PO group...</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto space-y-6 p-6">
+                {/* SHARED PACKAGING/FORWARDING SECTION */}
+                <div className="border border-indigo-100 rounded-xl p-4 bg-amber-50/15 shadow-2xs">
+                  <div className="space-y-3">
+                    <Label className="text-sm font-bold text-indigo-950 uppercase tracking-wider">
+                      Packaging / Forwarding
+                      <span className="text-xs font-normal text-slate-500 ml-2">(applies to all items, divided equally)</span>
+                    </Label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">Amount</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={editGroupPkgAmount}
+                          onChange={(e) => setEditGroupPkgAmount(e.target.value)}
+                          placeholder="0.00"
+                          className="bg-white border-indigo-150 focus-visible:ring-indigo-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">GST on Packaging</Label>
+                        <Select value={editGroupPkgGST} onValueChange={setEditGroupPkgGST}>
+                          <SelectTrigger className="bg-white border-indigo-150 focus-visible:ring-indigo-500">
+                            <SelectValue placeholder="Select GST" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0%">0%</SelectItem>
+                            <SelectItem value="5%">5%</SelectItem>
+                            <SelectItem value="12%">12%</SelectItem>
+                            <SelectItem value="18%">18%</SelectItem>
+                            <SelectItem value="28%">28%</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">Total Packaging / Forwarding</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={getPkgTotals(editGroupPkgAmount, editGroupPkgGST, editGroupItems.length || 1).totalPkg.toFixed(2)}
+                          readOnly
+                          className="bg-indigo-50/30 border-indigo-100 text-indigo-950 font-bold cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PER-ITEM SECTIONS */}
+                {editGroupItems.map((item) => (
+                  <div key={item.indentNo} className="border border-indigo-100 rounded-xl p-4 bg-white shadow-2xs">
+                    <div className="mb-4 pb-3 border-b border-indigo-50/80">
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div><strong className="text-indigo-950">Indent-No:</strong> <span className="font-bold text-indigo-950">{item.indentNo}</span></div>
+                        <div><strong className="text-indigo-950">Item:</strong> <span className="font-bold text-indigo-950">{item.itemName}</span></div>
+                        <div><strong className="text-indigo-950">Qty:</strong> <span className="font-bold text-indigo-950">{item.quantity}</span></div>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-550">
+                        Vendor: <span className="font-bold text-indigo-950">{item.vendorName}</span>
+                        {" | "}Current Rate: <span className="font-bold text-slate-700">₹{item.vendorRate ?? "-"}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">
+                          Basic Value <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.basicValue}
+                          onChange={(e) => updateEditGroupItem(item.indentNo, "basicValue", e.target.value)}
+                          className="border-indigo-150 focus-visible:ring-indigo-500"
+                        />
+                        <p className="text-[10px] text-slate-500">
+                          New rate: ₹{item.quantity > 0 ? ((parseFloat(item.basicValue) || 0) / item.quantity).toFixed(2) : "-"}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">
+                          GST <span className="text-red-500">*</span>
+                        </Label>
+                        <Select
+                          value={item.gst}
+                          onValueChange={(val) => updateEditGroupItem(item.indentNo, "gst", val)}
+                        >
+                          <SelectTrigger className="border-indigo-150 focus:ring-indigo-500">
+                            <SelectValue placeholder="Select GST" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="5%">5%</SelectItem>
+                            <SelectItem value="12%">12%</SelectItem>
+                            <SelectItem value="18%">18%</SelectItem>
+                            <SelectItem value="28%">28%</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">Pkg/Fwd Share</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={getPkgTotals(editGroupPkgAmount, editGroupPkgGST, editGroupItems.length || 1).perItemPkgTotal.toFixed(2)}
+                          readOnly
+                          className="bg-indigo-50/20 border-indigo-100 text-indigo-950 font-bold cursor-not-allowed"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700">Total With Tax</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={previewTotalWithTax(item.basicValue, item.gst).toFixed(2)}
+                          readOnly
+                          className="bg-indigo-50/30 border-indigo-100 text-indigo-950 font-bold cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* SHARED PO COPY */}
+                <div className="border border-indigo-100 rounded-xl p-4 bg-indigo-50/15 shadow-2xs">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-bold text-indigo-950 uppercase tracking-wider">
+                      PO Copy
+                      <span className="text-xs font-normal text-slate-500 ml-2">(applies to all items)</span>
+                    </Label>
+                    <Input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => setEditGroupPoCopy(e.target.files?.[0] || editGroupPoCopy)}
+                      className="h-9 text-sm bg-white"
+                    />
+                    {typeof editGroupPoCopy === "string" && editGroupPoCopy && (
+                      <a href={editGroupPoCopy} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline">
+                        View current PO Copy
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="flex-shrink-0 border-t border-indigo-100 p-4 gap-2">
+                <Button type="button" variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveEditGroupHistory}
+                  disabled={
+                    isSavingEdit ||
+                    editGroupItems.some((it) => !it.basicValue || !it.gst)
+                  }
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                >
+                  {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

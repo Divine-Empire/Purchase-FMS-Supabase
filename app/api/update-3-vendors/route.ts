@@ -276,24 +276,52 @@ export async function POST(request: NextRequest) {
         if (newRate !== null) {
           const { data: poRow } = await supabase
             .from("pfms_po-entry")
-            .select("basicValue, totalWithTax")
+            .select("poNumber, basicValue, totalWithTax, gst, pkgAmount, pkgGST")
             .eq("indentNo", indentNo)
             .maybeSingle();
 
           if (poRow) {
-            const { data: indentRow } = await supabase
-              .from("pfms_indent_generation")
-              .select("quantity")
+            // Same quantity PO Entry itself used to compute basicValue at creation time
+            // (see po-entry.tsx: `quantity: approval.approvedQty`) — not
+            // pfms_indent_generation.quantity, the original *requested* qty, which can
+            // differ from what was actually approved.
+            const { data: approvalRow } = await supabase
+              .from("pfms_indent-approval")
+              .select("approvedQty")
               .eq("indentNo", indentNo)
               .maybeSingle();
 
-            const quantity = parseFloat(indentRow?.quantity) || 0;
-            const oldBasicValue = parseFloat(poRow.basicValue) || 0;
-            const oldTotalWithTax = parseFloat(poRow.totalWithTax) || 0;
-            const taxDelta = oldTotalWithTax - oldBasicValue;
+            const quantity = parseFloat(approvalRow?.approvedQty) || 0;
+
+            // Recompute totalWithTax from the current GST%, the same formula PO Entry's own
+            // create/edit flows use, instead of carrying forward the old absolute tax
+            // amount (`oldTotalWithTax - oldBasicValue`). That old approach silently drifted
+            // from basicValue * (1 + gst%) whenever this cascade fired — see IN-2149A, whose
+            // totalWithTax was found overstated by ~₹1681 for exactly this reason.
+            const gstStr = String(poRow.gst || "").replace("%", "").trim();
+            const gstRate = (parseFloat(gstStr) || 0) / 100;
+            const pkgAmount = parseFloat(poRow.pkgAmount) || 0;
+            const pkgGstStr = String(poRow.pkgGST || "").replace("%", "").trim();
+            const pkgGstRate = (parseFloat(pkgGstStr) || 0) / 100;
+
+            // pkgAmount is stored as the *full* shared packaging/forwarding charge on every
+            // item row of the same PO (see po-entry.tsx's Bulk PO form), not this item's
+            // divided share — count how many indents share this poNumber to divide it back
+            // down, same as `getPkgTotals`'s perItemPkgTotal at creation time.
+            let siblingCount = 1;
+            if (poRow.poNumber) {
+              const { count } = await supabase
+                .from("pfms_po-entry")
+                .select("id", { count: "exact", head: true })
+                .eq("poNumber", poRow.poNumber);
+              siblingCount = count && count > 0 ? count : 1;
+            }
+            const perItemPkgTotal = (pkgAmount * (1 + pkgGstRate)) / siblingCount;
 
             const newBasicValue = parseFloat((newRate * quantity).toFixed(2));
-            const newTotalWithTax = parseFloat((newBasicValue + taxDelta).toFixed(2));
+            const newTotalWithTax = parseFloat(
+              (newBasicValue * (1 + gstRate) + perItemPkgTotal).toFixed(2)
+            );
 
             await supabase
               .from("pfms_po-entry")

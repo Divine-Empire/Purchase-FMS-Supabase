@@ -46,6 +46,84 @@ interface CreateIndentPendingProps {
   setOpenCreateModal: (open: boolean) => void;
 }
 
+// Defined at module scope (not inside CreateIndentPending) so its identity stays stable
+// across re-renders — a component defined inside another component's render body gets a
+// new function reference every render, which makes React unmount+remount it (and its
+// whole Popover/Command DOM subtree) on every keystroke anywhere in the parent form.
+// That was causing noticeable typing lag in the create/edit indent forms.
+function Combobox({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  disabled,
+}: {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  searchPlaceholder: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn("w-full justify-between font-normal", !value && "text-muted-foreground")}
+          disabled={disabled}
+        >
+          {value
+            ? options.find((option) => option === value) || value
+            : placeholder}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>
+              {/* Selection is restricted to existing Item Master entries — no inline
+                  "create new" here. A missing item has to be added by an admin on the
+                  Master page first (where it goes through the duplicate-name/code check),
+                  so indents can never carry a typo'd or unregistered item name. */}
+              <div className="py-3 px-4 text-xs text-slate-500">
+                No matching item. Ask an admin to add it under Master &rarr; Items first.
+              </div>
+            </CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option}
+                  value={option}
+                  onSelect={() => {
+                    onChange(option);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === option ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  {option}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function CreateIndentPending({
   pending,
   fetchData,
@@ -379,83 +457,6 @@ export default function CreateIndentPending({
     } finally {
       setIsEditSubmitting(false);
     }
-  };
-
-  const Combobox = ({
-    options,
-    value,
-    onChange,
-    placeholder,
-    searchPlaceholder,
-    disabled,
-  }: {
-    options: string[];
-    value: string;
-    onChange: (value: string) => void;
-    placeholder: string;
-    searchPlaceholder: string;
-    disabled?: boolean;
-  }) => {
-    const [open, setOpen] = useState(false);
-    const [searchValue, setSearchValue] = useState("");
-
-    return (
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className={cn("w-full justify-between font-normal", !value && "text-muted-foreground")}
-            disabled={disabled}
-          >
-            {value
-              ? options.find((option) => option === value) || value
-              : placeholder}
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-          <Command>
-            <CommandInput
-              placeholder={searchPlaceholder}
-              onValueChange={setSearchValue}
-            />
-            <CommandList>
-              <CommandEmpty>
-                {/* Selection is restricted to existing Item Master entries — no inline
-                    "create new" here. A missing item has to be added by an admin on the
-                    Master page first (where it goes through the duplicate-name/code check),
-                    so indents can never carry a typo'd or unregistered item name. */}
-                <div className="py-3 px-4 text-xs text-slate-500">
-                  No matching item. Ask an admin to add it under Master &rarr; Items first.
-                </div>
-              </CommandEmpty>
-              <CommandGroup>
-                {options.map((option) => (
-                  <CommandItem
-                    key={option}
-                    value={option}
-                    onSelect={() => {
-                      onChange(option);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === option ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    {option}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-    );
   };
 
   return (

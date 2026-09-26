@@ -271,7 +271,7 @@ export default function DropdownsMaster() {
     fetchMismatchReport();
   };
 
-  const handleApplyItemRename = async (fromName: string) => {
+  const handleApplyItemRename = async (fromName: string, indentNos: string[]) => {
     const toItemId = remapSelections[fromName];
     if (!toItemId) {
       toast.error("Pick which Item Master entry this should map to first");
@@ -282,7 +282,7 @@ export default function DropdownsMaster() {
       const res = await fetch("/api/dropdowns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "renameItem", fromName, toItemId }),
+        body: JSON.stringify({ action: "renameItem", fromName, toItemId, indentNos }),
       });
       const json = await res.json();
       if (json.success) {
@@ -299,7 +299,7 @@ export default function DropdownsMaster() {
     }
   };
 
-  const handleApplyVendorRename = async (fromName: string) => {
+  const handleApplyVendorRename = async (fromName: string, indentNos: string[]) => {
     const toVendorId = remapSelections[fromName];
     if (!toVendorId) {
       toast.error("Pick which Vendor Master entry this should map to first");
@@ -310,7 +310,7 @@ export default function DropdownsMaster() {
       const res = await fetch("/api/dropdowns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "renameVendor", fromName, toVendorId }),
+        body: JSON.stringify({ action: "renameVendor", fromName, toVendorId, indentNos }),
       });
       const json = await res.json();
       if (json.success) {
@@ -2165,8 +2165,8 @@ export default function DropdownsMaster() {
                           disabled={!remapSelections[row.name] || applyingRemapFor === row.name}
                           onClick={() =>
                             openMismatchModal === "vendors"
-                              ? handleApplyVendorRename(row.name)
-                              : handleApplyItemRename(row.name)
+                              ? handleApplyVendorRename(row.name, row.indentNos)
+                              : handleApplyItemRename(row.name, row.indentNos)
                           }
                           className="h-9 px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-md cursor-pointer gap-1.5 shrink-0"
                         >

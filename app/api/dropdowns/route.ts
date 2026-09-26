@@ -127,7 +127,6 @@ async function findVendorDuplicate(
 // reflects the current state of pfms_indent_generation / pfms_negotiation / pfms_item_master
 // / pfms_vendor-master. Kept out of the main GET payload above since it's a heavier,
 // multi-table scan that the normal dropdowns page load doesn't need.
-const MISMATCH_REPORT_LIMIT = 50;
 
 async function buildMismatchReport() {
   // The four source tables are independent of each other, so fetch them all in parallel
@@ -170,13 +169,12 @@ async function buildMismatchReport() {
     .map(([name, indentSet]) => ({ name, indentNos: Array.from(indentSet), count: indentSet.size }))
     .sort((a, b) => b.count - a.count);
 
-  // Fixing the highest-impact names first (most affected indents) matters more than seeing
-  // all of them at once, and rendering hundreds of rows in the modal is its own slowdown —
-  // so only the top 50 of each go back to the client; totalXxxCount says how many remain.
+  // Every unmatched name goes back to the client, sorted by how many indents each one
+  // affects (highest-impact first) so the most useful fixes are still at the top.
   return {
-    unmatchedItems: allUnmatchedItems.slice(0, MISMATCH_REPORT_LIMIT),
+    unmatchedItems: allUnmatchedItems,
     totalUnmatchedItems: allUnmatchedItems.length,
-    unmatchedVendors: allUnmatchedVendors.slice(0, MISMATCH_REPORT_LIMIT),
+    unmatchedVendors: allUnmatchedVendors,
     totalUnmatchedVendors: allUnmatchedVendors.length,
   };
 }
@@ -568,9 +566,12 @@ export async function POST(request: Request) {
     // etc. all read itemName by joining back to pfms_indent_generation, so nothing else
     // needs to change. `toItemId` must be an existing pfms_item_master row.
     if (action === "renameItem") {
-      const { fromName, toItemId } = body;
+      const { fromName, toItemId, indentNos } = body;
       if (!fromName || !toItemId) {
         return NextResponse.json({ success: false, error: "Missing fromName or toItemId" }, { status: 400 });
+      }
+      if (!Array.isArray(indentNos) || indentNos.length === 0) {
+        return NextResponse.json({ success: false, error: "Missing indentNos" }, { status: 400 });
       }
 
       const { data: target, error: targetError } = await supabase
@@ -589,17 +590,22 @@ export async function POST(request: Request) {
         itemCode: target["ITEM CODE"],
       };
 
+      // Match by the exact indentNo set the mismatch report already grouped this name
+      // under, not by re-querying itemName — an `ilike` with no wildcards is an exact
+      // (case-insensitive) string match against the raw DB value, and it silently
+      // matched zero rows whenever that value had whitespace the report's grouping had
+      // already `.trim()`-ed away, leaving "Apply" a no-op that reported "Fixed 0 indents".
       const { data: updatedIndents, error: indentError } = await supabase
         .from("pfms_indent_generation")
         .update(updatePayload)
-        .ilike("itemName", fromName.trim())
+        .in("indentNo", indentNos)
         .select("indentNo");
       if (indentError) throw indentError;
 
       const { error: cancelError } = await supabase
         .from("pfms_order-cancellation")
         .update({ itemName: target["ITEM NAME"] })
-        .ilike("itemName", fromName.trim());
+        .in("indentNo", indentNos);
       if (cancelError) throw cancelError;
 
       return NextResponse.json({ success: true, updatedCount: (updatedIndents || []).length });
@@ -610,9 +616,12 @@ export async function POST(request: Request) {
     // pfms_update-3-vendors wherever they hold the old (unmatched) name. `toVendorId`
     // must be an existing pfms_vendor-master row.
     if (action === "renameVendor") {
-      const { fromName, toVendorId } = body;
+      const { fromName, toVendorId, indentNos } = body;
       if (!fromName || !toVendorId) {
         return NextResponse.json({ success: false, error: "Missing fromName or toVendorId" }, { status: 400 });
+      }
+      if (!Array.isArray(indentNos) || indentNos.length === 0) {
+        return NextResponse.json({ success: false, error: "Missing indentNos" }, { status: 400 });
       }
 
       const { data: target, error: targetError } = await supabase
@@ -626,10 +635,13 @@ export async function POST(request: Request) {
       }
       const toName = target["Vendor List"];
 
+      // Same fix as renameItem above: match by the report's own indentNo set instead of
+      // re-querying selectedVendorName with an exact-match `ilike`, which silently missed
+      // rows whose stored value had whitespace the report's grouping had already trimmed.
       const { data: updatedNeg, error: negError } = await supabase
         .from("pfms_negotiation")
         .update({ selectedVendorName: toName })
-        .ilike("selectedVendorName", fromName.trim())
+        .in("indentNo", indentNos)
         .select("indentNo");
       if (negError) throw negError;
 

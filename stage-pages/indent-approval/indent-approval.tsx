@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { toast } from "sonner";
 import { cn, parseSheetDate, getFmsTimestamp, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import IndentApprovalPending from "./indent-approval-pending";
@@ -78,11 +89,165 @@ const columns = [
   { key: "remarks", label: "Remarks", icon: FileText },
 ] as const;
 
+// Defined at module scope (not inside Stage2) so its identity stays stable across
+// re-renders — a component defined inside another component's render body gets a new
+// function reference every render, which makes React unmount+remount it (and its whole
+// Popover/Command DOM subtree) on every keystroke anywhere in the parent form. That was
+// the cause of the typing lag in the edit modal below.
+function Combobox({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  disabled,
+}: {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  searchPlaceholder: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn("w-full justify-between font-normal", !value && "text-muted-foreground")}
+          disabled={disabled}
+        >
+          {value || placeholder}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>
+              <div className="py-3 px-4 text-xs text-slate-500">
+                No matching item. Ask an admin to add it under Master &rarr; Items first.
+              </div>
+            </CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option}
+                  value={option}
+                  onSelect={() => {
+                    onChange(option);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === option ? "opacity-100" : "opacity-0")} />
+                  {option}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function Stage2() {
   const { role, records: recordsAccess } = useAuth();
+  const isAdmin = role?.toUpperCase() === "ADMIN";
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Admin-only History edit modal — lets a mistaken category/item/warehouse/approvedQty
+  // be corrected after approval. See app/api/indent-approval/route.ts's "editHistory"
+  // action for what this cascades into (indent_generation + indent-approval tables).
+  const [openEditModal, setOpenEditModal] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    category: "",
+    itemName: "",
+    itemCode: "",
+    warehouseLocation: "",
+    approvedQty: "",
+  });
+  const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  const [dropdownData, setDropdownData] = useState<Array<{ itemCode: string; category: string; itemName: string }>>([]);
+
+  useEffect(() => {
+    const fetchDropdownOptions = async () => {
+      try {
+        const res = await fetch(`/api/dropdowns`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          setWarehouseOptions(json.data.warehouseOptions || []);
+          setDropdownData(json.data.dropdownData || []);
+        }
+      } catch (e) {
+        console.error("Error fetching dropdown options:", e);
+      }
+    };
+    fetchDropdownOptions();
+  }, []);
+
+  const categoryOptions = useMemo(
+    () => [...new Set(dropdownData.map((item) => item.category))].filter(Boolean),
+    [dropdownData]
+  );
+
+  const getItemsByCategory = (category: string) => {
+    const items = dropdownData.filter((item) => item.category === category);
+    return Array.from(new Map(items.map((item) => [item.itemName, item])).values());
+  };
+
+  const handleOpenEditHistory = (record: any) => {
+    setEditingRecord(record);
+    setEditFormData({
+      category: record.data.category || "",
+      itemName: record.data.itemName || "",
+      itemCode: record.data.itemCode || "",
+      warehouseLocation: record.data.warehouseLocation || "",
+      approvedQty: record.data.approvedQty ?? "",
+    });
+    setOpenEditModal(true);
+  };
+
+  const handleSaveEditHistory = async () => {
+    if (!editingRecord) return;
+    setIsSavingEdit(true);
+    try {
+      const res = await fetch("/api/indent-approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editHistory",
+          indentNo: editingRecord.data.indentNumber,
+          category: editFormData.category,
+          itemName: editFormData.itemName,
+          itemCode: editFormData.itemCode,
+          warehouseLocation: editFormData.warehouseLocation,
+          approvedQty: editFormData.approvedQty,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to save changes");
+
+      toast.success("Indent record updated");
+      setOpenEditModal(false);
+      setEditingRecord(null);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save changes");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -491,6 +656,8 @@ export default function Stage2() {
               columns={columns}
               statusFilter={statusFilter}
               onStatusFilterChange={setStatusFilter}
+              isAdmin={isAdmin}
+              onEdit={handleOpenEditHistory}
             />
           )}
         </TabsContent>
@@ -677,6 +844,112 @@ export default function Stage2() {
               </div>
             </form>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin: Edit History record modal */}
+      <Dialog open={openEditModal} onOpenChange={setOpenEditModal}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-indigo-950">
+              Edit Indent — {editingRecord?.data?.indentNumber}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Category</Label>
+              <Combobox
+                options={categoryOptions}
+                value={editFormData.category}
+                onChange={(val) =>
+                  setEditFormData((prev) => ({ ...prev, category: val, itemName: "", itemCode: "" }))
+                }
+                placeholder="Select category"
+                searchPlaceholder="Search category..."
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Item Name</Label>
+              <Combobox
+                options={
+                  editFormData.category
+                    ? getItemsByCategory(editFormData.category).map((i) => i.itemName)
+                    : []
+                }
+                value={editFormData.itemName}
+                onChange={(val) => {
+                  const selectedItem = dropdownData.find(
+                    (d) => d.category === editFormData.category && d.itemName === val
+                  );
+                  setEditFormData((prev) => ({
+                    ...prev,
+                    itemName: val,
+                    itemCode: selectedItem?.itemCode || "",
+                  }));
+                }}
+                placeholder={editFormData.category ? "Select item" : "Select category first"}
+                searchPlaceholder="Search item..."
+                disabled={!editFormData.category}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Item Code</Label>
+              <Input
+                type="text"
+                placeholder="Auto-filled"
+                value={editFormData.itemCode}
+                readOnly
+                className="h-9 text-sm bg-slate-50 font-mono"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Warehouse Location</Label>
+                <Select
+                  value={editFormData.warehouseLocation}
+                  onValueChange={(val) => setEditFormData((prev) => ({ ...prev, warehouseLocation: val }))}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Select warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouseOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Approved Qty</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  value={editFormData.approvedQty}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, approvedQty: e.target.value }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenEditModal(false)} disabled={isSavingEdit}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEditHistory}
+              disabled={isSavingEdit}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

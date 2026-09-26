@@ -85,6 +85,50 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
+    // Edit an already-completed indent-approval record (admin-only, from the History tab).
+    // Category/itemName/itemCode/warehouseLocation live on pfms_indent_generation and are
+    // read live by every downstream stage — editing them here changes what those stages
+    // display/group by retroactively. approvedQty lives on pfms_indent-approval and feeds
+    // Follow-Up Vendor's "qty still pending to lift" math (approvedQty - totalLifted), so
+    // changing it after lifting has started shifts that remaining-qty number going forward
+    // (it does not rewrite already-created lifts/POs).
+    if (action === "editHistory") {
+      const { indentNo, category, itemName, itemCode, warehouseLocation, approvedQty } = body;
+
+      if (!indentNo) {
+        return NextResponse.json({ success: false, error: "Missing indentNo" }, { status: 400 });
+      }
+
+      const now = getLocalTimestamp();
+
+      const { error: indentUpdateError } = await supabase
+        .from("pfms_indent_generation")
+        .update({
+          category: category !== undefined ? category : undefined,
+          itemName: itemName !== undefined ? itemName : undefined,
+          itemCode: itemCode !== undefined ? itemCode : undefined,
+          warehouseLocation: warehouseLocation !== undefined ? warehouseLocation : undefined,
+          updatedAt: now,
+        })
+        .eq("indentNo", indentNo);
+
+      if (indentUpdateError) throw indentUpdateError;
+
+      if (approvedQty !== undefined) {
+        const { error: approvalUpdateError } = await supabase
+          .from("pfms_indent-approval")
+          .update({
+            approvedQty: parseFloat(approvedQty) || 0,
+            updatedAt: now,
+          })
+          .eq("indentNo", indentNo);
+
+        if (approvalUpdateError) throw approvalUpdateError;
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "insertApproval") {
       const { recordsToSubmit, approvalData } = body;
 

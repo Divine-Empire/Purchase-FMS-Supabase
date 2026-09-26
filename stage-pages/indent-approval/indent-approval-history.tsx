@@ -15,6 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Pencil } from "lucide-react";
 import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
@@ -48,6 +50,8 @@ interface IndentApprovalHistoryProps {
   columns: readonly { readonly key: string; readonly label: string; readonly icon: any }[];
   statusFilter?: "all" | "approved" | "rejected";
   onStatusFilterChange?: (status: "all" | "approved" | "rejected") => void;
+  isAdmin?: boolean;
+  onEdit?: (record: any) => void;
 }
 
 export default function IndentApprovalHistory({
@@ -56,6 +60,8 @@ export default function IndentApprovalHistory({
   columns,
   statusFilter = "all",
   onStatusFilterChange,
+  isAdmin,
+  onEdit,
 }: IndentApprovalHistoryProps) {
   return (
     <div className="flex flex-col h-full space-y-3 overflow-hidden">
@@ -95,6 +101,9 @@ export default function IndentApprovalHistory({
           <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
             <TableHeader className="bg-slate-900 sticky top-0 z-30 shadow-xs border-none text-white">
               <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+                {isAdmin && (
+                  <TableHead className="text-center text-sm font-bold text-white sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 whitespace-nowrap">Actions</TableHead>
+                )}
                 <TableHead className="w-12 text-center text-sm font-bold text-white sticky top-0 z-20 bg-slate-900 border-b border-slate-800 px-4 py-3 whitespace-nowrap">#</TableHead>
                 {columns
                   .filter((c) => selectedColumns.includes(c.key))
@@ -111,6 +120,18 @@ export default function IndentApprovalHistory({
             <TableBody>
               {history.map((record, index) => (
                 <TableRow key={record.id} className="odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/30 transition-colors border-b border-indigo-50/80 last:border-0">
+                  {isAdmin && (
+                    <TableCell className="text-center border-b border-indigo-50/80 px-4 py-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onEdit?.(record)}
+                        className="h-7 px-2.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 cursor-pointer"
+                      >
+                        <Pencil className="w-3 h-3 mr-1" /> Edit
+                      </Button>
+                    </TableCell>
+                  )}
                   <TableCell className="text-center font-bold text-indigo-950 text-sm border-b border-indigo-50/80 px-4 py-3">
                     {index + 1}
                   </TableCell>

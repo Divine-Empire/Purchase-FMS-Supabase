@@ -2,6 +2,8 @@
 
 import React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 import {
   TableBody,
   TableCell,
@@ -20,6 +22,13 @@ interface IndentApprovalPendingProps {
   toggleAll: () => void;
   selectedColumns: string[];
   columns: readonly { readonly key: string; readonly label: string; readonly icon: any }[];
+  // Item names (trimmed, lowercased) that exist in pfms_item_master — indents raised
+  // automatically from OTP (otp_indent_creation, via lib/pfms.ts's tryCreatePfmsIndent)
+  // can carry an item that was never registered there yet, since OTP's own item list
+  // (lto_items) is a separate catalog. Those rows still land here (visible, not silently
+  // dropped) so a purchaser can see them, but can't be approved until fixed — see onFixItem.
+  registeredItemNames: Set<string>;
+  onFixItem: (record: any) => void;
 }
 
 export default function IndentApprovalPending({
@@ -29,6 +38,8 @@ export default function IndentApprovalPending({
   toggleAll,
   selectedColumns,
   columns,
+  registeredItemNames,
+  onFixItem,
 }: IndentApprovalPendingProps) {
   return (
     <div className="border border-indigo-100 rounded-xl overflow-auto flex-1 shadow-xs relative h-full bg-white">
@@ -67,14 +78,19 @@ export default function IndentApprovalPending({
           ) : (
             pending.map((record) => {
               const isSelected = selectedRecords.includes(record.id);
+              const isUnregistered = !registeredItemNames.has(
+                (record.data.itemName || "").trim().toLowerCase()
+              );
               return (
                 <TableRow
                   key={record.id}
                   className={cn(
                     "cursor-pointer transition-colors duration-150 border-b border-indigo-50/80 last:border-0",
-                    isSelected 
-                      ? "bg-indigo-50/40 text-indigo-950 font-medium" 
-                      : "odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20 text-slate-700"
+                    isUnregistered
+                      ? "bg-red-50/70 hover:bg-red-50 text-slate-700"
+                      : isSelected
+                        ? "bg-indigo-50/40 text-indigo-950 font-medium"
+                        : "odd:bg-white even:bg-indigo-50/10 hover:bg-indigo-50/20 text-slate-700"
                   )}
                   onClick={() => toggleRecord(record.id)}
                 >
@@ -93,11 +109,32 @@ export default function IndentApprovalPending({
                         col.key === "indentNumber" && "font-bold text-indigo-950",
                         col.key !== "indentNumber" && "text-slate-600"
                       )}>
-                        {col.key === "leadTime"
-                          ? `${record.data[col.key] || 0} days`
-                          : col.key === "plannedDate"
-                            ? formatDateDash(record.data[col.key])
-                            : record.data[col.key] || "-"}
+                        {col.key === "itemName" && isUnregistered ? (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-rose-700">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                              {record.data.itemName || "-"}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[10px] font-bold border-rose-200 text-rose-700 hover:bg-rose-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onFixItem(record);
+                              }}
+                            >
+                              Fix Item
+                            </Button>
+                          </div>
+                        ) : col.key === "leadTime" ? (
+                          `${record.data[col.key] || 0} days`
+                        ) : col.key === "plannedDate" ? (
+                          formatDateDash(record.data[col.key])
+                        ) : (
+                          record.data[col.key] || "-"
+                        )}
                       </TableCell>
                     ))}
                 </TableRow>

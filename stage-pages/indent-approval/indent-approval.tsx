@@ -206,6 +206,56 @@ export default function Stage2() {
     return Array.from(new Map(items.map((item) => [item.itemName, item])).values());
   };
 
+  // OTP's otp_indent_creation can raise a PFMS indent for an item that isn't registered
+  // in pfms_item_master yet (OTP's own item catalog, lto_items, is separate — see
+  // lib/pfms.ts on the OTP side). Those rows are still inserted here (visible, not
+  // silently dropped) but can't be approved until a purchaser either adds the item to
+  // Item Master or re-maps this indent to the correct, already-registered item below.
+  const registeredItemNames = useMemo(
+    () => new Set(dropdownData.map((item) => item.itemName.trim().toLowerCase())),
+    [dropdownData]
+  );
+
+  const [openFixItemModal, setOpenFixItemModal] = useState(false);
+  const [fixingRecord, setFixingRecord] = useState<any>(null);
+  const [isSavingFix, setIsSavingFix] = useState(false);
+  const [fixFormData, setFixFormData] = useState({ category: "", itemName: "", itemCode: "" });
+
+  const handleOpenFixItem = (record: any) => {
+    setFixingRecord(record);
+    setFixFormData({ category: "", itemName: "", itemCode: "" });
+    setOpenFixItemModal(true);
+  };
+
+  const handleSaveFixItem = async () => {
+    if (!fixingRecord || !fixFormData.itemName) return;
+    setIsSavingFix(true);
+    try {
+      const res = await fetch("/api/indent-approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editHistory",
+          indentNo: fixingRecord.data.indentNumber,
+          category: fixFormData.category,
+          itemName: fixFormData.itemName,
+          itemCode: fixFormData.itemCode,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to fix item");
+
+      toast.success("Item re-mapped to Item Master");
+      setOpenFixItemModal(false);
+      setFixingRecord(null);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to fix item");
+    } finally {
+      setIsSavingFix(false);
+    }
+  };
+
   const handleOpenEditHistory = (record: any) => {
     setEditingRecord(record);
     setEditFormData({
@@ -465,6 +515,20 @@ export default function Stage2() {
 
   const isFormValid = true;
 
+  const handleOpenApprovalModal = () => {
+    const unregistered = selectedItems.filter(
+      (r) => !registeredItemNames.has((r.data.itemName || "").trim().toLowerCase())
+    );
+    if (unregistered.length > 0) {
+      const names = Array.from(new Set(unregistered.map((r) => r.data.itemName))).join(", ");
+      toast.error("Can't approve — item(s) not in Item Master", {
+        description: `Fix or add these first (see the red rows in Pending): ${names}`,
+      });
+      return;
+    }
+    setIsModalOpen(true);
+  };
+
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
@@ -609,7 +673,7 @@ export default function Stage2() {
 
           {selectedRecords.length > 0 && activeTab === "pending" && (
             <Button
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleOpenApprovalModal}
               className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white flex items-center gap-3 px-6 h-[50px] rounded-xl shadow-md shadow-green-100 transition-all hover:scale-[1.01] active:scale-[0.99] font-bold w-full sm:w-auto"
             >
               <Send className="w-4 h-4" />
@@ -637,6 +701,8 @@ export default function Stage2() {
               toggleAll={toggleAll}
               selectedColumns={selectedColumns}
               columns={columns}
+              registeredItemNames={registeredItemNames}
+              onFixItem={handleOpenFixItem}
             />
           )}
         </TabsContent>
@@ -948,6 +1014,86 @@ export default function Stage2() {
             >
               {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pending: re-map an indent raised (automatically, from OTP) for an item that isn't
+          in Item Master yet, to a real registered item — blocks Submit Approval until done,
+          see handleOpenApprovalModal / the red rows in IndentApprovalPending. */}
+      <Dialog open={openFixItemModal} onOpenChange={setOpenFixItemModal}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-indigo-950">
+              Fix Item — {fixingRecord?.data?.indentNumber}
+            </DialogTitle>
+            <p className="text-xs text-slate-500">
+              "{fixingRecord?.data?.itemName}" isn't registered in Item Master yet. Either add it
+              there first (Master &rarr; Items), or pick the correct, already-registered item below.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Category</Label>
+              <Combobox
+                options={categoryOptions}
+                value={fixFormData.category}
+                onChange={(val) =>
+                  setFixFormData((prev) => ({ ...prev, category: val, itemName: "", itemCode: "" }))
+                }
+                placeholder="Select category"
+                searchPlaceholder="Search category..."
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Item Name</Label>
+              <Combobox
+                options={
+                  fixFormData.category
+                    ? getItemsByCategory(fixFormData.category).map((i) => i.itemName)
+                    : []
+                }
+                value={fixFormData.itemName}
+                onChange={(val) => {
+                  const selectedItem = dropdownData.find(
+                    (d) => d.category === fixFormData.category && d.itemName === val
+                  );
+                  setFixFormData((prev) => ({
+                    ...prev,
+                    itemName: val,
+                    itemCode: selectedItem?.itemCode || "",
+                  }));
+                }}
+                placeholder={fixFormData.category ? "Select item" : "Select category first"}
+                searchPlaceholder="Search item..."
+                disabled={!fixFormData.category}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-700">Item Code</Label>
+              <Input
+                type="text"
+                placeholder="Auto-filled"
+                value={fixFormData.itemCode}
+                readOnly
+                className="h-9 text-sm bg-slate-50 font-mono"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenFixItemModal(false)} disabled={isSavingFix}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveFixItem}
+              disabled={isSavingFix || !fixFormData.itemName}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {isSavingFix ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Save &amp; Re-map
             </Button>
           </DialogFooter>
         </DialogContent>

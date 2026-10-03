@@ -160,12 +160,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "No items provided" }, { status: 400 });
       }
 
+      // Item selection on the Create Indent UI is restricted to Item Master entries (no
+      // inline "create new" — see stage-pages/create-indent/create-indent-pending.tsx), so
+      // this never actually fires for a manually-raised indent. It CAN fire for an
+      // automated one (OTP's otp_indent_creation, via its lib/pfms.ts — OTP's own item
+      // catalog, lto_items, is a separate source of truth from pfms_item_master). Those are
+      // intentionally let through anyway rather than rejected: Stage 2 (Indent Approval)
+      // now blocks approval on an unregistered item and lets the purchaser either add it to
+      // Item Master or re-map the indent to the correct item there (see
+      // app/api/indent-approval/route.ts's "editHistory" action and
+      // stage-pages/indent-approval/indent-approval.tsx's Fix Item modal) — so a missing
+      // catalog entry no longer has to silently swallow the whole indent before it's even
+      // visible to anyone.
       const unregistered = await findUnregisteredItems(items);
       if (unregistered.length > 0) {
-        return NextResponse.json(
-          { success: false, error: `Not in Item Master, ask an admin to add first: ${unregistered.join(", ")}` },
-          { status: 400 }
-        );
+        console.warn("create-indent insertIndent: proceeding with unregistered item(s), flagged for Indent Approval to resolve:", unregistered);
       }
 
       // 1. Fetch next sequence indent number batch from Supabase sequence procedure

@@ -31,6 +31,7 @@ export interface UserFormData {
   role: string;
   pageAccess: string[];
   records?: string;
+  defaultGodown?: string | null;
 }
 
 interface CreateUserFormProps {
@@ -54,6 +55,8 @@ export default function CreateUserForm({
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
   const [recordsAccess, setRecordsAccess] = useState("ALL");
   const [purchaserOptions, setPurchaserOptions] = useState<string[]>([]);
+  const [defaultGodown, setDefaultGodown] = useState<string>("");
+  const [cgGodownOptions, setCgGodownOptions] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -64,6 +67,7 @@ export default function CreateUserForm({
       .then((json) => {
         if (json.success && json.data) {
           setPurchaserOptions(json.data.purchaserOptions || []);
+          setCgGodownOptions(json.data.cgGodownOptions || []);
         }
       })
       .catch((err) => console.error("Failed to load purchaser options:", err));
@@ -77,6 +81,7 @@ export default function CreateUserForm({
       setPassword(initialData.password || "");
       setRole(initialData.role || "USER");
       setRecordsAccess(initialData.records || "ALL");
+      setDefaultGodown(initialData.defaultGodown || "");
 
       // Extract raw page access items
       let rawAccess: string[] = [];
@@ -90,7 +95,10 @@ export default function CreateUserForm({
       }
 
       const hasAll = rawAccess.some((p) => p.toUpperCase() === "ALL");
-      if (hasAll) {
+      // A pre-existing admin's stored pageAccess might predate this rule, or
+      // be blank/partial — normalize it to every page the moment the dialog
+      // opens, same as a fresh admin selection would.
+      if (hasAll || (initialData.role || "").toUpperCase() === "ADMIN") {
         setSelectedPages([...PAGE_ACCESS_OPTIONS]);
       } else {
         // Match raw access items to PAGE_ACCESS_OPTIONS case-insensitively
@@ -111,6 +119,7 @@ export default function CreateUserForm({
       setRole("USER");
       setSelectedPages([]);
       setRecordsAccess("ALL");
+      setDefaultGodown("");
     }
   }, [initialData, open]);
 
@@ -134,6 +143,16 @@ export default function CreateUserForm({
     }
   };
 
+  // Admin always gets every page — selecting "Admin" auto-checks (and locks)
+  // every Page Access checkbox, same convention used for OTP's user form.
+  const handleRoleChange = (value: string) => {
+    setRole(value);
+    if (value === "ADMIN") {
+      setSelectedPages([...PAGE_ACCESS_OPTIONS]);
+    }
+  };
+  const isAdminRole = role === "ADMIN";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -152,8 +171,9 @@ export default function CreateUserForm({
 
     setIsSubmitting(true);
     try {
-      // Determine pageAccess payload
-      const pageAccessPayload = isAllSelected ? ["ALL"] : selectedPages;
+      // Determine pageAccess payload — admin always gets every page,
+      // regardless of what the checkbox grid happened to hold at Save.
+      const pageAccessPayload = isAdminRole || isAllSelected ? ["ALL"] : selectedPages;
 
       const payload = {
         id: initialData?.id,
@@ -163,6 +183,7 @@ export default function CreateUserForm({
         role: role.toUpperCase(),
         pageAccess: pageAccessPayload,
         records: recordsAccess,
+        defaultGodown: defaultGodown || null,
       };
 
       const method = initialData?.id ? "PUT" : "POST";
@@ -194,7 +215,7 @@ export default function CreateUserForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl sm:max-w-xl p-6 bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
+      <DialogContent className="max-w-xl sm:max-w-xl p-6 bg-white rounded-xl shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-4 border-b border-slate-100">
           <DialogTitle className="text-xl font-bold text-slate-900">
             {initialData?.id ? "Edit User" : "Create User"}
@@ -255,7 +276,7 @@ export default function CreateUserForm({
 
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-slate-600">Role</Label>
-              <Select value={role} onValueChange={(val) => setRole(val)}>
+              <Select value={role} onValueChange={handleRoleChange}>
                 <SelectTrigger className="h-10 border-slate-300 focus:ring-blue-500 rounded-md bg-white">
                   <SelectValue placeholder="Select Role" />
                 </SelectTrigger>
@@ -279,12 +300,13 @@ export default function CreateUserForm({
                 <Checkbox
                   id="page-access-all"
                   checked={isAllSelected}
+                  disabled={isAdminRole}
                   onCheckedChange={(checked) => handleToggleAll(!!checked)}
                   className="border-slate-400 data-[state=checked]:bg-blue-600"
                 />
                 <label
                   htmlFor="page-access-all"
-                  className="font-bold text-slate-900 cursor-pointer text-xs uppercase"
+                  className={`font-bold text-xs uppercase ${isAdminRole ? "text-muted-foreground" : "text-slate-900 cursor-pointer"}`}
                 >
                   ALL
                 </label>
@@ -299,6 +321,7 @@ export default function CreateUserForm({
                     <Checkbox
                       id={pageId}
                       checked={isChecked}
+                      disabled={isAdminRole}
                       onCheckedChange={(checked) =>
                         handleTogglePage(page, !!checked)
                       }
@@ -306,7 +329,7 @@ export default function CreateUserForm({
                     />
                     <label
                       htmlFor={pageId}
-                      className="text-xs font-medium text-slate-700 cursor-pointer select-none truncate"
+                      className={`text-xs font-medium select-none truncate ${isAdminRole ? "text-muted-foreground" : "text-slate-700 cursor-pointer"}`}
                       title={page}
                     >
                       {page}
@@ -317,27 +340,51 @@ export default function CreateUserForm({
             </div>
           </div>
 
-          {/* RECORDS ACCESS Section */}
-          <div className="space-y-3 pt-2 border-t border-slate-100">
-            <div className="text-xs font-bold tracking-wider text-slate-700 uppercase">
-              Records Access *
+          {/* RECORDS ACCESS + DEFAULT GODOWN Section */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+            <div className="space-y-1.5">
+              <div className="text-xs font-bold tracking-wider text-slate-700 uppercase">
+                Records Access *
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Controls which purchaser's records this user can see across the app.
+              </p>
+              <Select value={recordsAccess} onValueChange={(val) => setRecordsAccess(val)}>
+                <SelectTrigger className="h-10 border-slate-300 focus:ring-blue-500 rounded-md bg-white">
+                  <SelectValue placeholder="Select Records Access" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">ALL</SelectItem>
+                  {purchaserOptions.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <p className="text-[11px] text-slate-500 -mt-1">
-              Controls which purchaser's records this user can see across the app.
-            </p>
-            <Select value={recordsAccess} onValueChange={(val) => setRecordsAccess(val)}>
-              <SelectTrigger className="h-10 border-slate-300 focus:ring-blue-500 rounded-md bg-white sm:w-64">
-                <SelectValue placeholder="Select Records Access" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">ALL</SelectItem>
-                {purchaserOptions.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+            <div className="space-y-1.5">
+              <div className="text-xs font-bold tracking-wider text-slate-700 uppercase">
+                Default Godown (Optional)
+              </div>
+              <p className="text-[11px] text-slate-500">
+                If in-charge of a specific CG godown, it auto-fills at Material Received.
+              </p>
+              <Select value={defaultGodown || "NONE"} onValueChange={(val) => setDefaultGodown(val === "NONE" ? "" : val)}>
+                <SelectTrigger className="h-10 border-slate-300 focus:ring-blue-500 rounded-md bg-white">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">None</SelectItem>
+                  {cgGodownOptions.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Modal Footer Actions */}

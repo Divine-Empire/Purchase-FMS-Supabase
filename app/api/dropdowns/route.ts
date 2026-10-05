@@ -8,6 +8,7 @@ import { OFFICE_HOURS } from "@/app/api/helper/plannedCalculator";
 const DROPDOWN_CATEGORIES = [
   "Created By",
   "Wharehouse",
+  "CG Godown",
   "UOM",
   "Payment Terms (Stage3)",
   "Approved By",
@@ -230,6 +231,7 @@ export async function GET(request: Request) {
 
     const createdByOptions = getOptions("Created By");
     const warehouseOptions = getOptions("Wharehouse");
+    const cgGodownOptions = getOptions("CG Godown");
     const uomOptions = getOptions("UOM");
     const paymentTermsOptions = getOptions("Payment Terms (Stage3)");
     const approvedByOptions = getOptions("Approved By");
@@ -293,6 +295,7 @@ export async function GET(request: Request) {
       data: {
         createdByOptions,
         warehouseOptions,
+        cgGodownOptions,
         uomOptions,
         paymentTermsOptions,
         approvedByOptions,

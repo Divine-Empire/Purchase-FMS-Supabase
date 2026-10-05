@@ -59,6 +59,7 @@ import { cn, minutesToDHM, dhmToMinutes, formatDurationShort } from "@/lib/utils
 const DROPDOWN_COLUMNS = [
   { key: "Created By", label: "Created By", fieldName: "createdByOptions" },
   { key: "Wharehouse", label: "Warehouse", fieldName: "warehouseOptions" },
+  { key: "CG Godown", label: "CG Godown", fieldName: "cgGodownOptions" },
   { key: "UOM", label: "UOM", fieldName: "uomOptions" },
   { key: "Payment Terms (Stage3)", label: "Payment Terms (Stage 3)", fieldName: "paymentTermsOptions" },
   { key: "Approved By", label: "Approved By", fieldName: "approvedByOptions" },

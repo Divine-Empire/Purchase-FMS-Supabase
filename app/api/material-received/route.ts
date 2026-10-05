@@ -110,6 +110,7 @@ export async function GET() {
             warrantyExpiry: matRecd ? (matRecd.warrantyExpiry || "") : "",
             productExpiry: matRecd ? (matRecd.productExpiryDate || "") : "",
             purchaser: indent.purchaser || null,
+            godownLocation: matRecd ? (matRecd.godownLocation || "") : "",
           }
         };
       })
@@ -333,6 +334,7 @@ export async function POST(request: NextRequest) {
             warranty: form.warrantyClaim || null,
             warrantyDuration: parseInt(form.duration) || null,
             warrantyExpiry: form.warrantyExpiry ? getLocalTimestamp(form.warrantyExpiry) : null,
+            godownLocation: form.godownLocation || null,
             timestamp: now,
             createdAt: now,
             updatedAt: now

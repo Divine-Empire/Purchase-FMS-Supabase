@@ -33,6 +33,7 @@ export interface UserRecord {
   role: string;
   pageAccess: string;
   records?: string;
+  defaultGodown?: string | null;
   createdAt?: string;
 }
 
@@ -100,6 +101,7 @@ export default function SettingsPage() {
       role: user.role,
       pageAccess: accessList,
       records: user.records || "ALL",
+      defaultGodown: user.defaultGodown || null,
     });
     setShowModal(true);
   };

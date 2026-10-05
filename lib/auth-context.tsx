@@ -10,6 +10,7 @@ interface AuthContextType {
   role: string | null;
   pageAccess: string[];
   records: string;
+  defaultGodown: string | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
   const [pageAccess, setPageAccess] = useState<string[]>([]);
   const [records, setRecords] = useState<string>("ALL");
+  const [defaultGodown, setDefaultGodown] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedAuth = localStorage.getItem("isAuthenticated");
         const storedAccess = localStorage.getItem("pageAccess");
         const storedRecords = localStorage.getItem("records");
+        const storedDefaultGodown = localStorage.getItem("defaultGodown");
 
         if (storedAuth === "true" && storedUser) {
           // 1. Instant Restore from LocalStorage
@@ -52,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
           setRecords(storedRecords || "ALL");
+          setDefaultGodown(storedDefaultGodown || null);
 
           // 2. Background Refresh from Supabase API
           try {
@@ -68,18 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   ? u.pageAccess
                   : [];
                 const newRecords = u.records || "ALL";
+                const newDefaultGodown = u.defaultGodown || null;
 
                 // Update State
                 setFullName(newFullName);
                 setRole(newRole);
                 setPageAccess(newAccessList);
                 setRecords(newRecords);
+                setDefaultGodown(newDefaultGodown);
 
                 // Update Storage
                 localStorage.setItem("fullName", newFullName);
                 localStorage.setItem("role", newRole);
                 localStorage.setItem("pageAccess", JSON.stringify(newAccessList));
                 localStorage.setItem("records", newRecords);
+                if (newDefaultGodown) localStorage.setItem("defaultGodown", newDefaultGodown);
+                else localStorage.removeItem("defaultGodown");
               }
             }
           } catch (fetchErr) {
@@ -110,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const u = data.user;
         const accessList = Array.isArray(u.pageAccess) ? u.pageAccess : ["ALL"];
         const recordsValue = u.records || "ALL";
+        const defaultGodownValue = u.defaultGodown || null;
 
         setIsAuthenticated(true);
         setUser(u.username);
@@ -117,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(u.role || "User");
         setPageAccess(accessList);
         setRecords(recordsValue);
+        setDefaultGodown(defaultGodownValue);
 
         localStorage.setItem("isAuthenticated", "true");
         localStorage.setItem("user", u.username);
@@ -124,6 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("role", u.role || "User");
         localStorage.setItem("pageAccess", JSON.stringify(accessList));
         localStorage.setItem("records", recordsValue);
+        if (defaultGodownValue) localStorage.setItem("defaultGodown", defaultGodownValue);
+        else localStorage.removeItem("defaultGodown");
 
         router.push("/");
         return true;
@@ -143,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(null);
     setPageAccess([]);
     setRecords("ALL");
+    setDefaultGodown(null);
 
     localStorage.removeItem("isAuthenticated");
     localStorage.removeItem("user");
@@ -150,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("role");
     localStorage.removeItem("pageAccess");
     localStorage.removeItem("records");
+    localStorage.removeItem("defaultGodown");
 
     router.push("/login");
   };
@@ -163,6 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         pageAccess,
         records,
+        defaultGodown,
         isLoading,
         login,
         logout,

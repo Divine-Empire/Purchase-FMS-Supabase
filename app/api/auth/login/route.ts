@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
         role: foundUser.role || "USER",
         pageAccess: accessList,
         records,
+        defaultGodown: foundUser.defaultGodown || null,
       },
     });
   } catch (err: any) {

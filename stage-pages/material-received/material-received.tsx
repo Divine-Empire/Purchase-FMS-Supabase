@@ -210,7 +210,7 @@ const HISTORY_COLUMNS = [
 ] as const;
 
 export default function MaterialReceived() {
-    const { role, records: recordsAccess } = useAuth();
+    const { role, records: recordsAccess, defaultGodown } = useAuth();
     const isAdmin = role?.toUpperCase() === "ADMIN";
     const [open, setOpen] = useState(false);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -237,6 +237,24 @@ export default function MaterialReceived() {
     const [searchTerm, setSearchTerm] = useState("");
     const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
     const [warehouseFilter, setWarehouseFilter] = useState("All");
+    const [cgGodownOptions, setCgGodownOptions] = useState<string[]>([]);
+
+    // Sub-godown tracking only applies to CG — other top-level locations
+    // (NE/WB/OD) stay single flat godowns, no sub-split.
+    const isCgWarehouse = useCallback((warehouse: string | undefined | null) => {
+        return (warehouse || "").toUpperCase().includes("C.G") || (warehouse || "").toUpperCase().includes("CG");
+    }, []);
+
+    useEffect(() => {
+        fetch("/api/dropdowns")
+            .then((res) => res.json())
+            .then((json) => {
+                if (json.success && json.data) {
+                    setCgGodownOptions(json.data.cgGodownOptions || []);
+                }
+            })
+            .catch((err) => console.error("Failed to load CG godown options:", err));
+    }, []);
 
     // Bulk State
     const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
@@ -272,6 +290,7 @@ export default function MaterialReceived() {
         pkgAmount: "",
         pkgGST: "",
         warrantyClaim: "",
+        godownLocation: "",
     });
 
     const getPkgTotals = useCallback((
@@ -378,6 +397,7 @@ export default function MaterialReceived() {
         damagedQty: "",
         damageReason: "",
         damageImage: null as File | null,
+        godownLocation: "",
     });
 
     const recordMap = useMemo(
@@ -409,6 +429,7 @@ export default function MaterialReceived() {
             return;
         }
         setIsBulkMode(true);
+        const firstRec = recordMap.get(selectedRecordIds[0]);
         setCommonData({
             invoiceNumber: "",
             invoiceDate: "",
@@ -421,6 +442,7 @@ export default function MaterialReceived() {
             pkgAmount: "",
             pkgGST: "",
             warrantyClaim: "",
+            godownLocation: isCgWarehouse(firstRec?.data.warehouse) ? (defaultGodown || "") : "",
         });
         const items = selectedRecordIds.map(id => {
             const rec = recordMap.get(id);
@@ -446,7 +468,7 @@ export default function MaterialReceived() {
         });
         setBulkItems(items);
         setOpen(true);
-    }, [selectedRecordIds, checkVendorPOMatch, recordMap]);
+    }, [selectedRecordIds, checkVendorPOMatch, recordMap, defaultGodown, isCgWarehouse]);
 
     const handleBulkSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -501,7 +523,8 @@ export default function MaterialReceived() {
                         duration: item.duration || null,
                         warrantyExpiry: item.warrantyExpiry || null,
                         productExpiry: item.productExpiry || null,
-                        productClaim: item.productClaim || null
+                        productClaim: item.productClaim || null,
+                        godownLocation: commonData.godownLocation || null
                     }
                 });
             }
@@ -569,9 +592,10 @@ export default function MaterialReceived() {
             damagedQty: "",
             damageReason: "",
             damageImage: null,
+            godownLocation: isCgWarehouse(rec.data.warehouse) ? (defaultGodown || "") : "",
         });
         setOpen(true);
-    }, [recordMap]);
+    }, [recordMap, defaultGodown, isCgWarehouse]);
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -621,7 +645,8 @@ export default function MaterialReceived() {
                     duration: form.duration || null,
                     warrantyExpiry: form.warrantyExpiry || null,
                     productExpiry: form.productExpiry || null,
-                    productClaim: form.productClaim || null
+                    productClaim: form.productClaim || null,
+                    godownLocation: form.godownLocation || null
                 }
             }];
 
@@ -1418,6 +1443,26 @@ export default function MaterialReceived() {
                                         />
                                     </div>
 
+                                    {cgGodownOptions.length > 0 && (
+                                        <div className="space-y-1.5">
+                                            <Label>Godown (CG only)</Label>
+                                            <Select
+                                                value={commonData.godownLocation || "NONE"}
+                                                onValueChange={(v) => setCommonData({ ...commonData, godownLocation: v === "NONE" ? "" : v })}
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder="Not applicable" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="NONE">Not applicable</SelectItem>
+                                                    {cgGodownOptions.map((g) => (
+                                                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-1.5 col-span-2">
                                         <Label>Bill Attachment <span className="text-red-500">*</span></Label>
                                         <input
@@ -1612,6 +1657,26 @@ export default function MaterialReceived() {
                                         placeholder="Invoice #"
                                     />
                                 </div>
+
+                                {cgGodownOptions.length > 0 && (
+                                    <div className="space-y-1.5">
+                                        <Label>Godown (CG only)</Label>
+                                        <Select
+                                            value={form.godownLocation || "NONE"}
+                                            onValueChange={(v) => setForm({ ...form, godownLocation: v === "NONE" ? "" : v })}
+                                        >
+                                            <SelectTrigger className="w-full">
+                                                <SelectValue placeholder="Not applicable" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="NONE">Not applicable</SelectItem>
+                                                {cgGodownOptions.map((g) => (
+                                                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-3 gap-3">

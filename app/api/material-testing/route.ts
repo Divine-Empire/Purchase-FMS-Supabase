@@ -274,11 +274,12 @@ export async function POST(request: NextRequest) {
     // 7. Sync the qty-resolution ledger (only exists for lifts where QC was required).
     // Serial Generation / Receipt in Tally read this ledger to decide when the lift is
     // fully resolved and ready to be released.
-    const { data: ledgerRow } = await supabase
+    const { data: ledgerRow, error: ledgerFetchError } = await supabase
       .from("pfms_lift_qc_resolution")
       .select("*")
       .eq("liftNo", liftNo)
       .maybeSingle();
+    if (ledgerFetchError) throw ledgerFetchError;
 
     if (ledgerRow) {
       const ledgerUpdate: any = {

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { resolveGodown, pushToIms } from "@/lib/ims-sync";
+import { isGodownLabel } from "@/lib/godowns";
 
 export async function GET() {
   try {
@@ -292,10 +294,16 @@ export async function POST(request: NextRequest) {
     const now = getLocalTimestamp();
 
     if (action === "recordMaterialReceived") {
+      // The receiving user's own godown (re-read from their profile, not
+      // trusted from the browser) books this IN; a user with none set can
+      // still pick one on the form.
+      const profileGodown = await resolveGodown(body.username, null);
+      const movements: { liftNo: string; godown: string | null }[] = [];
 
       for (const item of records) {
         const liftNo = item.liftNo || item.data?.liftNo;
         const form = item.form || item;
+        const godown = profileGodown ?? (isGodownLabel(form.godownLocation) ? form.godownLocation : null);
 
         // Calculate plannedMaterialTesting and plannedTallyEntry
         const plannedMaterialTesting = await calculatePlannedTime("material-testing");
@@ -334,7 +342,7 @@ export async function POST(request: NextRequest) {
             warranty: form.warrantyClaim || null,
             warrantyDuration: parseInt(form.duration) || null,
             warrantyExpiry: form.warrantyExpiry ? getLocalTimestamp(form.warrantyExpiry) : null,
-            godownLocation: form.godownLocation || null,
+            godownLocation: godown,
             timestamp: now,
             createdAt: now,
             updatedAt: now
@@ -521,7 +529,13 @@ export async function POST(request: NextRequest) {
             if (poError) throw poError;
           }
         }
+
+        movements.push({ liftNo, godown });
       }
+
+      // Book the IN in IMS right away (best-effort — IMS's own Sync picks up
+      // anything that doesn't get through; it's idempotent per lift).
+      await Promise.all(movements.map((m) => pushToIms("pfms-receipt", { liftNo: m.liftNo, locationCode: m.godown })));
 
       return NextResponse.json({ success: true });
     }

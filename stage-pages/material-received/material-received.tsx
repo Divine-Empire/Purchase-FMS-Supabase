@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
 import { parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { GodownField } from "@/components/godown-field";
 import BackgroundSyncBanner from "@/components/background-sync-banner";
 import MaterialReceivedPending from "./material-received-pending";
 import MaterialReceivedHistory from "./material-received-history";
@@ -210,7 +211,7 @@ const HISTORY_COLUMNS = [
 ] as const;
 
 export default function MaterialReceived() {
-    const { role, records: recordsAccess, defaultGodown } = useAuth();
+    const { user: username, role, records: recordsAccess, defaultGodown } = useAuth();
     const isAdmin = role?.toUpperCase() === "ADMIN";
     const [open, setOpen] = useState(false);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -237,23 +238,17 @@ export default function MaterialReceived() {
     const [searchTerm, setSearchTerm] = useState("");
     const [indentFilter, setIndentFilter] = useState<"no_filter" | "increasing" | "decreasing">("no_filter");
     const [warehouseFilter, setWarehouseFilter] = useState("All");
-    const [cgGodownOptions, setCgGodownOptions] = useState<string[]>([]);
-
-    // Sub-godown tracking only applies to CG — other top-level locations
-    // (NE/WB/OD) stay single flat godowns, no sub-split.
-    const isCgWarehouse = useCallback((warehouse: string | undefined | null) => {
-        return (warehouse || "").toUpperCase().includes("C.G") || (warehouse || "").toUpperCase().includes("CG");
-    }, []);
+    const [godownOptions, setGodownOptions] = useState<string[]>([]);
 
     useEffect(() => {
         fetch("/api/dropdowns")
             .then((res) => res.json())
             .then((json) => {
                 if (json.success && json.data) {
-                    setCgGodownOptions(json.data.cgGodownOptions || []);
+                    setGodownOptions(json.data.godownOptions || []);
                 }
             })
-            .catch((err) => console.error("Failed to load CG godown options:", err));
+            .catch((err) => console.error("Failed to load godown options:", err));
     }, []);
 
     // Bulk State
@@ -442,7 +437,7 @@ export default function MaterialReceived() {
             pkgAmount: "",
             pkgGST: "",
             warrantyClaim: "",
-            godownLocation: isCgWarehouse(firstRec?.data.warehouse) ? (defaultGodown || "") : "",
+            godownLocation: defaultGodown || "",
         });
         const items = selectedRecordIds.map(id => {
             const rec = recordMap.get(id);
@@ -468,7 +463,7 @@ export default function MaterialReceived() {
         });
         setBulkItems(items);
         setOpen(true);
-    }, [selectedRecordIds, checkVendorPOMatch, recordMap, defaultGodown, isCgWarehouse]);
+    }, [selectedRecordIds, checkVendorPOMatch, recordMap, defaultGodown]);
 
     const handleBulkSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -536,6 +531,7 @@ export default function MaterialReceived() {
                 },
                 body: JSON.stringify({
                     action: "recordMaterialReceived",
+                    username,
                     records: recordsToProcess
                 })
             });
@@ -556,7 +552,7 @@ export default function MaterialReceived() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [commonData, bulkItems, getPkgTotals, fetchData]);
+    }, [commonData, bulkItems, getPkgTotals, fetchData, username]);
 
     const openModal = useCallback((recordId: string) => {
         const rec = recordMap.get(recordId);
@@ -592,10 +588,10 @@ export default function MaterialReceived() {
             damagedQty: "",
             damageReason: "",
             damageImage: null,
-            godownLocation: isCgWarehouse(rec.data.warehouse) ? (defaultGodown || "") : "",
+            godownLocation: defaultGodown || "",
         });
         setOpen(true);
-    }, [recordMap, defaultGodown, isCgWarehouse]);
+    }, [recordMap, defaultGodown]);
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -657,6 +653,7 @@ export default function MaterialReceived() {
                 },
                 body: JSON.stringify({
                     action: "recordMaterialReceived",
+                    username,
                     records: recordsToProcess
                 })
             });
@@ -675,7 +672,7 @@ export default function MaterialReceived() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [selectedRecordId, recordMap, form, fetchData]);
+    }, [selectedRecordId, recordMap, form, fetchData, username]);
 
     const removeFile = useCallback((key: "billAttachment" | "receivedItemImage") => {
         setForm((f) => ({ ...f, [key]: null }));
@@ -1443,25 +1440,13 @@ export default function MaterialReceived() {
                                         />
                                     </div>
 
-                                    {cgGodownOptions.length > 0 && (
-                                        <div className="space-y-1.5">
-                                            <Label>Godown (CG only)</Label>
-                                            <Select
-                                                value={commonData.godownLocation || "NONE"}
-                                                onValueChange={(v) => setCommonData({ ...commonData, godownLocation: v === "NONE" ? "" : v })}
-                                            >
-                                                <SelectTrigger className="w-full">
-                                                    <SelectValue placeholder="Not applicable" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="NONE">Not applicable</SelectItem>
-                                                    {cgGodownOptions.map((g) => (
-                                                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    )}
+                                    <GodownField
+                                        label="Receiving into (godown)"
+                                        value={commonData.godownLocation}
+                                        onChange={(v) => setCommonData({ ...commonData, godownLocation: v })}
+                                        options={godownOptions}
+                                        lockedTo={defaultGodown}
+                                    />
 
                                     <div className="space-y-1.5 col-span-2">
                                         <Label>Bill Attachment <span className="text-red-500">*</span></Label>
@@ -1658,25 +1643,13 @@ export default function MaterialReceived() {
                                     />
                                 </div>
 
-                                {cgGodownOptions.length > 0 && (
-                                    <div className="space-y-1.5">
-                                        <Label>Godown (CG only)</Label>
-                                        <Select
-                                            value={form.godownLocation || "NONE"}
-                                            onValueChange={(v) => setForm({ ...form, godownLocation: v === "NONE" ? "" : v })}
-                                        >
-                                            <SelectTrigger className="w-full">
-                                                <SelectValue placeholder="Not applicable" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="NONE">Not applicable</SelectItem>
-                                                {cgGodownOptions.map((g) => (
-                                                    <SelectItem key={g} value={g}>{g}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                )}
+                                <GodownField
+                                    label="Receiving into (godown)"
+                                    value={form.godownLocation}
+                                    onChange={(v) => setForm({ ...form, godownLocation: v })}
+                                    options={godownOptions}
+                                    lockedTo={defaultGodown}
+                                />
                             </div>
 
                             <div className="grid grid-cols-3 gap-3">

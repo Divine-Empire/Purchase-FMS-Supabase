@@ -55,13 +55,17 @@ export async function GET() {
 
     if (approvalsError) throw approvalsError;
 
-    const approvalMap = new Map((approvals || []).map((a: any) => [a.liftNo, a]));
+    // An approval belongs to one specific return (returnId) — matching by liftNo
+    // alone made a second return batch on the same lift look already approved.
+    // Approvals saved before returnId existed (returnId null) still match by liftNo.
+    const approvedReturnIds = new Set((approvals || []).map((a: any) => a.returnId).filter(Boolean));
+    const legacyApprovedLifts = new Set((approvals || []).filter((a: any) => !a.returnId).map((a: any) => a.liftNo));
     const pending = [];
     const history = [];
 
     // Map pending list: returns that do not have an approval record
     for (const ret of (returns || [])) {
-      if (approvalMap.has(ret.liftNo)) continue;
+      if (approvedReturnIds.has(ret.id) || legacyApprovedLifts.has(ret.liftNo)) continue;
 
       const lift = ret.lift || {};
       const indent = lift.indent || {};
@@ -69,7 +73,7 @@ export async function GET() {
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
 
       pending.push({
-        id: lift.liftNo,
+        id: ret.id,
         rowIndex: lift.liftNo,
         status: "pending",
         data: {
@@ -87,13 +91,14 @@ export async function GET() {
     }
 
     // Map history list: approvals from the return-approval table
-    const returnMap = new Map((returns || []).map((r: any) => [r.liftNo, r]));
+    const returnById = new Map((returns || []).map((r: any) => [r.id, r]));
+    const returnByLift = new Map((returns || []).map((r: any) => [r.liftNo, r]));
     for (const app of (approvals || [])) {
       const lift = app.lift || {};
       const indent = lift.indent || {};
       const negotiation = Array.isArray(indent.negotiation) ? (indent.negotiation[0] || {}) : (indent.negotiation || {});
       const matRecd = Array.isArray(lift.materialReceived) ? (lift.materialReceived[0] || {}) : (lift.materialReceived || {});
-      const ret = returnMap.get(lift.liftNo) as any;
+      const ret = (app.returnId ? returnById.get(app.returnId) : returnByLift.get(lift.liftNo)) as any;
 
       let delayDays = "-";
       if (app.approvalDate && ret?.plannedReturnApproval) {
@@ -103,7 +108,7 @@ export async function GET() {
       }
 
       history.push({
-        id: lift.liftNo,
+        id: app.id,
         rowIndex: lift.liftNo,
         status: "completed",
         data: {
@@ -148,11 +153,14 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { liftNo, liftNos, dnNumber, remarks, returnImage, approvalDate } = body;
+    const { returnId, returnIds, liftNo, liftNos, dnNumber, remarks, returnImage, approvalDate } = body;
 
-    const targetLiftNos = Array.isArray(liftNos) ? liftNos : (liftNo ? [liftNo] : []);
-    if (targetLiftNos.length === 0) {
-      return NextResponse.json({ success: false, error: "Missing liftNo or liftNos" }, { status: 400 });
+    // The approval targets specific purchase-return rows. (liftNo/liftNos is
+    // the old shape; it resolves to every not-yet-approved return on that lift.)
+    const requestedIds: string[] = Array.isArray(returnIds) ? returnIds : (returnId ? [returnId] : []);
+    const requestedLifts: string[] = Array.isArray(liftNos) ? liftNos : (liftNo ? [liftNo] : []);
+    if (requestedIds.length === 0 && requestedLifts.length === 0) {
+      return NextResponse.json({ success: false, error: "Missing returnId or returnIds" }, { status: 400 });
     }
 
     if (!dnNumber) {
@@ -162,11 +170,30 @@ export async function POST(request: NextRequest) {
     const now = getLocalTimestamp();
     const appDate = approvalDate ? getLocalTimestamp(approvalDate) : now;
 
+    const { data: targetReturns, error: targetError } = requestedIds.length
+      ? await supabase.from("pfms_purchase-return").select("id, liftNo").in("id", requestedIds)
+      : await supabase.from("pfms_purchase-return").select("id, liftNo").in("liftNo", requestedLifts);
+    if (targetError) throw targetError;
+    if (!targetReturns || targetReturns.length === 0 || (requestedIds.length > 0 && targetReturns.length !== requestedIds.length)) {
+      return NextResponse.json({ success: false, error: "Return not found" }, { status: 404 });
+    }
+
+    const { data: alreadyApproved } = await supabase
+      .from("pfms_return-approval")
+      .select("returnId")
+      .in("returnId", targetReturns.map((r: any) => r.id));
+    const approvedIds = new Set((alreadyApproved || []).map((a: any) => a.returnId));
+    const toApprove = targetReturns.filter((r: any) => !approvedIds.has(r.id));
+    if (toApprove.length === 0) {
+      return NextResponse.json({ success: false, error: "Already approved" }, { status: 409 });
+    }
+
     // Build insert objects
-    const insertData = targetLiftNos.map((lNo: string) => ({
+    const insertData = toApprove.map((r: any) => ({
       id: randomUUID(),
       timestamp: now,
-      liftNo: lNo,
+      liftNo: r.liftNo,
+      returnId: r.id,
       dnNumber: dnNumber,
       remarks: remarks || null,
       returnImage: returnImage || "",

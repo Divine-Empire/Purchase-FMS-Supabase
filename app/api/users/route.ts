@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
+import { isGodownLabel } from "@/lib/godowns";
 
 // Helper to determine whether table is "User" or "users"
 async function getUserTable() {
@@ -40,6 +41,10 @@ export async function POST(req: NextRequest) {
         { success: false, error: "Full Name, Username, and Password are required." },
         { status: 400 }
       );
+    }
+
+    if (defaultGodown && !isGodownLabel(defaultGodown)) {
+      return NextResponse.json({ success: false, error: "Invalid godown." }, { status: 400 });
     }
 
     const tableName = await getUserTable();
@@ -101,6 +106,9 @@ export async function PUT(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ success: false, error: "User ID is required for update." }, { status: 400 });
+    }
+    if (defaultGodown && !isGodownLabel(defaultGodown)) {
+      return NextResponse.json({ success: false, error: "Invalid godown." }, { status: 400 });
     }
 
     const tableName = await getUserTable();

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { resolveGodown, pushToIms } from "@/lib/ims-sync";
 
 // Fields shared by both pending-return sources (Material Testing direct reject / Repair Process failure)
 const LIFT_CONTEXT_SELECT = `
@@ -197,12 +198,44 @@ export async function POST(request: NextRequest) {
       creditNoteImage,
       actualDate,
       source,
-      sourceId
+      sourceId,
+      username,
+      godownLocation,
+      serialNumbers
     } = body;
 
     if (!liftNo) {
       return NextResponse.json({ success: false, error: "Missing liftNo" }, { status: 400 });
     }
+
+    // Picked serials: must be this lift's own, no duplicates, and exactly as
+    // many as are being returned — otherwise IMS would take the wrong units
+    // (or the wrong number of them) out of stock.
+    let pickedSerials: string[] = [];
+    if (Array.isArray(serialNumbers) && serialNumbers.length > 0) {
+      pickedSerials = Array.from(new Set(serialNumbers.map((s: any) => String(s).trim()).filter(Boolean)));
+      if (pickedSerials.length !== serialNumbers.length) {
+        return NextResponse.json({ success: false, error: "Duplicate serial numbers selected" }, { status: 400 });
+      }
+      if (pickedSerials.length !== (parseFloat(returnedQty) || 0)) {
+        return NextResponse.json(
+          { success: false, error: `Select exactly ${parseFloat(returnedQty) || 0} serial number(s) — ${pickedSerials.length} selected` },
+          { status: 400 }
+        );
+      }
+      const { data: ownSerials, error: ownError } = await supabase
+        .from("pfms_serial-number")
+        .select("serialNo")
+        .eq("liftNo", liftNo)
+        .in("serialNo", pickedSerials);
+      if (ownError) throw ownError;
+      if ((ownSerials || []).length !== pickedSerials.length) {
+        return NextResponse.json({ success: false, error: "A selected serial does not belong to this lift" }, { status: 400 });
+      }
+    }
+
+    // The returning user's own godown wins (re-read from their profile).
+    const godown = await resolveGodown(username, godownLocation);
 
     const now = getLocalTimestamp();
     const actDate = actualDate ? getLocalTimestamp(actualDate) : now;
@@ -213,10 +246,11 @@ export async function POST(request: NextRequest) {
     // Insert purchase-return record. `source`/`sourceId` identify which batch this is
     // (a lift can have an independent "Direct QC Reject" batch and, later, a separate
     // "Repair Failed" batch — each needs its own return record).
+    const returnId = randomUUID();
     const { error: insertError } = await supabase
       .from("pfms_purchase-return")
       .insert({
-        id: randomUUID(),
+        id: returnId,
         timestamp: actDate,
         liftNo: liftNo,
         returnedQty: parseFloat(returnedQty) || 0,
@@ -229,11 +263,17 @@ export async function POST(request: NextRequest) {
         plannedReturnApproval: plannedReturnApproval,
         source: source || "Direct QC Reject",
         sourceId: sourceId || null,
+        godownLocation: godown,
+        serialNumbers: pickedSerials.length > 0 ? pickedSerials : null,
         createdAt: now,
         updatedAt: now
       });
 
     if (insertError) throw insertError;
+
+    // Take the returned units out of IMS stock right away (best-effort; IMS's
+    // own Sync picks it up otherwise, and is idempotent per return).
+    await pushToIms("pfms-return", { returnId });
 
     return NextResponse.json({ success: true });
 

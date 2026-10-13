@@ -56,7 +56,7 @@ export default function CreateUserForm({
   const [recordsAccess, setRecordsAccess] = useState("ALL");
   const [purchaserOptions, setPurchaserOptions] = useState<string[]>([]);
   const [defaultGodown, setDefaultGodown] = useState<string>("");
-  const [cgGodownOptions, setCgGodownOptions] = useState<string[]>([]);
+  const [godownOptions, setGodownOptions] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export default function CreateUserForm({
       .then((json) => {
         if (json.success && json.data) {
           setPurchaserOptions(json.data.purchaserOptions || []);
-          setCgGodownOptions(json.data.cgGodownOptions || []);
+          setGodownOptions(json.data.godownOptions || []);
         }
       })
       .catch((err) => console.error("Failed to load purchaser options:", err));
@@ -366,10 +366,10 @@ export default function CreateUserForm({
 
             <div className="space-y-1.5">
               <div className="text-xs font-bold tracking-wider text-slate-700 uppercase">
-                Default Godown (Optional)
+                Godown (Optional)
               </div>
               <p className="text-[11px] text-slate-500">
-                If in-charge of a specific CG godown, it auto-fills at Material Received.
+                The godown this user manages — Material Received and Purchase Return stock moves book into it automatically.
               </p>
               <Select value={defaultGodown || "NONE"} onValueChange={(val) => setDefaultGodown(val === "NONE" ? "" : val)}>
                 <SelectTrigger className="h-10 border-slate-300 focus:ring-blue-500 rounded-md bg-white">
@@ -377,7 +377,7 @@ export default function CreateUserForm({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="NONE">None</SelectItem>
-                  {cgGodownOptions.map((g) => (
+                  {godownOptions.map((g) => (
                     <SelectItem key={g} value={g}>
                       {g}
                     </SelectItem>

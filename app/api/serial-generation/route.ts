@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { pushToIms } from "@/lib/ims-sync";
 
 export async function GET(request: NextRequest) {
   try {
@@ -473,6 +474,13 @@ export async function POST(request: NextRequest) {
       .insert(serialsToInsert);
 
     if (insertError) throw insertError;
+
+    // Attach these serials to the godown each lift was received into in IMS
+    // (best-effort; IMS's Sync picks it up otherwise). No godown is taken
+    // here on purpose: the qty was booked IN at the receiving godown at
+    // Material Received, and serials must sit in that same place.
+    const liftNos = Array.from(new Set(serialsToInsert.map((s) => s.liftNo)));
+    if (liftNos.length > 0) await pushToIms("pfms-serials", { liftNos });
 
     return NextResponse.json({ success: true });
 

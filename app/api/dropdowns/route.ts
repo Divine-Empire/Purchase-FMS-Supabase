@@ -8,7 +8,6 @@ import { OFFICE_HOURS } from "@/app/api/helper/plannedCalculator";
 const DROPDOWN_CATEGORIES = [
   "Created By",
   "Wharehouse",
-  "CG Godown",
   "UOM",
   "Payment Terms (Stage3)",
   "Approved By",
@@ -231,7 +230,9 @@ export async function GET(request: Request) {
 
     const createdByOptions = getOptions("Created By");
     const warehouseOptions = getOptions("Wharehouse");
-    const cgGodownOptions = getOptions("CG Godown");
+    // Fixed list (lib/godowns.ts) — shown to forms but deliberately not in DROPDOWN_CATEGORIES,
+    // so it can't be edited from Master: IMS maps these exact labels to its locations.
+    const godownOptions = getOptions("Godown");
     const uomOptions = getOptions("UOM");
     const paymentTermsOptions = getOptions("Payment Terms (Stage3)");
     const approvedByOptions = getOptions("Approved By");
@@ -295,7 +296,7 @@ export async function GET(request: Request) {
       data: {
         createdByOptions,
         warehouseOptions,
-        cgGodownOptions,
+        godownOptions,
         uomOptions,
         paymentTermsOptions,
         approvedByOptions,

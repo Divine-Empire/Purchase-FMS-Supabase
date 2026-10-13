@@ -26,6 +26,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { GodownField } from "@/components/godown-field";
 import PurchaseReturnPending from "./purchase-return-pending";
 import PurchaseReturnHistory from "./purchase-return-history";
 
@@ -74,7 +75,7 @@ const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 });
 
 export default function PurchaseReturn() {
-  const { role, records: recordsAccess } = useAuth();
+  const { user: username, role, records: recordsAccess, defaultGodown } = useAuth();
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [partialReturnRecords, setPartialReturnRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -171,6 +172,21 @@ export default function PurchaseReturn() {
 
   const [originalQty, setOriginalQty] = useState(0);
 
+  // Godown + serial picker. Stock leaves the returning user's own godown (profile);
+  // for a serialized lift the exact units being returned must be picked.
+  const [godownOptions, setGodownOptions] = useState<string[]>([]);
+  const [godownLocation, setGodownLocation] = useState("");
+  const [availableSerials, setAvailableSerials] = useState<{ serialNo: string; locationCode: string | null }[]>([]);
+  const [selectedSerials, setSelectedSerials] = useState<string[]>([]);
+  const [serialsLoading, setSerialsLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/dropdowns")
+      .then((res) => res.json())
+      .then((json) => { if (json.success && json.data) setGodownOptions(json.data.godownOptions || []); })
+      .catch((err) => console.error("Failed to load godown options:", err));
+  }, []);
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -249,8 +265,26 @@ export default function PurchaseReturn() {
       creditNoteImage: null,
       actual6Date: new Date(),
     });
+    setGodownLocation(defaultGodown || "");
+    setAvailableSerials([]);
+    setSelectedSerials([]);
     setOpen(true);
-  }, [sheetRecords]);
+
+    // Offer this lift's still-returnable serials; the ones Material Testing
+    // already listed as rejected are pre-selected (up to the return qty).
+    setSerialsLoading(true);
+    fetch(`/api/purchase-return/serials?liftNo=${encodeURIComponent(rec.rowIndex)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.success) return;
+        const list: { serialNo: string; locationCode: string | null }[] = json.serials || [];
+        setAvailableSerials(list);
+        const listed = String(rec.data.serialNo || "").split(",").map((s) => s.trim()).filter(Boolean);
+        setSelectedSerials(list.map((s) => s.serialNo).filter((no) => listed.includes(no)).slice(0, rejectQty));
+      })
+      .catch((err) => console.error("Failed to load serials:", err))
+      .finally(() => setSerialsLoading(false));
+  }, [sheetRecords, defaultGodown]);
 
   useEffect(() => {
     const qty = parseFloat(formData.returnedQty) || 0;
@@ -306,6 +340,9 @@ export default function PurchaseReturn() {
         actualDate: formData.actual6Date || new Date(),
         source: rec.data.source,
         sourceId: rec.data.sourceId,
+        username,
+        godownLocation,
+        serialNumbers: selectedSerials,
       };
 
       const res = await fetch("/api/purchase-return", {
@@ -329,15 +366,17 @@ export default function PurchaseReturn() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedRecordId, sheetRecords, formData, uploadFile, fetchData]);
+  }, [selectedRecordId, sheetRecords, formData, uploadFile, fetchData, username, godownLocation, selectedSerials]);
 
   const isFormValid = useMemo(() =>
     !!formData.returnedQty &&
     !!formData.returnRate &&
     !!formData.returnReason &&
     !!formData.returnStatus &&
-    parseFloat(formData.returnedQty) <= originalQty
-    , [formData, originalQty]);
+    parseFloat(formData.returnedQty) <= originalQty &&
+    // A serialized lift: exactly the units being returned must be picked.
+    (availableSerials.length === 0 || selectedSerials.length === parseFloat(formData.returnedQty))
+    , [formData, originalQty, availableSerials, selectedSerials]);
 
   const ColumnSelector = () => (
     <Popover>
@@ -596,6 +635,55 @@ export default function PurchaseReturn() {
                 </Select>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <GodownField
+                label="Returning from (godown)"
+                value={godownLocation}
+                onChange={setGodownLocation}
+                options={godownOptions}
+                lockedTo={defaultGodown}
+              />
+            </div>
+
+            {(serialsLoading || availableSerials.length > 0) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>
+                    Serial Numbers being returned *{" "}
+                    <span className="text-xs font-normal text-slate-500">
+                      ({selectedSerials.length} of {parseFloat(formData.returnedQty) || 0} selected)
+                    </span>
+                  </Label>
+                  {serialsLoading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-md border p-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+                  {availableSerials.map((s) => {
+                    const checked = selectedSerials.includes(s.serialNo);
+                    const limitReached = !checked && selectedSerials.length >= (parseFloat(formData.returnedQty) || 0);
+                    return (
+                      <label
+                        key={s.serialNo}
+                        className={cn("flex items-center gap-2 text-xs", limitReached ? "text-slate-400" : "cursor-pointer")}
+                        title={s.locationCode ? `Currently in ${s.locationCode}` : undefined}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          disabled={limitReached}
+                          onCheckedChange={(c) =>
+                            setSelectedSerials((prev) => (c ? [...prev, s.serialNo] : prev.filter((x) => x !== s.serialNo)))
+                          }
+                        />
+                        <span className="font-mono truncate">{s.serialNo}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {selectedSerials.length !== (parseFloat(formData.returnedQty) || 0) && (
+                  <p className="text-xs text-amber-600">Select exactly {parseFloat(formData.returnedQty) || 0} serial number(s) to return.</p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

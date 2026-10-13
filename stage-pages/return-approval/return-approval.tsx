@@ -232,7 +232,7 @@ export default function ReturnApproval() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          liftNo: rec.id,
+          returnId: rec.id, // the purchase-return row being approved
           dnNumber: formData.dnNumber,
           remarks: formData.remarks,
           returnImage: imageUrl,
@@ -279,7 +279,7 @@ export default function ReturnApproval() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          liftNos: Array.from(selectedRows),
+          returnIds: Array.from(selectedRows), // purchase-return row ids
           dnNumber: bulkFormData.dnNumber,
           remarks: bulkFormData.remarks,
           returnImage: imageUrl,

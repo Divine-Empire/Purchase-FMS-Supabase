@@ -184,7 +184,12 @@ async function fetchRawDashboardData(): Promise<RawDashboardData> {
 
 function computeDashboardData(
   raw: RawDashboardData,
-  visibility: { role: string | null; records: string | null }
+  visibility: { role: string | null; records: string | null },
+  // When true, skips building/returning the display arrays (overviewItems,
+  // purchaseItems, inTransitItems, receivedItems, warrantyItems, topReceivedOrders)
+  // that the Sidebar's counts-only poll never reads — see GET's `fields=counts`
+  // branch. Count/overdue-count math itself is unchanged either way.
+  countsOnly: boolean = false
 ) {
     const { indents, cancelledNos, cancelledLiftNos, cancelledIndentNos, ledgerMap, warrantyClaimCount } = raw;
 
@@ -255,17 +260,19 @@ function computeDashboardData(
         computedStatus = "Approved Indent";
       }
 
-      overviewItems.push({
-        indent: indentNo,
-        createdBy: row.createdBy || "-",
-        category: row.category || "-",
-        item: row.itemName || "-",
-        qty: row.quantity || 0,
-        warehouse: row.warehouseLocation || "-",
-        expDelivery: row.plannedIndentApproval || null,
-        leadTime: row.leadTime || null,
-        status: computedStatus,
-      });
+      if (!countsOnly) {
+        overviewItems.push({
+          indent: indentNo,
+          createdBy: row.createdBy || "-",
+          category: row.category || "-",
+          item: row.itemName || "-",
+          qty: row.quantity || 0,
+          warehouse: row.warehouseLocation || "-",
+          expDelivery: row.plannedIndentApproval || null,
+          leadTime: row.leadTime || null,
+          status: computedStatus,
+        });
+      }
 
       // Purchaser-restricted users don't get this indent's lifts counted into their
       // stage badges (mirrors canViewPurchaserRecord filtering already applied
@@ -312,17 +319,19 @@ function computeDashboardData(
           if (isPast(poEntry.plannedFollowUpVendor)) stageOverdueCounts["Follow-Up Vendor"]++;
 
           // This indent is also pending for lifting (Purchase Data tab)
-          purchaseItems.push({
-            erp: poEntry.poNumber || "-",
-            indentNo: indentNo,
-            material: row.itemName || "-",
-            party: negotiation?.selectedVendorName || "-",
-            qty: approvedQty - totalLifted,
-            warehouse: row.warehouseLocation || "-",
-            leadTime: row.leadTime || null,
-            expDelivery: poEntry.estimatedFollowUpVendor || poEntry.plannedFollowUpVendor || null,
-            poCopy: poEntry.poCopy || "",
-          });
+          if (!countsOnly) {
+            purchaseItems.push({
+              erp: poEntry.poNumber || "-",
+              indentNo: indentNo,
+              material: row.itemName || "-",
+              party: negotiation?.selectedVendorName || "-",
+              qty: approvedQty - totalLifted,
+              warehouse: row.warehouseLocation || "-",
+              leadTime: row.leadTime || null,
+              expDelivery: poEntry.estimatedFollowUpVendor || poEntry.plannedFollowUpVendor || null,
+              poCopy: poEntry.poCopy || "",
+            });
+          }
         }
       }
 
@@ -351,14 +360,16 @@ function computeDashboardData(
           stageCounts["Transporter Follow-Up"]++;
           if (isPast(lift.plannedTransporterFlwUp)) stageOverdueCounts["Transporter Follow-Up"]++;
 
-          inTransitItems.push({
-            erp: indentNo,
-            material: row.itemName || "-",
-            party: negotiation?.selectedVendorName || "-",
-            truck: lift.vehicleNo || "-",
-            date: lift.dispatchDate || null,
-            qty: lift.liftingQty || 0,
-          });
+          if (!countsOnly) {
+            inTransitItems.push({
+              erp: indentNo,
+              material: row.itemName || "-",
+              party: negotiation?.selectedVendorName || "-",
+              truck: lift.vehicleNo || "-",
+              date: lift.dispatchDate || null,
+              qty: lift.liftingQty || 0,
+            });
+          }
         }
 
         // STAGE 8: Material Received
@@ -482,7 +493,7 @@ function computeDashboardData(
         }
 
         // Received lift details list
-        if (mr) {
+        if (mr && !countsOnly) {
           receivedItems.push({
             erp: indentNo,
             invoiceNumber: mr.invoiceNumber || "-",
@@ -514,21 +525,23 @@ function computeDashboardData(
         }
 
         // Serials warranty tracking list
-        for (const s of serials) {
-          warrantyItems.push({
-            indentNo: indentNo,
-            liftNo: lift.liftNo,
-            serialCode: s.id,
-            serialNo: s.serialNo,
-            vendorName: negotiation?.selectedVendorName || "-",
-            itemName: row.itemName || "-",
-            invoiceDate: mr?.invoiceDate || null,
-            warrantyEnd: s.warrantyExpiry || null,
-            party: negotiation?.selectedVendorName || "-",
-            material: row.itemName || "-",
-            date: mr?.invoiceDate || null,
-            erp: indentNo,
-          });
+        if (!countsOnly) {
+          for (const s of serials) {
+            warrantyItems.push({
+              indentNo: indentNo,
+              liftNo: lift.liftNo,
+              serialCode: s.id,
+              serialNo: s.serialNo,
+              vendorName: negotiation?.selectedVendorName || "-",
+              itemName: row.itemName || "-",
+              invoiceDate: mr?.invoiceDate || null,
+              warrantyEnd: s.warrantyExpiry || null,
+              party: negotiation?.selectedVendorName || "-",
+              material: row.itemName || "-",
+              date: mr?.invoiceDate || null,
+              erp: indentNo,
+            });
+          }
         }
       }
 
@@ -572,17 +585,19 @@ function computeDashboardData(
           stageCounts["Follow-Up Vendor"]++;
           if (isPast(poEntry.plannedFollowUpVendor)) stageOverdueCounts["Follow-Up Vendor"]++;
 
-          purchaseItems.push({
-            erp: poEntry.poNumber || "-",
-            indentNo: indentNo,
-            material: row.itemName || "-",
-            party: negotiation?.selectedVendorName || "-",
-            qty: approvedQty - totalLifted,
-            warehouse: row.warehouseLocation || "-",
-            leadTime: row.leadTime || null,
-            expDelivery: poEntry.estimatedFollowUpVendor || poEntry.plannedFollowUpVendor || null,
-            poCopy: poEntry.poCopy || "",
-          });
+          if (!countsOnly) {
+            purchaseItems.push({
+              erp: poEntry.poNumber || "-",
+              indentNo: indentNo,
+              material: row.itemName || "-",
+              party: negotiation?.selectedVendorName || "-",
+              qty: approvedQty - totalLifted,
+              warehouse: row.warehouseLocation || "-",
+              leadTime: row.leadTime || null,
+              expDelivery: poEntry.estimatedFollowUpVendor || poEntry.plannedFollowUpVendor || null,
+              poCopy: poEntry.poCopy || "",
+            });
+          }
         }
       }
 
@@ -595,14 +610,16 @@ function computeDashboardData(
           stageCounts["Transporter Follow-Up"]++;
           if (isPast(lift.plannedTransporterFlwUp)) stageOverdueCounts["Transporter Follow-Up"]++;
 
-          inTransitItems.push({
-            erp: indentNo,
-            material: row.itemName || "-",
-            party: negotiation?.selectedVendorName || "-",
-            truck: lift.vehicleNo || "-",
-            date: lift.dispatchDate || null,
-            qty: lift.liftingQty || 0,
-          });
+          if (!countsOnly) {
+            inTransitItems.push({
+              erp: indentNo,
+              material: row.itemName || "-",
+              party: negotiation?.selectedVendorName || "-",
+              truck: lift.vehicleNo || "-",
+              date: lift.dispatchDate || null,
+              qty: lift.liftingQty || 0,
+            });
+          }
         }
       }
     }
@@ -610,6 +627,15 @@ function computeDashboardData(
     // Warranty claim count is global (not purchaser- or lift-scoped in the source
     // data), fetched once in fetchRawDashboardData and reused here as-is.
     stageCounts["Warranty Claim"] = warrantyClaimCount;
+
+    // Counts-only callers (Sidebar) only ever read stageCounts — stop here and
+    // skip the Top Orders aggregation/sort and the full response shape below.
+    if (countsOnly) {
+      return {
+        success: true,
+        data: { stageCounts },
+      };
+    }
 
     // Process Top Orders
     const processedOrders = Object.entries(vendorStats).map(([vendor, stats]) => {
@@ -674,7 +700,13 @@ export async function GET(request: NextRequest) {
     const role = request.nextUrl.searchParams.get("role");
     const records = request.nextUrl.searchParams.get("records");
 
-    const responseBody = computeDashboardData(raw, { role, records });
+    // `?fields=counts` is the Sidebar's badge-only poll — same cached raw data and
+    // the same stage-count logic, just skips building/returning the display arrays
+    // (overviewItems, purchaseItems, inTransitItems, receivedItems, warrantyItems,
+    // topReceivedOrders) that only the main Dashboard page reads.
+    const countsOnly = request.nextUrl.searchParams.get("fields") === "counts";
+
+    const responseBody = computeDashboardData(raw, { role, records }, countsOnly);
     return NextResponse.json(responseBody);
   } catch (error: any) {
     console.error("Dashboard API Error:", error);

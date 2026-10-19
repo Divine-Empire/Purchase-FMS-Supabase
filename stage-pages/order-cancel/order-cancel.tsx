@@ -16,6 +16,7 @@ import { RefreshCw, Search, Plus, Loader2, AlertCircle, XCircle, Check, Chevrons
 import { toast } from "sonner"
 import { cn, canViewPurchaserRecord } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
+import { invalidateSidebarCounts } from "@/lib/sidebar-events"
 
 const ItemCombobox = ({
   value,
@@ -321,6 +322,9 @@ export default function OrderCancelPage() {
       })
 
       await Promise.all(promises)
+
+      // A cancellation excludes the indent/lift from virtually every stage count.
+      invalidateSidebarCounts()
 
       // Reset form
       setSearchQuery("")

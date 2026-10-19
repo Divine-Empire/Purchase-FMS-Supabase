@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
 import { getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import TransporterFollowUpPending from "./transporter-follow-up-pending";
 import TransporterFollowUpHistory from "./transporter-follow-up-history";
 
@@ -324,6 +325,7 @@ export default function TransporterFollowUp() {
             const result = await res.json();
             if (!result.success) throw new Error(result.error || "Update failed");
 
+            invalidateSidebarCounts();
             toast.success("Follow-Up Recorded!", { id: toastId });
             setOpen(false);
             if (isBulkMode) {

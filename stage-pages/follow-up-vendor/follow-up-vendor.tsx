@@ -51,6 +51,7 @@ import {
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn, parseSheetDate, formatDate, getFmsTimestamp, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -306,6 +307,8 @@ export default function Stage6() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to save changes");
 
+      // liftingQty feeds this stage's pendingLifted total.
+      invalidateSidebarCounts();
       toast.success("Lift record updated");
       setOpenEditModal(false);
       setEditingLiftRow(null);
@@ -735,6 +738,7 @@ export default function Stage6() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Submission failed");
 
+      invalidateSidebarCounts();
       setOpen(false);
       resetBulk();
       await fetchData();

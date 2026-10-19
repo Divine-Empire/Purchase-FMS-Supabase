@@ -24,6 +24,7 @@ import { FileText, Loader2, Search, ClipboardCheck, RefreshCw, Eye, ClipboardLis
 import { toast } from "sonner";
 import { getFmsTimestamp, cn, formatDateTimeDash, parseSheetDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import MaterialTestingPending from "./material-testing-pending";
@@ -437,6 +438,7 @@ export default function MaterialTesting() {
         throw new Error(json.error || `Request failed with status ${res.status}`);
       }
 
+      invalidateSidebarCounts();
       toast.success("Quality Check recorded successfully.");
       setOpen(false);
       fetchData();

@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
 import { parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { GodownField } from "@/components/godown-field";
 import BackgroundSyncBanner from "@/components/background-sync-banner";
 import MaterialReceivedPending from "./material-received-pending";
@@ -356,6 +357,8 @@ export default function MaterialReceived() {
             const json = await res.json();
             if (!json.success) throw new Error(json.error || "Failed to save changes");
 
+            // receivedQty/qcRequired drive Material Testing + Receipt in Tally gating.
+            invalidateSidebarCounts();
             toast.success("Record updated — Material Testing / QC ledger synced where applicable.");
             setOpenEditModal(false);
             setEditingRecord(null);
@@ -541,6 +544,7 @@ export default function MaterialReceived() {
                 throw new Error(result.error || `Request failed with status ${res.status}`);
             }
 
+            invalidateSidebarCounts();
             toast.success("Bulk Receipt recorded successfully!");
             setOpen(false);
             setSelectedRecordIds([]);
@@ -663,6 +667,7 @@ export default function MaterialReceived() {
                 throw new Error(result.error || `Request failed with status ${res.status}`);
             }
 
+            invalidateSidebarCounts();
             toast.success("Receipt recorded successfully!");
             setOpen(false);
             fetchData();

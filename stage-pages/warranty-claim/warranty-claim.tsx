@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Loader2, Search, ShieldAlert, ClipboardList, History, AlertCircle } from "lucide-react";
 import { formatDate, parseSheetDate, getFmsTimestamp, formatDateTimeDash, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -267,6 +268,7 @@ export default function WarrantyClaim() {
                 throw new Error(result.error || `Request failed with status ${res.status}`);
             }
 
+            invalidateSidebarCounts();
             setIsModalOpen(false);
             toast.success("Claim submitted successfully!", { id: toastId, duration: 2000 });
             fetchData();
@@ -303,6 +305,7 @@ export default function WarrantyClaim() {
                 throw new Error(result.error || `Request failed with status ${res.status}`);
             }
 
+            invalidateSidebarCounts();
             setIsClosureModalOpen(false);
             toast.success("Closure updated successfully!", { id: toastId, duration: 2000 });
             fetchData();

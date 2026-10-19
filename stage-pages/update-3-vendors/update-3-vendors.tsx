@@ -55,6 +55,7 @@ import {
   canViewPurchaserRecord
 } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import BackgroundSyncBanner from "@/components/background-sync-banner";
 import Update3VendorsPending from "./update-3-vendors-pending";
 import Update3VendorsHistory from "./update-3-vendors-history";
@@ -387,6 +388,7 @@ export default function Stage3() {
         if (!isThirdParty) moveToNextStage(id);
       });
 
+      invalidateSidebarCounts();
       await fetchData();
       setSelectedIds(new Set());
 

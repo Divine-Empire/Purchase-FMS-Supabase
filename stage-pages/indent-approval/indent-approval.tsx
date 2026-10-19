@@ -69,6 +69,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { cn, parseSheetDate, getFmsTimestamp, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import IndentApprovalPending from "./indent-approval-pending";
 import IndentApprovalHistory from "./indent-approval-history";
 
@@ -288,6 +289,8 @@ export default function Stage2() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to save changes");
 
+      // approvedQty can change Follow-Up Vendor's pendingLifted count.
+      invalidateSidebarCounts();
       toast.success("Indent record updated");
       setOpenEditModal(false);
       setEditingRecord(null);
@@ -476,6 +479,7 @@ export default function Stage2() {
 
       const result = await res.json();
       if (result.success) {
+        invalidateSidebarCounts();
         fetchData();
       } else {
         throw new Error(result.error || "Approval failed");

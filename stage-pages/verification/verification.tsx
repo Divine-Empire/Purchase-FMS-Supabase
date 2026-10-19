@@ -29,6 +29,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import { parseSheetDate, getFmsTimestamp, formatDateTimeDash } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import VerificationPending from "./verification-pending";
 import VerificationHistory from "./verification-history";
 
@@ -309,6 +310,7 @@ export default function Verification() {
         throw new Error(json.error || `Request failed with status ${res.status}`);
       }
 
+      invalidateSidebarCounts();
       toast.success(`${selectedRecords.length} record(s) verified successfully!`);
       setOpen(false);
       setSelectedRows(new Set());

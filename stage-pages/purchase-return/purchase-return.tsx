@@ -6,6 +6,7 @@ import { Loader2, FileText, RefreshCw, Search, Eye, ClipboardList, History } fro
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn, formatDateTimeDash, canViewPurchaserRecord, parseSheetDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -358,6 +359,7 @@ export default function PurchaseReturn() {
         throw new Error(json.error || `Request failed with status ${res.status}`);
       }
 
+      invalidateSidebarCounts();
       toast.success("Return processed successfully!", { id: toastId });
       setOpen(false);
       fetchData();

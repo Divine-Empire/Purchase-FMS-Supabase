@@ -27,6 +27,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn, formatDate, getFmsTimestamp, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import VendorPaymentPending from "./vendor-payment-pending";
 import VendorPaymentHistory from "./vendor-payment-history";
@@ -433,6 +434,7 @@ export default function VendorPayment() {
         throw new Error(json.error || "Payment submission failed");
       }
 
+      invalidateSidebarCounts();
       toast.success(`Processed ${payments.length} payments!`, { id: toastId });
       setBulkOpen(false);
       fetchData();

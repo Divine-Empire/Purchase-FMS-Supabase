@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import ReturnApprovalPending from "./return-approval-pending";
 import ReturnApprovalHistory from "./return-approval-history";
 
@@ -245,6 +246,7 @@ export default function ReturnApproval() {
         throw new Error(json.error || "Approval failed");
       }
 
+      invalidateSidebarCounts();
       toast.success("Approved successfully!", { id: toastId });
       setOpen(false);
       fetchData();
@@ -292,6 +294,7 @@ export default function ReturnApproval() {
         throw new Error(json.error || "Bulk approval failed");
       }
 
+      invalidateSidebarCounts();
       toast.success(`Successfully approved ${selectedRows.size} record(s)!`, { id: toastId });
       setSelectedRows(new Set());
       setBulkOpen(false);

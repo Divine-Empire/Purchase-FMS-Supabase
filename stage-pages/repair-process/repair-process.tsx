@@ -24,6 +24,7 @@ import { FileText, Loader2, Search, Wrench, RefreshCw, ClipboardList, History } 
 import { toast } from "sonner";
 import { getFmsTimestamp, cn, formatDateTimeDash, canViewPurchaserRecord, parseSheetDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import RepairProcessPending from "./repair-process-pending";
@@ -223,6 +224,9 @@ export default function RepairProcess() {
         throw new Error(json.error || `Request failed with status ${res.status}`);
       }
 
+      // repairedQty/failedQty feed Purchase Return + the QC-resolution ledger
+      // that gates Receipt in Tally.
+      invalidateSidebarCounts();
       toast.success("Repair round recorded successfully.");
       setOpen(false);
       fetchData();

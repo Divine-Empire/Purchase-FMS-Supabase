@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Menu, X, LogOut, LayoutDashboard
@@ -9,12 +9,20 @@ import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { STAGES, isStageAccessGranted } from "@/lib/constants";
+import { SIDEBAR_COUNTS_INVALIDATED_EVENT } from "@/lib/sidebar-events";
 
 export default function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const { pageAccess, fullName, role, records, logout } = useAuth();
   const pathname = usePathname();
   const [counts, setCounts] = useState<Record<string, number>>({});
+  // True while a counts fetch is in flight — lets an invalidation event skip
+  // starting a duplicate request if one is already pending.
+  const isFetchingRef = useRef(false);
+  // Stamps each fetch so a slower, older request can't overwrite the state
+  // with stale counts after a newer one (e.g. from a role/records change)
+  // has already completed.
+  const latestRequestIdRef = useRef(0);
 
   const handleLogout = () => {
     logout();
@@ -39,16 +47,25 @@ export default function Sidebar() {
   };
 
   const fetchCounts = useCallback(async () => {
+    // Stamp this call. Always runs (never dropped by the in-flight guard) —
+    // a role/records change must never be skipped just because a previous
+    // fetch for the old role/records is still in flight.
+    const requestId = ++latestRequestIdRef.current;
+    isFetchingRef.current = true;
     try {
       // role/records scope the badge counts to this user's purchaser access
       // (mirrors canViewPurchaserRecord filtering already applied on the
       // individual stage pages), so a restricted user's sidebar badge
       // matches what they actually see when they open that stage.
       const params = new URLSearchParams();
+      params.set("fields", "counts");
       if (role) params.set("role", role);
       if (records) params.set("records", records);
       const response = await fetch(`/api/dashboard?${params.toString()}`);
       const result = await response.json();
+      // A newer fetch may have started (and even finished) while this one
+      // was in flight — ignore this response if it's no longer the latest.
+      if (requestId !== latestRequestIdRef.current) return;
       if (result.success && result.data && result.data.stageCounts) {
         const stageCounts = result.data.stageCounts;
         const newCounts: Record<string, number> = {
@@ -59,24 +76,40 @@ export default function Sidebar() {
       }
     } catch (e) {
       console.error("Failed to fetch sidebar counts:", e);
+    } finally {
+      // Only clear the in-flight flag if a newer request hasn't already
+      // taken over — otherwise this would mark "not fetching" while the
+      // newer one is still running.
+      if (requestId === latestRequestIdRef.current) isFetchingRef.current = false;
     }
   }, [role, records]);
 
-  // Fetch once on mount only. Previously this also re-ran on every
-  // pathname change, which meant every client-side navigation anywhere
-  // in the app re-triggered the full (heavy) /api/dashboard computation
-  // just to refresh sidebar badge counts. Counts now refresh via the
-  // 60s poll below instead of on every navigation.
+  // Fetch once on mount, and again whenever role/records change. Previously
+  // this also re-ran on every pathname change, which meant every client-side
+  // navigation anywhere in the app re-triggered the full (heavy) /api/dashboard
+  // computation just to refresh sidebar badge counts. Counts now only refresh
+  // on mount, on role/records change, or via the invalidation event below —
+  // no interval, no polling, no automatic refresh on tab visibility.
   useEffect(() => {
     fetchCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, records]);
 
+  // Event-driven refresh: no interval, no polling, no visibility-triggered
+  // auto-refresh. Mutation handlers across the app call
+  // invalidateSidebarCounts() once their write is confirmed successful
+  // (see lib/sidebar-events.ts); this just listens and refetches. The guard
+  // inside fetchCounts (isFetchingRef) already collapses a burst of these
+  // events fired close together into skipped duplicate requests.
   useEffect(() => {
-    const interval = setInterval(() => {
+    const handleInvalidate = () => {
+      if (isFetchingRef.current) return;
       fetchCounts();
-    }, 60000);
-    return () => clearInterval(interval);
+    };
+    window.addEventListener(SIDEBAR_COUNTS_INVALIDATED_EVENT, handleInvalidate);
+    return () => {
+      window.removeEventListener(SIDEBAR_COUNTS_INVALIDATED_EVENT, handleInvalidate);
+    };
   }, [fetchCounts]);
 
   return (

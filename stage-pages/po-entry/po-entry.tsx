@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { formatDate, parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import BackgroundSyncBanner from "@/components/background-sync-banner";
 import PoEntryPending from "./po-entry-pending";
 import PoEntryHistory from "./po-entry-history";
@@ -443,6 +444,7 @@ export default function Stage5() {
         const result = await res.json();
         if (!result.success) throw new Error(result.error || "Failed to submit PO Entry");
 
+        invalidateSidebarCounts();
         await fetchData();
         setOpen(false);
         setSelectedRecordIds([]);

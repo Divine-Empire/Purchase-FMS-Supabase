@@ -23,6 +23,7 @@ import { Loader2, Search, ShieldAlert, Eye, Printer, PlusCircle, Check, Chevrons
 import { toast } from "sonner";
 import { cn, formatDate, parseSheetDate, getFmsTimestamp, formatDateTimeDash, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { Label } from "@/components/ui/label";
 import {
     Command,
@@ -1099,6 +1100,7 @@ export default function SerialGeneration() {
                 throw new Error(result.error || `Request failed with status ${res.status}`);
             }
 
+            invalidateSidebarCounts();
             toast.success("Serial Generation recorded successfully!");
             setOpen(false);
             setSelectedPendingIds(new Set());

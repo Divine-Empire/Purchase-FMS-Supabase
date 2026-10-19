@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, FileText, Search, RefreshCw, ClipboardList, History } from "lucide-react";
 import { parseSheetDate, getFmsTimestamp, cn, formatDateTimeDash } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { Badge } from "@/components/ui/badge";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -203,6 +204,7 @@ export default function TallyEntry() {
         throw new Error(json.error || `Request failed with status ${res.status}`);
       }
 
+      invalidateSidebarCounts();
       toast.success(
         formData.checkedStatus === "Yes"
           ? "Tally Entry Completed (Bulk)!"

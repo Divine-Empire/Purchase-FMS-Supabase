@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { X, Loader2, FileText, Upload } from "lucide-react";
 import { cn, getFmsTimestamp } from "@/lib/utils";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import { Check, ChevronsUpDown } from "lucide-react";
 import {
   Command,
@@ -279,6 +280,8 @@ export default function CreateIndentPending({
 
         const generatedIds = await submitToSheet({ ...formData }, attachmentUrl);
 
+        // A new indent adds to the Indent Approval ("Create Indent") count.
+        invalidateSidebarCounts();
         await fetchData();
         setFormData({ createdBy: "", warehouseLocation: "", leadTime: "", attachment: null, items: [] });
         setOpenCreateModal(false);

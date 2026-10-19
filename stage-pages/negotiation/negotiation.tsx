@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/popover";
 import { formatDate, parseSheetDate, getFmsTimestamp, cn, sortByIndentNumber, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import NegotiationPending from "./negotiation-pending";
 import NegotiationHistory from "./negotiation-history";
 
@@ -197,6 +198,7 @@ export default function Stage4() {
       const result = await res.json();
       if (!result.success) throw new Error(result.error || "Negotiation failed");
 
+      invalidateSidebarCounts();
       await fetchData();
       return true;
     } catch (err: any) {

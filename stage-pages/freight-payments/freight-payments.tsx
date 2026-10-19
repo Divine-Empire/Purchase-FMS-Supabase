@@ -29,6 +29,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn, formatDate as sharedFormatDate, getFmsTimestamp, canViewPurchaserRecord } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { invalidateSidebarCounts } from "@/lib/sidebar-events";
 import FreightPaymentsPending from "./freight-payments-pending";
 import FreightPaymentsHistory from "./freight-payments-history";
 
@@ -280,6 +281,7 @@ export default function FreightPayments() {
         throw new Error(json.error || "Payment submission failed");
       }
 
+      invalidateSidebarCounts();
       toast.success("Freight Payment Recorded!", { id: toastId });
       setOpen(false);
       fetchData();

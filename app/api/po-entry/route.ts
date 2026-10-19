@@ -4,6 +4,63 @@ import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { canViewPurchaserRecord, sortByIndentNumber } from "@/lib/utils";
 
+// Short-lived in-memory cache for this stage's raw fetch (indents + cancellations) —
+// same pattern as app/api/dashboard/route.ts. 45s TTL means bursts of GETs within that
+// window (same warm instance) reuse the already-fetched data instead of re-querying
+// Supabase. Cleared on a successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const PO_ENTRY_CACHE_TTL_MS = 45_000;
+let poEntryRawCache: { indents: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawPoEntryData() {
+  // Fetch parent indents with inner join on negotiation to ensure Stage 4 completed.
+  // Paginated in 1000-row pages — pfms_negotiation already exceeds PostgREST's default
+  // 1000-row cap, so an unpaginated select here was silently dropping the oldest
+  // indents (same bypass pattern as app/api/dashboard/route.ts).
+  const indents: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageIndents, error } = await supabase
+        .from("pfms_indent_generation")
+        .select(`
+          *,
+          approval:pfms_indent-approval (
+            approvedQty
+          ),
+          update3Vendors:pfms_update-3-vendors (
+            vendor1Name, vendor1Rate, vendor1Terms, vendor1DeliveryDate, vendor1Attachment,
+            vendor2Name, vendor2Rate, vendor2Terms, vendor2DeliveryDate, vendor2Attachment,
+            vendor3Name, vendor3Rate, vendor3Terms, vendor3DeliveryDate, vendor3Attachment
+          ),
+          negotiation:pfms_negotiation!inner(*),
+          poEntry:pfms_po-entry(*)
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) throw error;
+      if (!pageIndents || pageIndents.length === 0) {
+        hasMore = false;
+      } else {
+        indents.push(...pageIndents);
+        hasMore = pageIndents.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // Fetch cancellations
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { indents, cancelledNos };
+}
+
 // Same lazy-history pattern used across other stages: `view=pending` (default) only
 // builds Pending + a cheap `historyCount`; `view=history` is only requested once the
 // user opens that tab, and returns at most `limit` (100 default, 200 once searched)
@@ -84,31 +141,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch parent indents with inner join on negotiation to ensure Stage 4 completed
-    const { data: indents, error } = await supabase
-      .from("pfms_indent_generation")
-      .select(`
-        *,
-        approval:pfms_indent-approval (
-          approvedQty
-        ),
-        update3Vendors:pfms_update-3-vendors (
-          vendor1Name, vendor1Rate, vendor1Terms, vendor1DeliveryDate, vendor1Attachment,
-          vendor2Name, vendor2Rate, vendor2Terms, vendor2DeliveryDate, vendor2Attachment,
-          vendor3Name, vendor3Rate, vendor3Terms, vendor3DeliveryDate, vendor3Attachment
-        ),
-        negotiation:pfms_negotiation!inner(*),
-        poEntry:pfms_po-entry(*)
-      `)
-      .order("timestamp", { ascending: false });
-
-    if (error) throw error;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+    let raw: { indents: any[]; cancelledNos: Set<string> };
+    if (poEntryRawCache && poEntryRawCache.expiresAt > Date.now()) {
+      raw = poEntryRawCache;
+    } else {
+      raw = await fetchRawPoEntryData();
+      poEntryRawCache = { ...raw, expiresAt: Date.now() + PO_ENTRY_CACHE_TTL_MS };
+    }
+    const { indents, cancelledNos } = raw;
 
     const mappedData = indents
       .map((row: any) => {
@@ -272,6 +312,7 @@ export async function POST(request: NextRequest) {
         .eq("indentNo", indentNo);
 
       if (updateError) throw updateError;
+      poEntryRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -355,6 +396,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      poEntryRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -412,6 +454,7 @@ export async function POST(request: NextRequest) {
           .eq("indentNo", recordIndentNo);
       }
 
+      poEntryRawCache = null;
       return NextResponse.json({ success: true });
     }
 

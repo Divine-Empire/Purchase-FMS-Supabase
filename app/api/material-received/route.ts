@@ -5,42 +5,82 @@ import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/planne
 import { resolveGodown, pushToIms } from "@/lib/ims-sync";
 import { isGodownLabel } from "@/lib/godowns";
 
+// Short-lived in-memory cache for this stage's raw fetch (lifts + cancellations) —
+// same pattern as app/api/dashboard/route.ts. 45s TTL means bursts of GETs within that
+// window (same warm instance) reuse the already-fetched data instead of re-querying
+// Supabase. Cleared on a successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const MATERIAL_RECEIVED_CACHE_TTL_MS = 45_000;
+let materialReceivedRawCache: { lifts: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawMaterialReceivedData() {
+  // 1. Fetch all lift dispatches (Stage 6 completed). Paginated in 1000-row pages —
+  // pfms_lift is already at PostgREST's default 1000-row cap, so an unpaginated
+  // select here would start silently dropping the oldest lifts as it grows further
+  // (same bypass pattern as app/api/dashboard/route.ts).
+  const lifts: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageLifts, error: liftError } = await supabase
+        .from("pfms_lift")
+        .select(`
+          *,
+          materialReceived:pfms_material-received (*),
+          transporterFollowUp:pfms_transporter-follow-up(status),
+          indent:pfms_indent_generation!inner (
+            indentNo,
+            warehouseLocation,
+            itemName,
+            itemCode,
+            quantity,
+            purchaser,
+            negotiation:pfms_negotiation (
+              selectedVendorName
+            ),
+            poEntry:pfms_po-entry (
+              poNumber,
+              poCopy,
+              pkgAmount,
+              pkgGST
+            )
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (liftError) throw liftError;
+      if (!pageLifts || pageLifts.length === 0) {
+        hasMore = false;
+      } else {
+        lifts.push(...pageLifts);
+        hasMore = pageLifts.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // Fetch cancellations
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { lifts, cancelledNos };
+}
+
 export async function GET() {
   try {
-    // 1. Fetch all lift dispatches (Stage 6 completed)
-    const { data: lifts, error: liftError } = await supabase
-      .from("pfms_lift")
-      .select(`
-        *,
-        materialReceived:pfms_material-received (*),
-        transporterFollowUp:pfms_transporter-follow-up(status),
-        indent:pfms_indent_generation!inner (
-          indentNo,
-          warehouseLocation,
-          itemName,
-          itemCode,
-          quantity,
-          purchaser,
-          negotiation:pfms_negotiation (
-            selectedVendorName
-          ),
-          poEntry:pfms_po-entry (
-            poNumber,
-            poCopy,
-            pkgAmount,
-            pkgGST
-          )
-        )
-      `)
-      .order("timestamp", { ascending: false });
-
-    if (liftError) throw liftError;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+    let raw: { lifts: any[]; cancelledNos: Set<string> };
+    if (materialReceivedRawCache && materialReceivedRawCache.expiresAt > Date.now()) {
+      raw = materialReceivedRawCache;
+    } else {
+      raw = await fetchRawMaterialReceivedData();
+      materialReceivedRawCache = { ...raw, expiresAt: Date.now() + MATERIAL_RECEIVED_CACHE_TTL_MS };
+    }
+    const { lifts, cancelledNos } = raw;
 
     const mappedData = (lifts || [])
       .filter((row: any) => row.plannedMaterialRcd !== null)
@@ -282,6 +322,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      materialReceivedRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -537,6 +578,7 @@ export async function POST(request: NextRequest) {
       // anything that doesn't get through; it's idempotent per lift).
       await Promise.all(movements.map((m) => pushToIms("pfms-receipt", { liftNo: m.liftNo, locationCode: m.godown })));
 
+      materialReceivedRawCache = null;
       return NextResponse.json({ success: true });
     }
 

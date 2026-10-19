@@ -4,6 +4,126 @@ import { randomUUID } from "crypto";
 import { getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { canViewPurchaserRecord } from "@/lib/utils";
 
+// Short-lived in-memory cache for this stage's raw fetch (TAT + pay details + paid
+// logs + cancellations) — same pattern as app/api/dashboard/route.ts. 45s TTL means
+// bursts of GETs within that window (same warm instance) reuse the already-fetched
+// data instead of re-querying Supabase. Cleared on a successful write below so a
+// user's own change is reflected immediately on their next load, instead of waiting
+// out the TTL.
+const VENDOR_PAYMENT_CACHE_TTL_MS = 45_000;
+let vendorPaymentRawCache: {
+  tatMinutes: number;
+  payDetails: any[];
+  paidLogs: any[];
+  cancelledNos: Set<string>;
+  expiresAt: number;
+} | null = null;
+
+async function fetchRawVendorPaymentData() {
+  // 1. Fetch Turn Around Time (TAT) for vendor-payments
+  const { data: tatData } = await supabase
+    .from("pfms_tat")
+    .select("duration_in_minutes")
+    .eq("stage_name", "vendor-payments")
+    .maybeSingle();
+  const tatMinutes = tatData?.duration_in_minutes || 72 * 60; // default to 72 hours
+
+  // 2. Fetch all vendor payment details. Paginated in 1000-row pages —
+  // pfms_vendor-payment-details is close to PostgREST's default 1000-row cap and
+  // growing, so this is paginated pre-emptively (same bypass pattern as
+  // app/api/dashboard/route.ts).
+  const payDetails: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pagePayDetails, error: payError }: any = await supabase
+        .from("pfms_vendor-payment-details")
+        .select(`
+          *,
+          lift:pfms_lift!inner (
+            liftNo,
+            accountsVerification:pfms_accounts-verification (
+              verificationDate
+            ),
+            indent:pfms_indent_generation!inner (
+              indentNo,
+              itemName,
+              category,
+              warehouseLocation,
+              purchaser,
+              negotiation:pfms_negotiation (
+                selectedVendorName
+              ),
+              poEntry:"pfms_po-entry" (
+                poNumber,
+                poCopy
+              )
+            ),
+            materialReceived:"pfms_material-received" (
+              invoiceNumber,
+              invoiceDate,
+              receivedQty,
+              billAttachment,
+              plannedTallyEntry
+            )
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (payError) throw payError;
+      if (!pagePayDetails || pagePayDetails.length === 0) {
+        hasMore = false;
+      } else {
+        payDetails.push(...pagePayDetails);
+        hasMore = pagePayDetails.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // 3. Fetch all paid data transaction logs
+  const { data: paidLogs, error: logsError } = await supabase
+    .from("pfms_paid-data")
+    .select(`
+      *,
+      vendorInvoice:pfms_vendor-payment-details!inner (
+        totalAmount,
+        dueDate,
+        plannedDate,
+        lift:pfms_lift!inner (
+          liftNo,
+          accountsVerification:pfms_accounts-verification (
+            verificationDate
+          ),
+          indent:pfms_indent_generation!inner (
+            indentNo,
+            itemName,
+            purchaser,
+            negotiation:pfms_negotiation (
+              selectedVendorName
+            )
+          ),
+          materialReceived:"pfms_material-received" (
+            invoiceNumber,
+            invoiceDate
+          )
+        )
+      )
+    `) as any;
+
+  if (logsError) throw logsError;
+
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { tatMinutes, payDetails, paidLogs: paidLogs || [], cancelledNos };
+}
+
 // `view=pending` (default) is what loads on every page open/poll — Pending stays small
 // enough (bounded by open invoices) to load in full, since the bulk-payment vendor
 // picker needs the whole set. It only builds a cheap `historyCount`, never the (often
@@ -22,87 +142,14 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role");
     const records = searchParams.get("records");
 
-    // 1. Fetch Turn Around Time (TAT) for vendor-payments
-    const { data: tatData } = await supabase
-      .from("pfms_tat")
-      .select("duration_in_minutes")
-      .eq("stage_name", "vendor-payments")
-      .maybeSingle();
-    const tatMinutes = tatData?.duration_in_minutes || 72 * 60; // default to 72 hours
-
-    // 2. Fetch all vendor payment details
-    const { data: payDetails, error: payError } = await supabase
-      .from("pfms_vendor-payment-details")
-      .select(`
-        *,
-        lift:pfms_lift!inner (
-          liftNo,
-          accountsVerification:pfms_accounts-verification (
-            verificationDate
-          ),
-          indent:pfms_indent_generation!inner (
-            indentNo,
-            itemName,
-            category,
-            warehouseLocation,
-            purchaser,
-            negotiation:pfms_negotiation (
-              selectedVendorName
-            ),
-            poEntry:"pfms_po-entry" (
-              poNumber,
-              poCopy
-            )
-          ),
-          materialReceived:"pfms_material-received" (
-            invoiceNumber,
-            invoiceDate,
-            receivedQty,
-            billAttachment,
-            plannedTallyEntry
-          )
-        )
-      `) as any;
-
-    if (payError) throw payError;
-
-    // 3. Fetch all paid data transaction logs
-    const { data: paidLogs, error: logsError } = await supabase
-      .from("pfms_paid-data")
-      .select(`
-        *,
-        vendorInvoice:pfms_vendor-payment-details!inner (
-          totalAmount,
-          dueDate,
-          plannedDate,
-          lift:pfms_lift!inner (
-            liftNo,
-            accountsVerification:pfms_accounts-verification (
-              verificationDate
-            ),
-            indent:pfms_indent_generation!inner (
-              indentNo,
-              itemName,
-              purchaser,
-              negotiation:pfms_negotiation (
-                selectedVendorName
-              )
-            ),
-            materialReceived:"pfms_material-received" (
-              invoiceNumber,
-              invoiceDate
-            )
-          )
-        )
-      `) as any;
-
-    if (logsError) throw logsError;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+    let raw: { tatMinutes: number; payDetails: any[]; paidLogs: any[]; cancelledNos: Set<string> };
+    if (vendorPaymentRawCache && vendorPaymentRawCache.expiresAt > Date.now()) {
+      raw = vendorPaymentRawCache;
+    } else {
+      raw = await fetchRawVendorPaymentData();
+      vendorPaymentRawCache = { ...raw, expiresAt: Date.now() + VENDOR_PAYMENT_CACHE_TTL_MS };
+    }
+    const { tatMinutes, payDetails, paidLogs, cancelledNos } = raw;
 
     const pending = [];
     const history = [];
@@ -299,6 +346,7 @@ export async function POST(request: NextRequest) {
       if (updateError) throw updateError;
     }
 
+    vendorPaymentRawCache = null;
     return NextResponse.json({ success: true });
 
   } catch (error: any) {

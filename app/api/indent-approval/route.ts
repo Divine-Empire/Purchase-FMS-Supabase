@@ -3,24 +3,67 @@ import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
+// Short-lived in-memory cache for this stage's raw fetch (indents + cancellations) —
+// same pattern as app/api/dashboard/route.ts. Every navigation back to this page, or
+// every poll, re-ran the full paginated indent+approval fetch; a 45s TTL means bursts
+// of GETs within that window (same warm instance) reuse the already-fetched data
+// instead of re-querying Supabase. Only the raw rows are cached, not a per-request
+// computed result — statusFilter is applied fresh each time against the cached rows.
+// Cleared on any successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const INDENT_APPROVAL_CACHE_TTL_MS = 45_000;
+let indentApprovalRawCache: { indents: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawIndentApprovalData() {
+  // Fetch all indents and join with indent-approval. Paginated in 1000-row pages —
+  // pfms_indent_generation already exceeds PostgREST's default 1000-row cap, so an
+  // unpaginated select here was silently dropping the oldest indents (same bypass
+  // pattern as app/api/dashboard/route.ts).
+  const indents: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageIndents, error } = await supabase
+        .from("pfms_indent_generation")
+        .select("*, approval:pfms_indent-approval(*)")
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) throw error;
+      if (!pageIndents || pageIndents.length === 0) {
+        hasMore = false;
+      } else {
+        indents.push(...pageIndents);
+        hasMore = pageIndents.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // Fetch cancellations
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { indents, cancelledNos };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const statusFilter = (searchParams.get("status") || searchParams.get("statusFilter") || "all").toLowerCase();
 
-    // Fetch all indents and join with indent-approval
-    const { data: indents, error } = await supabase
-      .from("pfms_indent_generation")
-      .select("*, approval:pfms_indent-approval(*)")
-      .order("timestamp", { ascending: false });
-
-    if (error) throw error;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+    let raw: { indents: any[]; cancelledNos: Set<string> };
+    if (indentApprovalRawCache && indentApprovalRawCache.expiresAt > Date.now()) {
+      raw = indentApprovalRawCache;
+    } else {
+      raw = await fetchRawIndentApprovalData();
+      indentApprovalRawCache = { ...raw, expiresAt: Date.now() + INDENT_APPROVAL_CACHE_TTL_MS };
+    }
+    const { indents, cancelledNos } = raw;
 
     const mappedData = indents
       .map((row: any) => {
@@ -126,6 +169,7 @@ export async function POST(request: NextRequest) {
         if (approvalUpdateError) throw approvalUpdateError;
       }
 
+      indentApprovalRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -187,6 +231,7 @@ export async function POST(request: NextRequest) {
           .eq("indentNo", record.data.indentNumber);
       }
 
+      indentApprovalRawCache = null;
       return NextResponse.json({ success: true });
     }
 

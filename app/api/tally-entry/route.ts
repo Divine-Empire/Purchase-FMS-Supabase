@@ -4,6 +4,99 @@ import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { canViewPurchaserRecord } from "@/lib/utils";
 
+// Short-lived in-memory cache for this stage's raw fetch (materials + QC ledger +
+// cancellations) — same pattern as app/api/dashboard/route.ts. 45s TTL means bursts
+// of GETs within that window (same warm instance) reuse the already-fetched data
+// instead of re-querying Supabase. Cleared on a successful write below so a user's
+// own change is reflected immediately on their next load, instead of waiting out the TTL.
+const TALLY_ENTRY_CACHE_TTL_MS = 45_000;
+let tallyEntryRawCache: {
+  materials: any[];
+  ledgerMap: Map<string, any>;
+  cancelledNos: Set<string>;
+  expiresAt: number;
+} | null = null;
+
+async function fetchRawTallyEntryData() {
+  // 1. Fetch all material received records that have plannedTallyEntry populated.
+  // Paginated in 1000-row pages — pfms_material-received is close to PostgREST's
+  // default 1000-row cap and growing, so this is paginated pre-emptively (same
+  // bypass pattern as app/api/dashboard/route.ts).
+  const materials: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageMaterials, error: matError }: any = await supabase
+        .from("pfms_material-received")
+        .select(`
+          *,
+          lift:pfms_lift!inner (
+            *,
+            tallyEntry:"pfms_tally-entry" (
+              id,
+              timestamp,
+              doneBy,
+              doneDate,
+              remarks,
+              checkedStatus,
+              checkedByAcc
+            ),
+            indent:"pfms_indent_generation"!inner (
+              indentNo,
+              itemName,
+              category,
+              warehouseLocation,
+              quantity,
+              createdBy,
+              purchaser,
+              negotiation:pfms_negotiation (
+                selectedVendorName
+              ),
+              poEntry:"pfms_po-entry" (
+                poNumber,
+                poCopy,
+                basicValue,
+                totalWithTax,
+                pkgAmount,
+                pkgGST
+              )
+            )
+          )
+        `)
+        .not("plannedTallyEntry", "is", null)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (matError) throw matError;
+      if (!pageMaterials || pageMaterials.length === 0) {
+        hasMore = false;
+      } else {
+        materials.push(...pageMaterials);
+        hasMore = pageMaterials.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // Qty-resolution ledger, only relevant for lifts where QC was required. A QC=Yes lift
+  // stays locked out of this stage entirely until Material Testing (and Repair Process,
+  // if any qty was routed there) fully resolve it.
+  const { data: ledgerRows, error: ledgerError } = await supabase
+    .from("pfms_lift_qc_resolution")
+    .select("liftNo, passedQty, repairedQty, isFullyResolved, releasedAt");
+  if (ledgerError) throw ledgerError;
+  const ledgerMap = new Map((ledgerRows || []).map((l: any) => [l.liftNo, l]));
+
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { materials, ledgerMap, cancelledNos };
+}
+
 // `view=pending` (default) is what loads on every page open/poll — it only builds the
 // Pending array plus a cheap `historyCount` (for the History tab badge), and never
 // builds or returns the (potentially much larger) History row objects. `view=history`
@@ -22,57 +115,14 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role");
     const records = searchParams.get("records");
 
-    // 1. Fetch all material received records that have plannedTallyEntry populated
-    const { data: materials, error: matError } = await supabase
-      .from("pfms_material-received")
-      .select(`
-        *,
-        lift:pfms_lift!inner (
-          *,
-          tallyEntry:"pfms_tally-entry" (
-            id,
-            timestamp,
-            doneBy,
-            doneDate,
-            remarks,
-            checkedStatus,
-            checkedByAcc
-          ),
-          indent:"pfms_indent_generation"!inner (
-            indentNo,
-            itemName,
-            category,
-            warehouseLocation,
-            quantity,
-            createdBy,
-            purchaser,
-            negotiation:pfms_negotiation (
-              selectedVendorName
-            ),
-            poEntry:"pfms_po-entry" (
-              poNumber,
-              poCopy,
-              basicValue,
-              totalWithTax,
-              pkgAmount,
-              pkgGST
-            )
-          )
-        )
-      `)
-      .not("plannedTallyEntry", "is", null)
-      .order("timestamp", { ascending: false }) as any;
-
-    if (matError) throw matError;
-
-    // Qty-resolution ledger, only relevant for lifts where QC was required. A QC=Yes lift
-    // stays locked out of this stage entirely until Material Testing (and Repair Process,
-    // if any qty was routed there) fully resolve it.
-    const { data: ledgerRows, error: ledgerError } = await supabase
-      .from("pfms_lift_qc_resolution")
-      .select("liftNo, passedQty, repairedQty, isFullyResolved, releasedAt");
-    if (ledgerError) throw ledgerError;
-    const ledgerMap = new Map((ledgerRows || []).map((l: any) => [l.liftNo, l]));
+    let raw: { materials: any[]; ledgerMap: Map<string, any>; cancelledNos: Set<string> };
+    if (tallyEntryRawCache && tallyEntryRawCache.expiresAt > Date.now()) {
+      raw = tallyEntryRawCache;
+    } else {
+      raw = await fetchRawTallyEntryData();
+      tallyEntryRawCache = { ...raw, expiresAt: Date.now() + TALLY_ENTRY_CACHE_TTL_MS };
+    }
+    const { materials, ledgerMap, cancelledNos } = raw;
 
     const pending = [];
     const history = [];
@@ -177,12 +227,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
-
     const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
 
     if (view === "pending") {
@@ -260,6 +304,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) throw insertError;
 
+    tallyEntryRawCache = null;
     return NextResponse.json({ success: true });
 
   } catch (error: any) {

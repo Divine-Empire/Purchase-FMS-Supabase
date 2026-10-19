@@ -4,6 +4,94 @@ import { randomUUID } from "crypto";
 import { getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { canViewPurchaserRecord } from "@/lib/utils";
 
+// Short-lived in-memory cache for this stage's raw fetch (pay details + paid logs +
+// cancellations) — same pattern as app/api/dashboard/route.ts. 45s TTL means bursts
+// of GETs within that window (same warm instance) reuse the already-fetched data
+// instead of re-querying Supabase. Cleared on a successful write below so a user's
+// own change is reflected immediately on their next load, instead of waiting out the TTL.
+const FREIGHT_PAYMENT_CACHE_TTL_MS = 45_000;
+let freightPaymentRawCache: {
+  payDetails: any[];
+  paidLogs: any[];
+  cancelledNos: Set<string>;
+  expiresAt: number;
+} | null = null;
+
+async function fetchRawFreightPaymentData() {
+  // 1. Fetch all freight payment details. Paginated in 1000-row pages —
+  // pfms_freight-payment-details is close to PostgREST's default 1000-row cap
+  // and growing, so this is paginated pre-emptively (same bypass pattern as
+  // app/api/dashboard/route.ts).
+  const payDetails: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pagePayDetails, error: payError }: any = await supabase
+        .from("pfms_freight-payment-details")
+        .select(`
+          *,
+          lift:pfms_lift!inner (
+            liftNo,
+            indentNo,
+            lrNo,
+            biltyCopy,
+            transporterName,
+            vehicleNo,
+            contactNo,
+            advanceAmount,
+            indent:pfms_indent_generation (
+              purchaser
+            ),
+            materialReceived:"pfms_material-received" (
+              invoiceNumber,
+              billAttachment
+            )
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (payError) throw payError;
+      if (!pagePayDetails || pagePayDetails.length === 0) {
+        hasMore = false;
+      } else {
+        payDetails.push(...pagePayDetails);
+        hasMore = pagePayDetails.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  // 2. Fetch all paid freight data transaction logs
+  const { data: paidLogs, error: logsError } = await supabase
+    .from("pfms_paid-freight-data")
+    .select(`
+      *,
+      freightInvoice:pfms_freight-payment-details!inner (
+        plannedDate,
+        lift:pfms_lift!inner (
+          liftNo,
+          lrNo,
+          transporterName,
+          indent:pfms_indent_generation (
+            purchaser
+          )
+        )
+      )
+    `) as any;
+
+  if (logsError) throw logsError;
+
+  return { payDetails, paidLogs: paidLogs || [], cancelledNos };
+}
+
 // Same lazy-history pattern as Tally Entry/Vendor Payment: Pending stays small
 // (bounded by open freight invoices) and loads in full; the paid-freight-data
 // transaction log (History) grows unboundedly, so it's only fetched once the user
@@ -18,57 +106,14 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role");
     const records = searchParams.get("records");
 
-    // 1. Fetch all freight payment details
-    const { data: payDetails, error: payError } = await supabase
-      .from("pfms_freight-payment-details")
-      .select(`
-        *,
-        lift:pfms_lift!inner (
-          liftNo,
-          indentNo,
-          lrNo,
-          biltyCopy,
-          transporterName,
-          vehicleNo,
-          contactNo,
-          advanceAmount,
-          indent:pfms_indent_generation (
-            purchaser
-          ),
-          materialReceived:"pfms_material-received" (
-            invoiceNumber,
-            billAttachment
-          )
-        )
-      `) as any;
-
-    if (payError) throw payError;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
-
-    // 2. Fetch all paid freight data transaction logs
-    const { data: paidLogs, error: logsError } = await supabase
-      .from("pfms_paid-freight-data")
-      .select(`
-        *,
-        freightInvoice:pfms_freight-payment-details!inner (
-          plannedDate,
-          lift:pfms_lift!inner (
-            liftNo,
-            lrNo,
-            transporterName,
-            indent:pfms_indent_generation (
-              purchaser
-            )
-          )
-        )
-      `) as any;
-
-    if (logsError) throw logsError;
+    let raw: { payDetails: any[]; paidLogs: any[]; cancelledNos: Set<string> };
+    if (freightPaymentRawCache && freightPaymentRawCache.expiresAt > Date.now()) {
+      raw = freightPaymentRawCache;
+    } else {
+      raw = await fetchRawFreightPaymentData();
+      freightPaymentRawCache = { ...raw, expiresAt: Date.now() + FREIGHT_PAYMENT_CACHE_TTL_MS };
+    }
+    const { payDetails, paidLogs, cancelledNos } = raw;
 
     const pending = [];
     const history = [];
@@ -238,6 +283,7 @@ export async function POST(request: NextRequest) {
 
     if (updateError) throw updateError;
 
+    freightPaymentRawCache = null;
     return NextResponse.json({ success: true });
 
   } catch (error: any) {

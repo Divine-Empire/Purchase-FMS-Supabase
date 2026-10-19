@@ -20,28 +20,68 @@ async function findUnregisteredVendors(names: (string | null | undefined)[]): Pr
   return wanted.filter((n) => !registered.has(n.toLowerCase()));
 }
 
+// Short-lived in-memory cache for this stage's raw fetch (approvals + cancellations) —
+// same pattern as app/api/dashboard/route.ts. 45s TTL means bursts of GETs within that
+// window (same warm instance) reuse the already-fetched data instead of re-querying
+// Supabase. Cleared on a successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const UPDATE_3_VENDORS_CACHE_TTL_MS = 45_000;
+let update3VendorsRawCache: { approvals: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawUpdate3VendorsData() {
+  // Fetch all indent approvals and join with indent-generation + update-3-vendors.
+  // Paginated in 1000-row pages — pfms_indent-approval's "approved" rows already
+  // exceed PostgREST's default 1000-row cap, so an unpaginated select here was
+  // silently dropping the oldest ones (same bypass pattern as app/api/dashboard/route.ts).
+  const approvals: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageApprovals, error } = await supabase
+        .from("pfms_indent-approval")
+        .select(`
+          *,
+          indent:pfms_indent_generation (
+            *,
+            update3Vendors:pfms_update-3-vendors(*)
+          )
+        `)
+        .ilike("status", "approved")
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) throw error;
+      if (!pageApprovals || pageApprovals.length === 0) {
+        hasMore = false;
+      } else {
+        approvals.push(...pageApprovals);
+        hasMore = pageApprovals.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // Fetch cancellations
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { approvals, cancelledNos };
+}
+
 export async function GET() {
   try {
-    // Fetch all indent approvals and join with indent-generation + update-3-vendors
-    const { data: approvals, error } = await supabase
-      .from("pfms_indent-approval")
-      .select(`
-        *,
-        indent:pfms_indent_generation (
-          *,
-          update3Vendors:pfms_update-3-vendors(*)
-        )
-      `)
-      .ilike("status", "approved")
-      .order("timestamp", { ascending: false });
-
-    if (error) throw error;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+    let raw: { approvals: any[]; cancelledNos: Set<string> };
+    if (update3VendorsRawCache && update3VendorsRawCache.expiresAt > Date.now()) {
+      raw = update3VendorsRawCache;
+    } else {
+      raw = await fetchRawUpdate3VendorsData();
+      update3VendorsRawCache = { ...raw, expiresAt: Date.now() + UPDATE_3_VENDORS_CACHE_TTL_MS };
+    }
+    const { approvals, cancelledNos } = raw;
 
     const mappedData = approvals
       .filter((app: any) => app.indent && app.status?.toLowerCase() === "approved") // ensure generation row exists and status is approved
@@ -189,6 +229,7 @@ export async function POST(request: NextRequest) {
 
       if (insertError) throw insertError;
 
+      update3VendorsRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -335,6 +376,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      update3VendorsRawCache = null;
       return NextResponse.json({ success: true });
     }
 

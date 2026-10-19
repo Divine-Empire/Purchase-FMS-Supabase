@@ -4,6 +4,92 @@ import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { canViewPurchaserRecord } from "@/lib/utils";
 
+// Short-lived in-memory cache for this stage's raw fetch (lifts + cancellations) —
+// same pattern as app/api/dashboard/route.ts. 45s TTL means bursts of GETs within that
+// window (same warm instance) reuse the already-fetched data instead of re-querying
+// Supabase. Cleared on a successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const VERIFICATION_CACHE_TTL_MS = 45_000;
+let verificationRawCache: { lifts: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawVerificationData() {
+  // Fetch lifts that have completed the submit-invoice stage (i.e. submitInvoice is not
+  // null). Paginated in 1000-row pages — pfms_submit-invoice is growing toward
+  // PostgREST's default 1000-row cap, so this is paginated pre-emptively (same bypass
+  // pattern as app/api/dashboard/route.ts).
+  const lifts: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageLifts, error: liftError }: any = await supabase
+        .from("pfms_lift")
+        .select(`
+          *,
+          submitInvoice:"pfms_submit-invoice"!inner (
+            id,
+            timestamp,
+            handoverBy,
+            invoiceSubmissionDate,
+            plannedVerification
+          ),
+          accountsVerification:"pfms_accounts-verification" (
+            id,
+            timestamp,
+            verifiedCheckedBy,
+            verificationDate,
+            remarks
+          ),
+          tallyEntry:"pfms_tally-entry" (
+            doneDate,
+            timestamp,
+            remarks
+          ),
+          indent:"pfms_indent_generation"!inner (
+            indentNo,
+            itemName,
+            category,
+            warehouseLocation,
+            purchaser,
+            negotiation:pfms_negotiation (
+              selectedVendorName
+            ),
+            poEntry:"pfms_po-entry" (
+              poNumber,
+              basicValue,
+              totalWithTax
+            )
+          ),
+          materialReceived:"pfms_material-received" (
+            invoiceNumber,
+            invoiceDate,
+            receivedQty,
+            billAttachment
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (liftError) throw liftError;
+      if (!pageLifts || pageLifts.length === 0) {
+        hasMore = false;
+      } else {
+        lifts.push(...pageLifts);
+        hasMore = pageLifts.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { lifts, cancelledNos };
+}
+
 // Same lazy-history pattern as Tally Entry: `view=pending` (default) only builds
 // Pending + a cheap `historyCount`; `view=history` is only requested once the user
 // opens that tab, and returns at most `limit` (100 default, 200 once searched) rows,
@@ -19,54 +105,14 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role");
     const records = searchParams.get("records");
 
-    // 1. Fetch lifts that have completed the submit-invoice stage (i.e. submitInvoice is not null)
-    const { data: lifts, error: liftError } = await supabase
-      .from("pfms_lift")
-      .select(`
-        *,
-        submitInvoice:"pfms_submit-invoice"!inner (
-          id,
-          timestamp,
-          handoverBy,
-          invoiceSubmissionDate,
-          plannedVerification
-        ),
-        accountsVerification:"pfms_accounts-verification" (
-          id,
-          timestamp,
-          verifiedCheckedBy,
-          verificationDate,
-          remarks
-        ),
-        tallyEntry:"pfms_tally-entry" (
-          doneDate,
-          timestamp,
-          remarks
-        ),
-        indent:"pfms_indent_generation"!inner (
-          indentNo,
-          itemName,
-          category,
-          warehouseLocation,
-          purchaser,
-          negotiation:pfms_negotiation (
-            selectedVendorName
-          ),
-          poEntry:"pfms_po-entry" (
-            poNumber,
-            basicValue,
-            totalWithTax
-          )
-        ),
-        materialReceived:"pfms_material-received" (
-          invoiceNumber,
-          invoiceDate,
-          receivedQty,
-          billAttachment
-        )
-      `) as any;
-
-    if (liftError) throw liftError;
+    let raw: { lifts: any[]; cancelledNos: Set<string> };
+    if (verificationRawCache && verificationRawCache.expiresAt > Date.now()) {
+      raw = verificationRawCache;
+    } else {
+      raw = await fetchRawVerificationData();
+      verificationRawCache = { ...raw, expiresAt: Date.now() + VERIFICATION_CACHE_TTL_MS };
+    }
+    const { lifts, cancelledNos } = raw;
 
     const pending = [];
     const history = [];
@@ -125,12 +171,6 @@ export async function GET(request: NextRequest) {
         pending.push(mappedRecord);
       }
     }
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
 
     const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
 
@@ -214,6 +254,11 @@ export async function POST(request: NextRequest) {
         .eq("liftNo", rec.liftNo);
     }
 
+    // Note: this also just wrote pfms_vendor-payment-details.plannedDate, which
+    // app/api/vendor-payment/route.ts caches separately — that page's cache can lag
+    // up to its own 45s TTL before showing the new plannedDate (same bounded-staleness
+    // tradeoff already accepted for app/api/dashboard/route.ts's cache).
+    verificationRawCache = null;
     return NextResponse.json({ success: true });
 
   } catch (error: any) {

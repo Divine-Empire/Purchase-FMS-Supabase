@@ -3,48 +3,79 @@ import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
-export async function GET() {
-  try {
-    // 1. Fetch indents that have POs (Stage 5 completed)
-    const { data: indents, error: indentError } = await supabase
-      .from("pfms_indent_generation")
-      .select(`
-        *,
-        approval:pfms_indent-approval (
-          approvedQty,
-          status,
-          remarks,
-          imgOptional,
-          approvedBy
-        ),
-        update3Vendors:pfms_update-3-vendors (
-          vendor1Name, vendor1Rate, vendor1Terms, vendor1DeliveryDate, vendor1WarrantyType, vendor1Attachment,
-          vendor2Name, vendor2Rate, vendor2Terms, vendor2DeliveryDate, vendor2WarrantyType, vendor2Attachment,
-          vendor3Name, vendor3Rate, vendor3Terms, vendor3DeliveryDate, vendor3WarrantyType, vendor3Attachment
-        ),
-        negotiation:pfms_negotiation!inner (
-          selectedVendorName,
-          finalApprovedBy,
-          negotiationRemarks
-        ),
-        poEntry:pfms_po-entry!inner (
-          poNumber,
-          basicValue,
-          totalWithTax,
-          hsn,
-          poCopy,
-          gst,
-          pkgAmount,
-          pkgGST,
-          plannedFollowUpVendor,
-          estimatedFollowUpVendor,
-          remarksFollowUpVendor
-        ),
-        lifts:pfms_lift (*)
-      `)
-      .order("timestamp", { ascending: false });
+// Short-lived in-memory cache for this stage's raw fetch (indents + lifts +
+// cancellations) — same pattern as app/api/dashboard/route.ts. 45s TTL means bursts
+// of GETs within that window (same warm instance) reuse the already-fetched data
+// instead of re-querying Supabase. Cleared on a successful write below so a user's
+// own change is reflected immediately on their next load, instead of waiting out the TTL.
+const FOLLOW_UP_VENDOR_CACHE_TTL_MS = 45_000;
+let followUpVendorRawCache: {
+  data: { sheetRecords: any[]; receivingAccountsData: any[] };
+  expiresAt: number;
+} | null = null;
 
-    if (indentError) throw indentError;
+async function fetchRawFollowUpVendorData() {
+  // 1. Fetch indents that have POs (Stage 5 completed). Paginated in 1000-row pages —
+  // PostgREST caps an unpaginated select at 1000 rows, and pfms_indent_generation
+  // already exceeds that (1700+ rows), so without this loop the oldest indents were
+  // silently dropped from this stage's pending list (while the Sidebar's count, which
+  // already paginates the same table in app/api/dashboard/route.ts, stayed correct) —
+  // same bypass pattern used there.
+  const indents: any[] = [];
+    {
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data: pageIndents, error: indentError } = await supabase
+          .from("pfms_indent_generation")
+          .select(`
+            *,
+            approval:pfms_indent-approval (
+              approvedQty,
+              status,
+              remarks,
+              imgOptional,
+              approvedBy
+            ),
+            update3Vendors:pfms_update-3-vendors (
+              vendor1Name, vendor1Rate, vendor1Terms, vendor1DeliveryDate, vendor1WarrantyType, vendor1Attachment,
+              vendor2Name, vendor2Rate, vendor2Terms, vendor2DeliveryDate, vendor2WarrantyType, vendor2Attachment,
+              vendor3Name, vendor3Rate, vendor3Terms, vendor3DeliveryDate, vendor3WarrantyType, vendor3Attachment
+            ),
+            negotiation:pfms_negotiation!inner (
+              selectedVendorName,
+              finalApprovedBy,
+              negotiationRemarks
+            ),
+            poEntry:pfms_po-entry!inner (
+              poNumber,
+              basicValue,
+              totalWithTax,
+              hsn,
+              poCopy,
+              gst,
+              pkgAmount,
+              pkgGST,
+              plannedFollowUpVendor,
+              estimatedFollowUpVendor,
+              remarksFollowUpVendor
+            ),
+            lifts:pfms_lift (*)
+          `)
+          .order("timestamp", { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (indentError) throw indentError;
+        if (!pageIndents || pageIndents.length === 0) {
+          hasMore = false;
+        } else {
+          indents.push(...pageIndents);
+          hasMore = pageIndents.length === pageSize;
+          page++;
+        }
+      }
+    }
 
     // Fetch cancellations
     const { data: cancelledList } = await supabase
@@ -164,25 +195,43 @@ export async function GET() {
         return true;
       });
 
-    // 2. Fetch history records (all lifts)
-    const { data: lifts, error: liftError } = await supabase
-      .from("pfms_lift")
-      .select(`
-        *,
-        indent:pfms_indent_generation!inner (
-          itemName,
-          purchaser,
-          negotiation:pfms_negotiation (
-            selectedVendorName
-          ),
-          poEntry:pfms_po-entry (
-            poNumber
-          )
-        )
-      `)
-      .order("timestamp", { ascending: false });
+    // 2. Fetch history records (all lifts). Same 1000-row cap applies here —
+    // pfms_lift is close to that threshold already, so this is paginated
+    // pre-emptively rather than waiting for it to start dropping rows too.
+    const lifts: any[] = [];
+    {
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data: pageLifts, error: liftError } = await supabase
+          .from("pfms_lift")
+          .select(`
+            *,
+            indent:pfms_indent_generation!inner (
+              itemName,
+              purchaser,
+              negotiation:pfms_negotiation (
+                selectedVendorName
+              ),
+              poEntry:pfms_po-entry (
+                poNumber
+              )
+            )
+          `)
+          .order("timestamp", { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-    if (liftError) throw liftError;
+        if (liftError) throw liftError;
+        if (!pageLifts || pageLifts.length === 0) {
+          hasMore = false;
+        } else {
+          lifts.push(...pageLifts);
+          hasMore = pageLifts.length === pageSize;
+          page++;
+        }
+      }
+    }
 
     const receivingAccountsData = lifts
       .filter((l: any) => !cancelledLiftNos.has(l.liftNo))
@@ -215,13 +264,20 @@ export async function GET() {
         };
       });
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        sheetRecords,
-        receivingAccountsData
-      }
-    });
+  return { sheetRecords, receivingAccountsData };
+}
+
+export async function GET() {
+  try {
+    let data: { sheetRecords: any[]; receivingAccountsData: any[] };
+    if (followUpVendorRawCache && followUpVendorRawCache.expiresAt > Date.now()) {
+      data = followUpVendorRawCache.data;
+    } else {
+      data = await fetchRawFollowUpVendorData();
+      followUpVendorRawCache = { data, expiresAt: Date.now() + FOLLOW_UP_VENDOR_CACHE_TTL_MS };
+    }
+
+    return NextResponse.json({ success: true, data });
 
   } catch (error: any) {
     console.error("Error in follow-up-vendor GET:", error);
@@ -257,6 +313,7 @@ export async function POST(request: NextRequest) {
         .eq("liftNo", liftNo);
 
       if (editError) throw editError;
+      followUpVendorRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -287,6 +344,7 @@ export async function POST(request: NextRequest) {
         if (updateError) throw updateError;
       }
 
+      followUpVendorRawCache = null;
       return NextResponse.json({ success: true });
     }
 
@@ -375,6 +433,7 @@ export async function POST(request: NextRequest) {
 
       if (tfuError) throw tfuError;
 
+      followUpVendorRawCache = null;
       return NextResponse.json({ success: true });
     }
 

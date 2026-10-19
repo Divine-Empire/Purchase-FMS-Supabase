@@ -3,28 +3,68 @@ import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
+// Short-lived in-memory cache for this stage's raw fetch (indents + cancellations) —
+// same pattern as app/api/dashboard/route.ts. 45s TTL means bursts of GETs within that
+// window (same warm instance) reuse the already-fetched data instead of re-querying
+// Supabase. Cleared on a successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const NEGOTIATION_CACHE_TTL_MS = 45_000;
+let negotiationRawCache: { indents: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawNegotiationData() {
+  // Fetch parent indents with inner join on update-3-vendors to ensure they completed
+  // Stage 3. Paginated in 1000-row pages — pfms_update-3-vendors already exceeds
+  // PostgREST's default 1000-row cap, so an unpaginated select here was silently
+  // dropping the oldest indents (same bypass pattern as app/api/dashboard/route.ts).
+  const indents: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageIndents, error } = await supabase
+        .from("pfms_indent_generation")
+        .select(`
+          *,
+          approval:pfms_indent-approval (
+            approvedQty
+          ),
+          update3Vendors:pfms_update-3-vendors!inner(*),
+          negotiation:pfms_negotiation(*)
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) throw error;
+      if (!pageIndents || pageIndents.length === 0) {
+        hasMore = false;
+      } else {
+        indents.push(...pageIndents);
+        hasMore = pageIndents.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  // Fetch cancellations
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { indents, cancelledNos };
+}
+
 export async function GET() {
   try {
-    // Fetch parent indents with inner join on update-3-vendors to ensure they completed Stage 3
-    const { data: indents, error } = await supabase
-      .from("pfms_indent_generation")
-      .select(`
-        *,
-        approval:pfms_indent-approval (
-          approvedQty
-        ),
-        update3Vendors:pfms_update-3-vendors!inner(*),
-        negotiation:pfms_negotiation(*)
-      `)
-      .order("timestamp", { ascending: false });
-
-    if (error) throw error;
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+    let raw: { indents: any[]; cancelledNos: Set<string> };
+    if (negotiationRawCache && negotiationRawCache.expiresAt > Date.now()) {
+      raw = negotiationRawCache;
+    } else {
+      raw = await fetchRawNegotiationData();
+      negotiationRawCache = { ...raw, expiresAt: Date.now() + NEGOTIATION_CACHE_TTL_MS };
+    }
+    const { indents, cancelledNos } = raw;
 
     const mappedData = indents
       .map((row: any) => {
@@ -139,6 +179,7 @@ export async function POST(request: NextRequest) {
 
       if (insertError) throw insertError;
 
+      negotiationRawCache = null;
       return NextResponse.json({ success: true });
     }
 

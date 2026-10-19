@@ -4,6 +4,84 @@ import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { canViewPurchaserRecord } from "@/lib/utils";
 
+// Short-lived in-memory cache for this stage's raw fetch (lifts + cancellations) —
+// same pattern as app/api/dashboard/route.ts. 45s TTL means bursts of GETs within that
+// window (same warm instance) reuse the already-fetched data instead of re-querying
+// Supabase. Cleared on a successful write below so a user's own change is reflected
+// immediately on their next load, instead of waiting out the TTL.
+const SUBMIT_INVOICE_HO_CACHE_TTL_MS = 45_000;
+let submitInvoiceHoRawCache: { lifts: any[]; cancelledNos: Set<string>; expiresAt: number } | null = null;
+
+async function fetchRawSubmitInvoiceHoData() {
+  // Fetch tally-entry records to determine pending and completed HO submissions.
+  // Paginated in 1000-row pages — pfms_tally-entry is close to PostgREST's default
+  // 1000-row cap and growing, so this is paginated pre-emptively (same bypass
+  // pattern as app/api/dashboard/route.ts) rather than waiting for it to start
+  // silently dropping rows.
+  const lifts: any[] = [];
+  {
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: pageLifts, error: liftError }: any = await supabase
+        .from("pfms_lift")
+        .select(`
+          *,
+          tallyEntry:"pfms_tally-entry"!inner (
+            id,
+            timestamp,
+            plannedInvoiceHO
+          ),
+          submitInvoiceHO:"pfms_submit-invoice-ho" (
+            id,
+            timestamp,
+            hardcopySubmitted,
+            submissionDate
+          ),
+          indent:"pfms_indent_generation"!inner (
+            indentNo,
+            itemName,
+            category,
+            warehouseLocation,
+            purchaser,
+            negotiation:pfms_negotiation (
+              selectedVendorName
+            ),
+            poEntry:"pfms_po-entry" (
+              poNumber,
+              basicValue,
+              totalWithTax
+            )
+          ),
+          materialReceived:"pfms_material-received" (
+            invoiceNumber,
+            invoiceDate,
+            receivedQty
+          )
+        `)
+        .order("timestamp", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (liftError) throw liftError;
+      if (!pageLifts || pageLifts.length === 0) {
+        hasMore = false;
+      } else {
+        lifts.push(...pageLifts);
+        hasMore = pageLifts.length === pageSize;
+        page++;
+      }
+    }
+  }
+
+  const { data: cancelledList } = await supabase
+    .from("pfms_order-cancellation")
+    .select("indentNo");
+  const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
+
+  return { lifts, cancelledNos };
+}
+
 // Same lazy-history pattern as Tally Entry: `view=pending` (default) only builds
 // Pending + a cheap `historyCount`; `view=history` is only requested once the user
 // opens that tab, and returns at most `limit` (100 default, 200 once searched) rows,
@@ -19,45 +97,14 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get("role");
     const records = searchParams.get("records");
 
-    // 1. Fetch tally-entry records to determine pending and completed HO submissions
-    const { data: lifts, error: liftError } = await supabase
-      .from("pfms_lift")
-      .select(`
-        *,
-        tallyEntry:"pfms_tally-entry"!inner (
-          id,
-          timestamp,
-          plannedInvoiceHO
-        ),
-        submitInvoiceHO:"pfms_submit-invoice-ho" (
-          id,
-          timestamp,
-          hardcopySubmitted,
-          submissionDate
-        ),
-        indent:"pfms_indent_generation"!inner (
-          indentNo,
-          itemName,
-          category,
-          warehouseLocation,
-          purchaser,
-          negotiation:pfms_negotiation (
-            selectedVendorName
-          ),
-          poEntry:"pfms_po-entry" (
-            poNumber,
-            basicValue,
-            totalWithTax
-          )
-        ),
-        materialReceived:"pfms_material-received" (
-          invoiceNumber,
-          invoiceDate,
-          receivedQty
-        )
-      `) as any;
-
-    if (liftError) throw liftError;
+    let raw: { lifts: any[]; cancelledNos: Set<string> };
+    if (submitInvoiceHoRawCache && submitInvoiceHoRawCache.expiresAt > Date.now()) {
+      raw = submitInvoiceHoRawCache;
+    } else {
+      raw = await fetchRawSubmitInvoiceHoData();
+      submitInvoiceHoRawCache = { ...raw, expiresAt: Date.now() + SUBMIT_INVOICE_HO_CACHE_TTL_MS };
+    }
+    const { lifts, cancelledNos } = raw;
 
     const pending = [];
     const history = [];
@@ -114,12 +161,6 @@ export async function GET(request: NextRequest) {
         pending.push(mappedRecord);
       }
     }
-
-    // Fetch cancellations
-    const { data: cancelledList } = await supabase
-      .from("pfms_order-cancellation")
-      .select("indentNo");
-    const cancelledNos = new Set((cancelledList || []).map((c: any) => c.indentNo));
 
     const filteredPending = pending.filter((row: any) => !cancelledNos.has(row.data.indentNumber));
 
@@ -192,6 +233,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) throw insertError;
 
+    submitInvoiceHoRawCache = null;
     return NextResponse.json({ success: true });
 
   } catch (error: any) {

@@ -3,43 +3,72 @@ import { supabase } from "@/utils/supabase/server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
-export async function GET() {
-  try {
-    const { data: followUps, error } = await supabase
-      .from("pfms_transporter-follow-up")
-      .select(`
-        id,
-        liftNo,
-        status,
-        expectedDeliveryDate,
-        nextFollowUpDate,
-        remarks,
-        lastFollowUpDate,
-        totalFollowUps,
-        lift:pfms_lift!inner (
-          plannedTransporterFlwUp,
-          liftingQty,
-          transporterName,
-          vehicleNo,
-          contactNo,
-          lrNo,
-          biltyCopy,
-          freightAmount,
-          indent:pfms_indent_generation!inner (
-            indentNo,
-            itemName,
-            purchaser,
-            negotiation:pfms_negotiation (
-              selectedVendorName
-            ),
-            poEntry:pfms_po-entry (
-              poNumber
-            )
-          )
-        )
-      `);
+// Short-lived in-memory cache for this stage's fully-computed list — same pattern as
+// app/api/dashboard/route.ts. This route has no role/records-based per-request
+// filtering, so the finished output is cached directly rather than the raw rows.
+// 45s TTL means bursts of GETs within that window (same warm instance) reuse the
+// already-computed data instead of re-querying Supabase. Cleared on a successful
+// write below so a user's own change is reflected immediately on their next load,
+// instead of waiting out the TTL.
+const TRANSPORTER_FOLLOW_UP_CACHE_TTL_MS = 45_000;
+let transporterFollowUpCache: { data: any[]; expiresAt: number } | null = null;
 
-    if (error) throw error;
+async function fetchTransporterFollowUpData() {
+    // Paginated in 1000-row pages — pfms_transporter-follow-up is close to PostgREST's
+    // default 1000-row cap and growing, so this is paginated pre-emptively (same bypass
+    // pattern as app/api/dashboard/route.ts).
+    const followUps: any[] = [];
+    {
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data: pageFollowUps, error } = await supabase
+          .from("pfms_transporter-follow-up")
+          .select(`
+            id,
+            liftNo,
+            status,
+            expectedDeliveryDate,
+            nextFollowUpDate,
+            remarks,
+            lastFollowUpDate,
+            totalFollowUps,
+            lift:pfms_lift!inner (
+              plannedTransporterFlwUp,
+              liftingQty,
+              transporterName,
+              vehicleNo,
+              contactNo,
+              lrNo,
+              biltyCopy,
+              freightAmount,
+              indent:pfms_indent_generation!inner (
+                indentNo,
+                itemName,
+                purchaser,
+                negotiation:pfms_negotiation (
+                  selectedVendorName
+                ),
+                poEntry:pfms_po-entry (
+                  poNumber
+                )
+              )
+            )
+          `)
+          .order("timestamp", { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        if (!pageFollowUps || pageFollowUps.length === 0) {
+          hasMore = false;
+        } else {
+          followUps.push(...pageFollowUps);
+          hasMore = pageFollowUps.length === pageSize;
+          page++;
+        }
+      }
+    }
 
     // Fetch cancellations
     const { data: cancelledList } = await supabase
@@ -95,7 +124,20 @@ export async function GET() {
         return true;
       });
 
-    return NextResponse.json({ success: true, data: mappedData });
+  return mappedData;
+}
+
+export async function GET() {
+  try {
+    let data: any[];
+    if (transporterFollowUpCache && transporterFollowUpCache.expiresAt > Date.now()) {
+      data = transporterFollowUpCache.data;
+    } else {
+      data = await fetchTransporterFollowUpData();
+      transporterFollowUpCache = { data, expiresAt: Date.now() + TRANSPORTER_FOLLOW_UP_CACHE_TTL_MS };
+    }
+
+    return NextResponse.json({ success: true, data });
 
   } catch (error: any) {
     console.error("Error in transporter-follow-up GET:", error);
@@ -216,6 +258,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    transporterFollowUpCache = null;
     return NextResponse.json({ success: true });
 
   } catch (error: any) {

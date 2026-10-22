@@ -51,30 +51,51 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, serials: (serials || []).map(s => s.serialNo) });
     }
 
-    // 1. Fetch all material received records
-    const { data: receipts, error: receiptError } = await supabase
-      .from("pfms_material-received")
-      .select(`
-        *,
-        lift:pfms_lift!inner (
-          liftNo,
-          plannedSerialGen,
-          indent:pfms_indent_generation!inner (
-            indentNo,
-            itemName,
-            purchaser,
-            negotiation:pfms_negotiation (
-              selectedVendorName
-            ),
-            poEntry:pfms_po-entry (
-              poNumber,
-              poCopy
+    // 1. Fetch all material received records. Paginated in 1000-row pages —
+    // pfms_material-received has just crossed PostgREST's default 1000-row cap, and
+    // this query previously had no `.range()` (and no `.order()`, so the arbitrary
+    // first 1000 rows could silently exclude even the most recent ones) — same
+    // bypass pattern as app/api/dashboard/route.ts.
+    const receipts: any[] = [];
+    {
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data: pageReceipts, error: receiptError }: any = await supabase
+          .from("pfms_material-received")
+          .select(`
+            *,
+            lift:pfms_lift!inner (
+              liftNo,
+              plannedSerialGen,
+              indent:pfms_indent_generation!inner (
+                indentNo,
+                itemName,
+                purchaser,
+                negotiation:pfms_negotiation (
+                  selectedVendorName
+                ),
+                poEntry:pfms_po-entry (
+                  poNumber,
+                  poCopy
+                )
+              )
             )
-          )
-        )
-      `) as any;
+          `)
+          .order("timestamp", { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-    if (receiptError) throw receiptError;
+        if (receiptError) throw receiptError;
+        if (!pageReceipts || pageReceipts.length === 0) {
+          hasMore = false;
+        } else {
+          receipts.push(...pageReceipts);
+          hasMore = pageReceipts.length === pageSize;
+          page++;
+        }
+      }
+    }
 
     // 2. Fetch all serial numbers using pagination to bypass PostgREST default limit
     const serials: any[] = [];

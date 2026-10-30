@@ -106,13 +106,16 @@ const TransporterCombobox = ({
   value,
   onChange,
   options,
+  onCreate,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
+  onCreate?: (value: string) => void;
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -142,12 +145,38 @@ const TransporterCombobox = ({
                   variant="secondary"
                   size="sm"
                   className="w-full h-8"
-                  onClick={() => {
-                    onChange(query);
-                    setOpen(false);
+                  disabled={isCreating}
+                  onClick={async () => {
+                    const newValue = query.trim();
+                    if (!newValue) return;
+                    setIsCreating(true);
+                    try {
+                      const res = await fetch("/api/dropdowns", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "addDropdownOption",
+                          column: "Transporter",
+                          value: newValue,
+                        }),
+                      });
+                      const json = await res.json();
+                      if (!json.success) {
+                        toast.error(json.error || "Failed to create transporter");
+                        return;
+                      }
+                      onCreate?.(newValue);
+                      onChange(newValue);
+                      setOpen(false);
+                    } catch (err) {
+                      console.error("Error creating transporter:", err);
+                      toast.error("Failed to create transporter");
+                    } finally {
+                      setIsCreating(false);
+                    }
                   }}
                 >
-                  Create "{query}"
+                  {isCreating ? "Creating..." : `Create "${query}"`}
                 </Button>
               </div>
             </CommandEmpty>
@@ -1305,6 +1334,9 @@ export default function Stage6() {
                             } : null)
                           }
                           options={transporterList}
+                          onCreate={(val) =>
+                            setTransporterList((prev) => prev.includes(val) ? prev : [...prev, val])
+                          }
                         />
                       </div>
                       <div>
@@ -1584,6 +1616,9 @@ export default function Stage6() {
                                 )
                               }
                               options={transporterList}
+                              onCreate={(val) =>
+                                setTransporterList((prev) => prev.includes(val) ? prev : [...prev, val])
+                              }
                             />
                           </div>
                           <div>

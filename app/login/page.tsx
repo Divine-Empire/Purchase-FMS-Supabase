@@ -1,23 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { User, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
     const { login } = useAuth();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
         setError(null);
+
+        if (!username || !password) {
+            setError("Please enter both username and password");
+            return;
+        }
+
+        setIsLoading(true);
 
         try {
             const success = await login(username, password);
@@ -32,78 +36,85 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-secondary/10 p-4">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(120,119,198,0.1),transparent_70%)] pointer-events-none" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(255,107,107,0.05),transparent_70%)] pointer-events-none" />
+        <div className="flex min-h-dvh flex-col bg-background">
+            <main className="flex flex-1 items-center justify-center p-4">
+                <div className="relative w-full max-w-sm overflow-hidden rounded-lg border bg-card p-6 shadow-sm sm:p-8">
+                    <div className="absolute inset-x-0 top-0 h-1 bg-primary" aria-hidden="true" />
 
-            <Card className="w-full max-w-md shadow-2xl border-0 bg-background/80 backdrop-blur-sm">
-                <CardHeader className="text-center pb-8">
-                    <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
-                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                        </svg>
+                    <div className="mb-6 flex flex-col items-center gap-3 text-center">
+                        <img src="/divine-logo.svg" alt="Divine" className="h-16 w-auto" />
+                        <div>
+                            <h1 className="text-xl font-semibold tracking-tight text-foreground">Purchase Workflow</h1>
+                            <p className="text-sm text-muted-foreground">Sign in to access your dashboard</p>
+                        </div>
                     </div>
-                    <CardTitle className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                        Purchase Workflow
-                    </CardTitle>
-                    <CardDescription className="text-lg text-muted-foreground">
-                        Sign in to access your dashboard
-                    </CardDescription>
-                </CardHeader>
 
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        {error && (
-                            <div className="p-3 text-sm font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-md animate-in fade-in zoom-in duration-300">
-                                {error}
-                            </div>
-                        )}
-                        <div className="space-y-2">
-                            <Label htmlFor="username" className="text-sm font-medium">
+                    {error && (
+                        <div role="alert" className="mb-4 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            {error}
+                        </div>
+                    )}
+
+                    <form className="space-y-4" onSubmit={handleSubmit}>
+                        <div className="space-y-1.5">
+                            <label htmlFor="username" className="text-sm font-medium text-foreground">
                                 Username
-                            </Label>
-                            <Input
-                                id="username"
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                required
-                                className="h-12 text-base"
-                                placeholder="Enter your username"
-                                disabled={isLoading}
-                            />
+                            </label>
+                            <div className="relative">
+                                <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                <input
+                                    id="username"
+                                    name="username"
+                                    type="text"
+                                    autoComplete="username"
+                                    required
+                                    disabled={isLoading}
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    className="block h-9 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
+                                    placeholder="Enter your username"
+                                />
+                            </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="password" className="text-sm font-medium">
+                        <div className="space-y-1.5">
+                            <label htmlFor="password" className="text-sm font-medium text-foreground">
                                 Password
-                            </Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                className="h-12 text-base"
-                                placeholder="Enter your password"
-                                disabled={isLoading}
-                            />
+                            </label>
+                            <div className="relative">
+                                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                <input
+                                    id="password"
+                                    name="password"
+                                    type={showPassword ? "text" : "password"}
+                                    autoComplete="current-password"
+                                    required
+                                    disabled={isLoading}
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="block h-9 w-full rounded-md border border-input bg-card pl-9 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
+                                    placeholder="Enter your password"
+                                />
+                                <button
+                                    type="button"
+                                    className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground"
+                                    onClick={() => setShowPassword((prev) => !prev)}
+                                    aria-label={showPassword ? "Hide password" : "Show password"}
+                                    aria-pressed={showPassword}
+                                >
+                                    {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                                </button>
+                            </div>
                         </div>
 
-                        <Button
+                        <button
                             type="submit"
-                            className="w-full h-12 text-base font-semibold bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg hover:shadow-xl transition-all duration-300"
-                            disabled={isLoading || !username || !password}
+                            disabled={isLoading}
+                            className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
                         >
-                            {isLoading ? (
-                                <div className="flex items-center gap-2">
-                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    Signing in...
-                                </div>
-                            ) : (
-                                "Sign In"
-                            )}
-                        </Button>
+                            {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                            {isLoading ? "Signing in..." : "Sign in"}
+                        </button>
                     </form>
 
                     <div className="mt-6 text-center">
@@ -111,16 +122,14 @@ export default function LoginPage() {
                             Please use your company credentials
                         </p>
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </main>
 
-            {/* Footer */}
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
+            <footer className="py-4 text-center">
                 <p className="text-sm text-muted-foreground">
-                    Powered by{" "}
-                    <span className="font-semibold text-primary">Botivate</span>
+                    Powered by <span className="font-semibold text-primary">Botivate</span>
                 </p>
-            </div>
+            </footer>
         </div>
     );
 }

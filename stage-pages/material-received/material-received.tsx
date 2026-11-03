@@ -28,7 +28,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Upload, X, Loader2, Search, Package } from "lucide-react";
+import { FileText, Upload, X, Loader2, Search, Package, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardList, History as HistoryIcon } from "lucide-react";
@@ -225,6 +225,17 @@ export default function MaterialReceived() {
     const [editFormData, setEditFormData] = useState({
         invoiceNumber: "", receivedQty: "", qcRequirement: "", billAttachment: null as File | string | null,
     });
+
+    // Admin-only: bulk edit multiple History records at once (e.g. records sharing the
+    // same invoice) — only Invoice Number / Bill Attachment are edited in bulk, since those
+    // are the fields that are genuinely shared across a batch; per-lift fields like
+    // Received Qty / QC Required stay single-record-only via handleOpenEditHistory.
+    const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
+    const [openBulkEditModal, setOpenBulkEditModal] = useState(false);
+    const [isSavingBulkEdit, setIsSavingBulkEdit] = useState(false);
+    const [bulkEditFormData, setBulkEditFormData] = useState({
+        invoiceNumber: "", billAttachment: null as File | null,
+    });
     const [selectedPendingColumns, setSelectedPendingColumns] = useState<string[]>(
         PENDING_COLUMNS.map((c) => c.key)
     );
@@ -370,6 +381,68 @@ export default function MaterialReceived() {
         }
     };
 
+    // ---- Admin: bulk-edit multiple completed History records at once ----
+    const handleOpenBulkEditHistory = () => {
+        if (selectedHistoryIds.length < 2) return;
+        const first = recordMap.get(selectedHistoryIds[0]);
+        const sameInvoice = selectedHistoryIds.every(
+            (id) => recordMap.get(id)?.data?.invoiceNumber === first?.data?.invoiceNumber
+        );
+        setBulkEditFormData({
+            invoiceNumber: sameInvoice ? (first?.data?.invoiceNumber || "") : "",
+            billAttachment: null,
+        });
+        setOpenBulkEditModal(true);
+    };
+
+    const handleSaveBulkEditHistory = async () => {
+        if (selectedHistoryIds.length < 2) return;
+        if (!bulkEditFormData.invoiceNumber.trim() && !bulkEditFormData.billAttachment) {
+            toast.error("Enter an Invoice Number or attach a Bill to apply to the selected records.");
+            return;
+        }
+        setIsSavingBulkEdit(true);
+        try {
+            const billUrl = bulkEditFormData.billAttachment
+                ? await uploadFileToDrive(bulkEditFormData.billAttachment)
+                : null;
+
+            const results = await Promise.all(
+                selectedHistoryIds.map(async (id) => {
+                    const rec = recordMap.get(id);
+                    if (!rec) return { success: false, error: "Record not found locally" };
+                    const res = await fetch("/api/material-received", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            action: "editHistory",
+                            liftNo: rec.data.liftNo,
+                            invoiceNumber: bulkEditFormData.invoiceNumber.trim() || undefined,
+                            billAttachment: billUrl || undefined,
+                        }),
+                    });
+                    return res.json();
+                })
+            );
+
+            const failures = results.filter((r) => !r.success);
+            if (failures.length > 0) {
+                toast.error(`${failures.length} of ${selectedHistoryIds.length} record(s) failed: ${failures[0].error || "Unknown error"}`);
+            } else {
+                toast.success(`${selectedHistoryIds.length} record(s) updated successfully.`);
+            }
+
+            invalidateSidebarCounts();
+            setOpenBulkEditModal(false);
+            setSelectedHistoryIds([]);
+            await fetchData();
+        } catch (err: any) {
+            toast.error(err.message || "Failed to save bulk changes");
+        } finally {
+            setIsSavingBulkEdit(false);
+        }
+    };
+
     const [form, setForm] = useState({
         itemName: "",
         liftNumber: "",
@@ -470,6 +543,12 @@ export default function MaterialReceived() {
 
     const handleBulkSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!commonData.billAttachment) {
+            toast.error("Please attach the bill before submitting.", {
+                style: { background: "red", color: "white", border: "none" }
+            });
+            return;
+        }
         setIsSubmitting(true);
         try {
             const billUrlPromise = commonData.billAttachment
@@ -602,6 +681,12 @@ export default function MaterialReceived() {
         if (!selectedRecordId) return;
         const rec = recordMap.get(selectedRecordId);
         if (!rec) return;
+        if (!form.billAttachment) {
+            toast.error("Please attach the bill before submitting.", {
+                style: { background: "red", color: "white", border: "none" }
+            });
+            return;
+        }
         setIsSubmitting(true);
         try {
             const billPromise = form.billAttachment instanceof File
@@ -880,7 +965,10 @@ export default function MaterialReceived() {
         <div className="p-4 md:p-6 min-h-screen bg-slate-50/30">
             <Tabs
                 value={activeTab}
-                onValueChange={(v) => setActiveTab(v as any)}
+                onValueChange={(v) => {
+                    setActiveTab(v as any);
+                    setSelectedHistoryIds([]);
+                }}
                 className="w-full"
             >
                 <div className="md:sticky md:top-0 z-50 bg-slate-50 -mx-4 md:-mx-6 px-4 md:px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
@@ -897,11 +985,20 @@ export default function MaterialReceived() {
 
                             <div className="flex items-center gap-4">
                                 {activeTab === "pending" && selectedRecordIds.length > 1 && (
-                                    <Button 
+                                    <Button
                                         onClick={handleBulkOpen}
                                         className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-md text-white font-bold"
                                     >
                                         Bulk Record ({selectedRecordIds.length})
+                                    </Button>
+                                )}
+
+                                {activeTab === "history" && isAdmin && selectedHistoryIds.length > 1 && (
+                                    <Button
+                                        onClick={handleOpenBulkEditHistory}
+                                        className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-md text-white font-bold"
+                                    >
+                                        <Pencil className="w-4 h-4 mr-1.5" /> Bulk Edit ({selectedHistoryIds.length})
                                     </Button>
                                 )}
 
@@ -1094,6 +1191,8 @@ export default function MaterialReceived() {
                                     HISTORY_COLUMNS={HISTORY_COLUMNS}
                                     isAdmin={isAdmin}
                                     onEdit={handleOpenEditHistory}
+                                    selectedHistoryIds={selectedHistoryIds}
+                                    setSelectedHistoryIds={setSelectedHistoryIds}
                                 />
                             )}
                         </TabsContent>
@@ -2041,7 +2140,59 @@ export default function MaterialReceived() {
                 </DialogContent>
             </Dialog>
 
-            <BackgroundSyncBanner visible={isSavingEdit} />
+            {/* Admin: Bulk-edit multiple History records at once */}
+            <Dialog open={openBulkEditModal} onOpenChange={setOpenBulkEditModal}>
+                <DialogContent className="max-w-md bg-white">
+                    <DialogHeader>
+                        <DialogTitle className="text-amber-950">
+                            Bulk Edit — {selectedHistoryIds.length} records
+                        </DialogTitle>
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                            Applies the same Invoice Number / Bill Attachment to every selected record. Leave a field unchanged to keep each record's existing value.
+                        </p>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="max-h-28 overflow-y-auto rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-600 space-y-1">
+                            {selectedHistoryIds.map((id) => {
+                                const rec = recordMap.get(id);
+                                return (
+                                    <div key={id} className="flex justify-between">
+                                        <span>{rec?.data?.indentNumber || "-"}</span>
+                                        <span className="text-slate-400">{rec?.data?.liftNo || "-"}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-700">Invoice Number</Label>
+                            <Input
+                                value={bulkEditFormData.invoiceNumber}
+                                onChange={(e) => setBulkEditFormData((prev) => ({ ...prev, invoiceNumber: e.target.value }))}
+                                className="h-9 text-sm"
+                                placeholder="Leave blank to keep existing values"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-700">Bill Attachment</Label>
+                            <Input
+                                type="file"
+                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                onChange={(e) => setBulkEditFormData((prev) => ({ ...prev, billAttachment: e.target.files?.[0] || null }))}
+                                className="h-9 text-sm"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setOpenBulkEditModal(false)} disabled={isSavingBulkEdit}>Cancel</Button>
+                        <Button onClick={handleSaveBulkEditHistory} disabled={isSavingBulkEdit} className="bg-amber-600 hover:bg-amber-700 text-white">
+                            {isSavingBulkEdit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+                            Save Changes
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <BackgroundSyncBanner visible={isSavingEdit || isSavingBulkEdit} />
         </div>
     );
 }

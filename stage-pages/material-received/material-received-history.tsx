@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { FileText, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { parseSheetDate, cn, formatDateTimeDash } from "@/lib/utils";
 
 const formatDateDash = (date: any) => formatDateTimeDash(date);
@@ -43,6 +44,8 @@ interface MaterialReceivedHistoryProps {
   HISTORY_COLUMNS: readonly { readonly key: string; readonly label: string }[];
   isAdmin?: boolean;
   onEdit?: (record: any) => void;
+  selectedHistoryIds?: string[];
+  setSelectedHistoryIds?: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 export default function MaterialReceivedHistory({
@@ -51,12 +54,28 @@ export default function MaterialReceivedHistory({
   HISTORY_COLUMNS,
   isAdmin,
   onEdit,
+  selectedHistoryIds = [],
+  setSelectedHistoryIds,
 }: MaterialReceivedHistoryProps) {
   return (
     <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
       <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
         <TableHeader className="sticky top-0 z-30 bg-slate-900 shadow-sm border-none [&_th]:h-12 border-b-0">
           <TableRow className="bg-slate-900 hover:bg-slate-900 border-none">
+            {isAdmin && setSelectedHistoryIds && (
+              <TableHead className="sticky left-0 z-40 bg-slate-900 w-[50px] border-b text-center text-white">
+                <Checkbox
+                  checked={
+                    completed.length > 0 &&
+                    selectedHistoryIds.length === completed.length
+                  }
+                  onCheckedChange={(checked) => {
+                    setSelectedHistoryIds(checked ? completed.map((r) => r.id) : []);
+                  }}
+                  className="border-slate-300 data-[state=checked]:bg-white data-[state=checked]:text-slate-900"
+                />
+              </TableHead>
+            )}
             {isAdmin && (
               <TableHead className="bg-slate-900 border-b text-center px-4 py-3 font-semibold text-white whitespace-nowrap uppercase">
                 Edit
@@ -77,9 +96,27 @@ export default function MaterialReceivedHistory({
         <TableBody>
           {completed.map((record) => {
             const historyData = record.data;
+            const isSelected = selectedHistoryIds.includes(record.id);
 
             return (
-              <TableRow key={record.id} className="even:bg-slate-50/30 hover:bg-indigo-50/15 transition-colors border-b border-slate-100">
+              <TableRow key={record.id} className={cn(
+                "hover:bg-indigo-50/15 transition-colors border-b border-slate-100",
+                isSelected ? "bg-indigo-50/30" : "even:bg-slate-50/30"
+              )}>
+                {isAdmin && setSelectedHistoryIds && (
+                  <TableCell className="sticky left-0 z-20 border-b text-center bg-inherit">
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={(checked) => {
+                        setSelectedHistoryIds((prev) =>
+                          checked
+                            ? [...prev, record.id]
+                            : prev.filter((id) => id !== record.id)
+                        );
+                      }}
+                    />
+                  </TableCell>
+                )}
                 {isAdmin && (
                   <TableCell className="border-b px-4 py-2 text-center">
                     <Button

@@ -206,6 +206,8 @@ export default function DropdownsMaster() {
   const [addItemError, setAddItemError] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [manualCategory, setManualCategory] = useState("");
+  const [previewedItemCode, setPreviewedItemCode] = useState("");
+  const [isPreviewingItemCode, setIsPreviewingItemCode] = useState(false);
 
   // Edit Item Modal
   const [openEditItemModal, setOpenEditItemModal] = useState(false);
@@ -367,6 +369,39 @@ export default function DropdownsMaster() {
     return Array.from(new Set(cats)).sort();
   }, [data.items]);
 
+  // Add Item modal: whichever category the form currently resolves to (dropdown pick, or
+  // the manual-entry box when "OTHER" is picked).
+  const addItemFinalCategory = selectedCategory === "OTHER" ? manualCategory.trim() : selectedCategory.trim();
+
+  // Live preview of the code this item would get, purely informational (debounced so typing
+  // a manual category doesn't fire a request per keystroke). The real code is (re)computed
+  // atomically on the server at submit time (see app/api/dropdowns/route.ts's addItem
+  // action / generateItemCode) — this preview never reserves or writes anything, so it can't
+  // cause or see a duplicate even if someone else saves an item under the same prefix first.
+  useEffect(() => {
+    if (!openItemModal || !addItemFinalCategory) {
+      setPreviewedItemCode("");
+      setIsPreviewingItemCode(false);
+      return;
+    }
+
+    setIsPreviewingItemCode(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/dropdowns?previewItemCode=${encodeURIComponent(addItemFinalCategory)}`);
+        const json = await res.json();
+        setPreviewedItemCode(json.success ? json.itemCode : "");
+      } catch (err) {
+        console.error("Error previewing item code:", err);
+        setPreviewedItemCode("");
+      } finally {
+        setIsPreviewingItemCode(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [openItemModal, addItemFinalCategory]);
+
   // Filters with Reverse Sorting (Newest/Latest items or vendors at the top)
   const filteredItems = useMemo(() => {
     const rawList: ItemRecord[] = data.items || [];
@@ -512,42 +547,26 @@ export default function DropdownsMaster() {
       return;
     }
 
-    if (!newItem.itemCode.trim()) {
-      setAddItemError("Item Code is required.");
-      return;
-    }
-
-    // Duplicate Check: Category & Item Name combination
+    // Duplicate Check: Item Name (lto_items enforces this with a DB-level unique
+    // constraint too, but checking client-side first gives a friendlier inline error).
     const existingItems: ItemRecord[] = data.items || [];
     const isDuplicate = existingItems.some(
-      (item) =>
-        item.itemName.trim().toLowerCase() === newItem.itemName.trim().toLowerCase() &&
-        item.category.trim().toLowerCase() === finalCategory.toLowerCase()
+      (item) => item.itemName.trim().toLowerCase() === newItem.itemName.trim().toLowerCase()
     );
 
     if (isDuplicate) {
-      setAddItemError(`Item "${newItem.itemName}" already exists under category "${finalCategory}".`);
-      return;
-    }
-
-    // Duplicate Check: Item Code
-    const isCodeDuplicate = existingItems.some(
-      (item) =>
-        item.itemCode &&
-        item.itemCode.trim().toLowerCase() === newItem.itemCode.trim().toLowerCase()
-    );
-    if (isCodeDuplicate) {
-      setAddItemError(`Item code "${newItem.itemCode}" is already assigned to another item.`);
+      setAddItemError(`Item "${newItem.itemName}" already exists.`);
       return;
     }
 
     try {
+      // No itemCode sent — it's never typed in anymore. The server generates it from the
+      // category's prefix (see app/api/helper/itemCodeGenerator.ts) when it inserts the row.
       const res = await fetch("/api/dropdowns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "addItem",
-          itemCode: newItem.itemCode,
           category: finalCategory,
           itemName: newItem.itemName,
           purchaser: newItem.purchaser,
@@ -1803,20 +1822,6 @@ export default function DropdownsMaster() {
                 {addItemError}
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label htmlFor="itemCode" className="text-xs font-bold text-slate-900">
-                Item Code <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="itemCode"
-                placeholder="e.g. ITM-001"
-                value={newItem.itemCode}
-                onChange={(e) => setNewItem((prev) => ({ ...prev, itemCode: e.target.value }))}
-                className="h-9 text-xs border-slate-350 focus-visible:ring-slate-950 font-semibold"
-                required
-              />
-            </div>
-
             {/* Category Dropdown Selection & Other Manually option */}
             <div className="space-y-1.5">
               <Label htmlFor="categorySelect" className="text-xs font-bold text-slate-900">Item Category</Label>
@@ -1846,6 +1851,20 @@ export default function DropdownsMaster() {
                   onChange={(e) => setManualCategory(e.target.value)}
                   className="h-9 text-xs border-slate-355 focus-visible:ring-slate-900 font-semibold text-slate-905"
                 />
+              </div>
+            )}
+
+            {addItemFinalCategory && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-900">Item Code (Preview)</Label>
+                <Input
+                  readOnly
+                  value={isPreviewingItemCode ? "Calculating..." : previewedItemCode || "—"}
+                  className="h-9 text-xs bg-slate-50 font-mono font-semibold text-slate-700 cursor-not-allowed"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Assigned for real when you save — this is just a preview.
+                </p>
               </div>
             )}
 

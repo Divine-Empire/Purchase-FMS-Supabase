@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
+import { ltoSupabase } from "@/utils/supabase/lto-server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
+import { generateItemCode } from "@/app/api/helper/itemCodeGenerator";
 
 // Short-lived in-memory cache for this stage's raw fetch (indents + cancellations) —
 // same pattern as app/api/dashboard/route.ts. Every navigation back to this page, or
@@ -171,6 +173,72 @@ export async function POST(request: NextRequest) {
 
       indentApprovalRawCache = null;
       return NextResponse.json({ success: true });
+    }
+
+    // Resolves a "New" item (one synced from Lead-To-Order/OTP/Service with just a name,
+    // sitting in lto_items with a blank item_code) that's blocking approval of an indent
+    // raised against it. The approver confirms/picks the Category and picks a Purchaser;
+    // the Item Code is generated server-side (never typed in) from the category's prefix
+    // (see app/api/helper/itemCodeGenerator.ts). This is the single gate where a brand-new
+    // item actually gets a code + purchaser — lto_items itself never collects either.
+    if (action === "resolveNewItem") {
+      const { itemName, category, purchaser } = body;
+      if (!itemName || !category || !purchaser) {
+        return NextResponse.json({ success: false, error: "Missing itemName, category, or purchaser" }, { status: 400 });
+      }
+
+      const trimmedName = itemName.trim();
+      const trimmedCategory = category.trim();
+      const trimmedPurchaser = purchaser.trim();
+
+      const { data: catalogItem, error: catalogFetchError } = await ltoSupabase
+        .from("lto_items")
+        .select("uuid, item_code")
+        .ilike("item_name", trimmedName)
+        .maybeSingle();
+      if (catalogFetchError) throw catalogFetchError;
+      if (!catalogItem) {
+        return NextResponse.json({ success: false, error: `"${trimmedName}" not found in the item catalog` }, { status: 404 });
+      }
+      if (catalogItem.item_code && catalogItem.item_code.trim()) {
+        // Already resolved (e.g. by someone else, or a concurrent submit) — nothing to do,
+        // let the caller re-fetch and proceed to normal approval.
+        return NextResponse.json({ success: true, itemCode: catalogItem.item_code.trim(), alreadyResolved: true });
+      }
+
+      const itemCode = await generateItemCode(trimmedCategory);
+      const now = getLocalTimestamp();
+
+      const { error: catalogUpdateError } = await ltoSupabase
+        .from("lto_items")
+        .update({
+          item_category: trimmedCategory,
+          item_code: itemCode,
+          purchaser: trimmedPurchaser,
+          updated_at: new Date().toISOString(),
+          updated_by: "pfms-indent-approval",
+        })
+        .eq("uuid", catalogItem.uuid);
+      if (catalogUpdateError) throw catalogUpdateError;
+
+      // Backfill every OTHER pending indent raised against this same item name that's still
+      // unresolved (itemCode blank) — so two indents for the same new item never end up with
+      // two different generated codes.
+      const { data: updatedIndents, error: indentUpdateError } = await supabase
+        .from("pfms_indent_generation")
+        .update({
+          category: trimmedCategory,
+          itemCode,
+          purchaser: trimmedPurchaser,
+          updatedAt: now,
+        })
+        .ilike("itemName", trimmedName)
+        .or("itemCode.is.null,itemCode.eq.")
+        .select("indentNo");
+      if (indentUpdateError) throw indentUpdateError;
+
+      indentApprovalRawCache = null;
+      return NextResponse.json({ success: true, itemCode, updatedCount: (updatedIndents || []).length });
     }
 
     if (action === "insertApproval") {

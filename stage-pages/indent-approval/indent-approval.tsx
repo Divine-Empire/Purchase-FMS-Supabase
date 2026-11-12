@@ -179,7 +179,8 @@ export default function Stage2() {
     approvedQty: "",
   });
   const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
-  const [dropdownData, setDropdownData] = useState<Array<{ itemCode: string; category: string; itemName: string }>>([]);
+  const [dropdownData, setDropdownData] = useState<Array<{ itemCode: string; category: string; itemName: string; purchaser: string }>>([]);
+  const [purchaserOptions, setPurchaserOptions] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchDropdownOptions = async () => {
@@ -189,6 +190,7 @@ export default function Stage2() {
         if (json.success && json.data) {
           setWarehouseOptions(json.data.warehouseOptions || []);
           setDropdownData(json.data.dropdownData || []);
+          setPurchaserOptions(json.data.purchaserOptions || []);
         }
       } catch (e) {
         console.error("Error fetching dropdown options:", e);
@@ -207,15 +209,44 @@ export default function Stage2() {
     return Array.from(new Map(items.map((item) => [item.itemName, item])).values());
   };
 
-  // OTP's otp_indent_creation can raise a PFMS indent for an item that isn't registered
-  // in pfms_item_master yet (OTP's own item catalog, lto_items, is separate — see
-  // lib/pfms.ts on the OTP side). Those rows are still inserted here (visible, not
-  // silently dropped) but can't be approved until a purchaser either adds the item to
-  // Item Master or re-maps this indent to the correct, already-registered item below.
+  // lto_items (the shared Lead-To-Order/OTP/Service item catalog — dropdownData below is
+  // sourced from it, see app/api/dropdowns/route.ts) is also PFMS's item catalog now. An
+  // indent can be raised (from Create Indent, or automatically from OTP) against a name
+  // that's either (a) not in the catalog at all yet, or (b) in the catalog but still "New"
+  // — synced in with just a name, item_code blank. (a) can't be approved until someone adds
+  // the item to Item Master or re-maps this indent to the correct, already-registered item
+  // (Fix Item modal, below). (b) can't be approved until an admin picks its Category +
+  // Purchaser so a code can be generated (Resolve New Item modal, below) — see
+  // app/api/indent-approval/route.ts's "resolveNewItem" action.
   const registeredItemNames = useMemo(
     () => new Set(dropdownData.map((item) => item.itemName.trim().toLowerCase())),
     [dropdownData]
   );
+
+  // Name (lowercased) -> itemCode, for the catalog rows that DO exist — used to tell a
+  // genuinely-unregistered item apart from a registered-but-still-"New" one.
+  const itemCodeByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of dropdownData) {
+      const key = item.itemName.trim().toLowerCase();
+      if (!map.has(key)) map.set(key, (item.itemCode || "").trim());
+    }
+    return map;
+  }, [dropdownData]);
+
+  const categoryByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of dropdownData) {
+      const key = item.itemName.trim().toLowerCase();
+      if (!map.has(key) && item.category) map.set(key, item.category);
+    }
+    return map;
+  }, [dropdownData]);
+
+  const isNewItem = (name: string) => {
+    const key = (name || "").trim().toLowerCase();
+    return registeredItemNames.has(key) && !itemCodeByName.get(key);
+  };
 
   const [openFixItemModal, setOpenFixItemModal] = useState(false);
   const [fixingRecord, setFixingRecord] = useState<any>(null);
@@ -254,6 +285,62 @@ export default function Stage2() {
       toast.error(err.message || "Failed to fix item");
     } finally {
       setIsSavingFix(false);
+    }
+  };
+
+  // Resolve one or more "New" items (registered in the catalog, item_code still blank)
+  // blocking the current Submit Approval attempt. One row per distinct new item name among
+  // the selected records — Category defaults to whatever the catalog already has (often
+  // blank), Purchaser has no default (must be picked).
+  const [openResolveNewItemModal, setOpenResolveNewItemModal] = useState(false);
+  const [newItemsToResolve, setNewItemsToResolve] = useState<{ itemName: string; category: string; purchaser: string }[]>([]);
+  const [isSavingResolve, setIsSavingResolve] = useState(false);
+
+  const updateResolveField = (itemName: string, field: "category" | "purchaser", value: string) => {
+    setNewItemsToResolve((prev) =>
+      prev.map((row) => (row.itemName === itemName ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const handleSaveResolveNewItems = async () => {
+    const incomplete = newItemsToResolve.filter((r) => !r.category.trim() || !r.purchaser.trim());
+    if (incomplete.length > 0) {
+      toast.error("Pick a Category and Purchaser for every item before saving.");
+      return;
+    }
+
+    setIsSavingResolve(true);
+    try {
+      const results = await Promise.all(
+        newItemsToResolve.map(async (row) => {
+          const res = await fetch("/api/indent-approval", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "resolveNewItem",
+              itemName: row.itemName,
+              category: row.category,
+              purchaser: row.purchaser,
+            }),
+          });
+          return res.json();
+        })
+      );
+
+      const failures = results.filter((r) => !r.success);
+      if (failures.length > 0) {
+        toast.error(`${failures.length} of ${newItemsToResolve.length} item(s) failed: ${failures[0].error || "Unknown error"}`);
+      } else {
+        toast.success(`${newItemsToResolve.length} item(s) resolved — item code generated. Click Submit Approval again to continue.`);
+      }
+
+      setOpenResolveNewItemModal(false);
+      setNewItemsToResolve([]);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resolve item(s)");
+    } finally {
+      setIsSavingResolve(false);
     }
   };
 
@@ -530,6 +617,21 @@ export default function Stage2() {
       });
       return;
     }
+
+    const newItems = selectedItems.filter((r) => isNewItem(r.data.itemName || ""));
+    if (newItems.length > 0) {
+      const distinctNames = Array.from(new Set(newItems.map((r) => (r.data.itemName || "").trim())));
+      setNewItemsToResolve(
+        distinctNames.map((itemName) => ({
+          itemName,
+          category: categoryByName.get(itemName.toLowerCase()) || "",
+          purchaser: "",
+        }))
+      );
+      setOpenResolveNewItemModal(true);
+      return;
+    }
+
     setIsModalOpen(true);
   };
 
@@ -1098,6 +1200,74 @@ export default function Stage2() {
             >
               {isSavingFix ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
               Save &amp; Re-map
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Resolve one or more "New" items (registered in lto_items, item_code still blank)
+          blocking the current Submit Approval attempt — pick Category + Purchaser per item,
+          Item Code gets generated server-side on save (see handleSaveResolveNewItems /
+          app/api/indent-approval/route.ts's "resolveNewItem" action). */}
+      <Dialog open={openResolveNewItemModal} onOpenChange={setOpenResolveNewItemModal}>
+        <DialogContent className="max-w-lg bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-indigo-950">
+              Resolve New Item{newItemsToResolve.length > 1 ? "s" : ""}
+            </DialogTitle>
+            <p className="text-xs text-slate-500">
+              {newItemsToResolve.length > 1 ? "These items are" : "This item is"} new — synced in with just a
+              name, no Item Code yet. Confirm the Category and pick a Purchaser for{" "}
+              {newItemsToResolve.length > 1 ? "each" : "it"}; an Item Code will be generated automatically.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4 py-2 max-h-[50vh] overflow-y-auto">
+            {newItemsToResolve.map((row) => (
+              <div key={row.itemName} className="space-y-3 p-3 rounded-lg border border-indigo-100 bg-indigo-50/20">
+                <p className="text-sm font-semibold text-slate-800">{row.itemName}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Category</Label>
+                    <Input
+                      value={row.category}
+                      onChange={(e) => updateResolveField(row.itemName, "category", e.target.value)}
+                      placeholder="e.g. SAFETY ITEM"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Purchaser</Label>
+                    <Select
+                      value={row.purchaser}
+                      onValueChange={(val) => updateResolveField(row.itemName, "purchaser", val)}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Select purchaser" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {purchaserOptions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenResolveNewItemModal(false)} disabled={isSavingResolve}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveResolveNewItems}
+              disabled={isSavingResolve}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {isSavingResolve ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+              Generate Code &amp; Save
             </Button>
           </DialogFooter>
         </DialogContent>

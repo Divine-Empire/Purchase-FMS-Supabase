@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
+import { ltoSupabase } from "@/utils/supabase/lto-server";
 import { randomUUID } from "crypto";
 import { OFFICE_HOURS } from "@/app/api/helper/plannedCalculator";
+import { generateItemCode } from "@/app/api/helper/itemCodeGenerator";
 
 // Maps the "column" key used by the frontend (DROPDOWN_COLUMNS in dropdownsMaster.tsx)
 // to the `category` value stored in the normalized pfms_dropdown (id, category, value) table.
@@ -20,12 +22,12 @@ const DROPDOWN_CATEGORIES = [
   "Reject Type (QC)",
 ] as const;
 
-async function fetchAllRows(tableName: string, selectQuery: string) {
+async function fetchAllRows(tableName: string, selectQuery: string, client: typeof supabase = supabase) {
   let allRows: any[] = [];
   let page = 0;
   const pageSize = 1000;
   while (true) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from(tableName)
       .select(selectQuery)
       .range(page * pageSize, (page + 1) * pageSize - 1);
@@ -40,40 +42,39 @@ async function fetchAllRows(tableName: string, selectQuery: string) {
 }
 
 /**
- * Server-side duplicate guard for pfms_item_master, used by addItem/updateItem.
- * Mirrors the client-side check in dropdownsMaster.tsx (case-insensitive, trimmed),
- * but re-verified against the DB so a stale client list or a concurrent add can't slip
- * a duplicate through. `excludeId` is passed on update so the row isn't compared to itself.
- * Returns an error message string if a duplicate is found, or null if the entry is clear.
+ * Server-side duplicate guard for lto_items, used by addItem/updateItem. lto_items is the
+ * shared item catalog (Lead-To-Order/OTP/Service/PFMS all read it) — it already enforces a
+ * DB-level UNIQUE constraint on item_name, but this check runs first to surface a friendly
+ * error instead of a raw constraint-violation, and separately guards item_code (not
+ * DB-constrained) since that still needs to stay unique for PFMS's code-driven workflows.
+ * `excludeId` is passed on update so the row isn't compared to itself (lto_items uses a uuid
+ * `uuid` primary key, not `id`).
  */
 async function findItemDuplicate(
-  category: string,
   itemName: string,
   itemCode: string | undefined,
   excludeId?: string
 ): Promise<string | null> {
-  // Category + Item Name combination must be unique.
-  let nameQuery = supabase
-    .from("pfms_item_master")
-    .select("id")
-    .ilike("ITEM NAME", itemName)
-    .ilike("ITEM CATEGORY", category)
+  let nameQuery = ltoSupabase
+    .from("lto_items")
+    .select("uuid")
+    .ilike("item_name", itemName)
     .limit(1);
-  if (excludeId) nameQuery = nameQuery.neq("id", excludeId);
+  if (excludeId) nameQuery = nameQuery.neq("uuid", excludeId);
   const { data: nameMatch, error: nameError } = await nameQuery;
   if (nameError) throw nameError;
   if (nameMatch && nameMatch.length > 0) {
-    return `Item "${itemName}" already exists under category "${category}".`;
+    return `Item "${itemName}" already exists.`;
   }
 
   // Item Code, if given, must be unique across all items.
   if (itemCode) {
-    let codeQuery = supabase
-      .from("pfms_item_master")
-      .select("id")
-      .ilike("ITEM CODE", itemCode)
+    let codeQuery = ltoSupabase
+      .from("lto_items")
+      .select("uuid")
+      .ilike("item_code", itemCode)
       .limit(1);
-    if (excludeId) codeQuery = codeQuery.neq("id", excludeId);
+    if (excludeId) codeQuery = codeQuery.neq("uuid", excludeId);
     const { data: codeMatch, error: codeError } = await codeQuery;
     if (codeError) throw codeError;
     if (codeMatch && codeMatch.length > 0) {
@@ -124,7 +125,7 @@ async function findVendorDuplicate(
 
 // Live "which Item/Vendor names on real records don't match anything in Master" report,
 // used by the Master page's rename/remap tool. Computed on demand (not cached) so it always
-// reflects the current state of pfms_indent_generation / pfms_negotiation / pfms_item_master
+// reflects the current state of pfms_indent_generation / pfms_negotiation / lto_items
 // / pfms_vendor-master. Kept out of the main GET payload above since it's a heavier,
 // multi-table scan that the normal dropdowns page load doesn't need.
 
@@ -133,13 +134,13 @@ async function buildMismatchReport() {
   // instead of one after another — this is what was actually making the tool feel slow to
   // open (four sequential paginated round-trips instead of one wave of concurrent ones).
   const [items, vendors, indents, negotiations] = await Promise.all([
-    fetchAllRows("pfms_item_master", '"ITEM NAME"'),
+    fetchAllRows("lto_items", "item_name", ltoSupabase),
     fetchAllRows("pfms_vendor-master", '"Vendor List"'),
     fetchAllRows("pfms_indent_generation", "indentNo, itemName"),
     fetchAllRows("pfms_negotiation", "indentNo, selectedVendorName"),
   ]);
 
-  const itemNameSet = new Set((items as any[]).map((r) => (r["ITEM NAME"] || "").trim()).filter(Boolean));
+  const itemNameSet = new Set((items as any[]).map((r) => (r.item_name || "").trim()).filter(Boolean));
   const vendorNameSet = new Set((vendors as any[]).map((r) => (r["Vendor List"] || "").trim()).filter(Boolean));
 
   const vendorNameByIndent = new Map<string, string>();
@@ -187,13 +188,26 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, ...report });
     }
 
+    // Preview-only: what code WOULD be generated for this category right now, so the Add
+    // Item form can show it before the item is actually saved. Purely informational — the
+    // real code is (re)computed and written atomically on submit (see addItem below), so
+    // two people previewing the same category at once never get a stuck/duplicate reservation.
+    const previewCategory = searchParams.get("previewItemCode");
+    if (previewCategory) {
+      const itemCode = await generateItemCode(previewCategory);
+      return NextResponse.json({ success: true, itemCode });
+    }
+
     // 1. Fetch all dropdown options (normalized category/value pairs)
     const dropdownRows = await fetchAllRows("pfms_dropdown", "category, value");
 
-    // 2. Fetch all catalog items using the batching loop
+    // 2. Fetch all catalog items using the batching loop. Source: lto_items (the shared
+    // Lead-To-Order/OTP/Service item catalog, now PFMS's source of truth too — see
+    // utils/supabase/lto-server.ts). pfms_item_master is kept around unused, not dropped.
     const itemRows = await fetchAllRows(
-      "pfms_item_master",
-      'id, "ITEM CODE", "ITEM CATEGORY", "ITEM NAME", purchaser'
+      "lto_items",
+      "uuid, item_code, item_category, item_name, purchaser",
+      ltoSupabase
     );
 
     // 3. Fetch all vendors using the batching loop
@@ -252,21 +266,25 @@ export async function GET(request: Request) {
       )
     );
 
+    // Only itemName is required here (not category) — an item freshly synced from
+    // LTO/OTP/Service can have a blank item_category/item_code until Indent-Approval
+    // resolves it (the "New" tag is just itemCode being blank, no separate column).
     const dropdownData = itemRows
-      .filter((r: any) => r["ITEM CATEGORY"] && r["ITEM NAME"])
+      .filter((r: any) => r.item_name)
       .map((r: any) => ({
-        itemCode: r["ITEM CODE"]?.trim() || "",
-        category: r["ITEM CATEGORY"]?.trim() || "",
-        itemName: r["ITEM NAME"]?.trim() || "",
+        itemCode: (r.item_code || "").trim(),
+        category: (r.item_category || "").trim(),
+        itemName: (r.item_name || "").trim(),
+        purchaser: (r.purchaser || "").trim(),
       }));
 
     // Construct raw lists for items and vendors management
     const items = (itemRows || []).map((r: any) => ({
-      id: r.id,
-      itemCode: r["ITEM CODE"]?.trim() || "",
-      category: r["ITEM CATEGORY"]?.trim() || "",
-      itemName: r["ITEM NAME"]?.trim() || "",
-      purchaser: r.purchaser?.trim() || "",
+      id: r.uuid,
+      itemCode: (r.item_code || "").trim(),
+      category: (r.item_category || "").trim(),
+      itemName: (r.item_name || "").trim(),
+      purchaser: (r.purchaser || "").trim(),
     }));
 
     const vendors = (vendorRows || []).map((r: any) => ({
@@ -406,30 +424,37 @@ export async function POST(request: Request) {
     }
 
     if (action === "addItem") {
-      const { itemCode, category, itemName, purchaser } = body;
+      const { category, itemName, purchaser } = body;
       if (!category || !itemName) {
         return NextResponse.json({ success: false, error: "Missing category or itemName" }, { status: 400 });
       }
 
       // Server-side duplicate guard — the client also checks this against its already-loaded
       // list, but that's bypassable (stale data, concurrent adds), so re-verify against the DB here.
-      const dupError = await findItemDuplicate(category.trim(), itemName.trim(), itemCode?.trim());
+      const dupError = await findItemDuplicate(itemName.trim(), undefined);
       if (dupError) {
         return NextResponse.json({ success: false, error: dupError }, { status: 409 });
       }
 
-      const { error } = await supabase
-        .from("pfms_item_master")
+      // Item Code is never typed in — generated here from the category's prefix (see
+      // app/api/helper/itemCodeGenerator.ts), same as Indent-Approval's "resolveNewItem"
+      // action does for items synced in from Lead-To-Order/OTP/Service.
+      const itemCode = await generateItemCode(category.trim());
+
+      // Writes into lto_items — the shared item catalog (Lead-To-Order/OTP/Service also read
+      // this). uuid/created_at/updated_at all default on the table itself.
+      const { error } = await ltoSupabase
+        .from("lto_items")
         .insert({
-          id: randomUUID(),
-          "ITEM CODE": itemCode?.trim() || null,
-          "ITEM CATEGORY": category.trim(),
-          "ITEM NAME": itemName.trim(),
+          item_code: itemCode,
+          item_category: category.trim(),
+          item_name: itemName.trim(),
           purchaser: purchaser?.trim() || null,
+          updated_by: "pfms-item-master",
         });
 
       if (error) throw error;
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, itemCode });
     }
 
     if (action === "updateItem") {
@@ -441,20 +466,22 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: "Missing category or itemName" }, { status: 400 });
       }
 
-      const dupError = await findItemDuplicate(category.trim(), itemName.trim(), itemCode?.trim(), id);
+      const dupError = await findItemDuplicate(itemName.trim(), itemCode?.trim(), id);
       if (dupError) {
         return NextResponse.json({ success: false, error: dupError }, { status: 409 });
       }
 
-      const { error } = await supabase
-        .from("pfms_item_master")
+      const { error } = await ltoSupabase
+        .from("lto_items")
         .update({
-          "ITEM CODE": itemCode?.trim() || null,
-          "ITEM CATEGORY": category.trim(),
-          "ITEM NAME": itemName.trim(),
+          item_code: itemCode?.trim() || null,
+          item_category: category.trim(),
+          item_name: itemName.trim(),
           purchaser: purchaser?.trim() || null,
+          updated_at: new Date().toISOString(),
+          updated_by: "pfms-item-master",
         })
-        .eq("id", id);
+        .eq("uuid", id);
 
       if (error) throw error;
       return NextResponse.json({ success: true });
@@ -568,7 +595,7 @@ export async function POST(request: Request) {
     // tool). Only ever repoints itemName (and the itemCode/category that go with it) on
     // pfms_indent_generation and pfms_order-cancellation — Serial Generation, Dashboard,
     // etc. all read itemName by joining back to pfms_indent_generation, so nothing else
-    // needs to change. `toItemId` must be an existing pfms_item_master row.
+    // needs to change. `toItemId` must be an existing lto_items row (uuid).
     if (action === "renameItem") {
       const { fromName, toItemId, indentNos } = body;
       if (!fromName || !toItemId) {
@@ -578,10 +605,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: "Missing indentNos" }, { status: 400 });
       }
 
-      const { data: target, error: targetError } = await supabase
-        .from("pfms_item_master")
-        .select('"ITEM CODE", "ITEM CATEGORY", "ITEM NAME"')
-        .eq("id", toItemId)
+      const { data: target, error: targetError } = await ltoSupabase
+        .from("lto_items")
+        .select("item_code, item_category, item_name")
+        .eq("uuid", toItemId)
         .maybeSingle();
       if (targetError) throw targetError;
       if (!target) {
@@ -589,9 +616,9 @@ export async function POST(request: Request) {
       }
 
       const updatePayload = {
-        itemName: target["ITEM NAME"],
-        category: target["ITEM CATEGORY"],
-        itemCode: target["ITEM CODE"],
+        itemName: target.item_name,
+        category: target.item_category,
+        itemCode: target.item_code,
       };
 
       // Match by the exact indentNo set the mismatch report already grouped this name
@@ -608,7 +635,7 @@ export async function POST(request: Request) {
 
       const { error: cancelError } = await supabase
         .from("pfms_order-cancellation")
-        .update({ itemName: target["ITEM NAME"] })
+        .update({ itemName: target.item_name })
         .in("indentNo", indentNos);
       if (cancelError) throw cancelError;
 
@@ -703,10 +730,13 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
       }
 
-      const { error } = await supabase
-        .from("pfms_item_master")
+      // lto_items is the SHARED catalog — Lead-To-Order/OTP/Service read/write it too, and
+      // lto_item_specs (LTO's rate/spec rows) cascade-deletes off its uuid. Deleting an item
+      // here now removes it everywhere, not just from PFMS.
+      const { error } = await ltoSupabase
+        .from("lto_items")
         .delete()
-        .eq("id", id);
+        .eq("uuid", id);
 
       if (error) throw error;
       return NextResponse.json({ success: true });

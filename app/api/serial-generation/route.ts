@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
+import { ltoSupabase } from "@/utils/supabase/lto-server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 import { pushToIms } from "@/lib/ims-sync";
@@ -121,15 +122,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. Fetch item codes using pagination to bypass PostgREST default limit
+    // 3. Fetch item codes using pagination to bypass PostgREST default limit. Source:
+    // lto_items (shared item catalog — see utils/supabase/lto-server.ts), not
+    // pfms_item_master.
     const itemsMaster: any[] = [];
     {
       let itemPage = 0;
       let itemHasMore = true;
       while (itemHasMore) {
-        const { data: pageItems, error: itemPageError } = await supabase
-          .from("pfms_item_master")
-          .select('"ITEM CODE", "ITEM NAME"')
+        const { data: pageItems, error: itemPageError } = await ltoSupabase
+          .from("lto_items")
+          .select("item_code, item_name")
           .range(itemPage * pageSize, (itemPage + 1) * pageSize - 1);
 
         if (itemPageError) throw itemPageError;
@@ -274,8 +277,8 @@ export async function GET(request: NextRequest) {
 
     const itemCodeMap: Record<string, string> = {};
     (itemsMaster || []).forEach((row: any) => {
-      const name = row["ITEM NAME"]?.trim();
-      const code = row["ITEM CODE"]?.trim();
+      const name = row.item_name?.trim();
+      const code = row.item_code?.trim();
       if (name && code) itemCodeMap[name] = code;
     });
 

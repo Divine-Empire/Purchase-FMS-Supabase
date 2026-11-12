@@ -22,11 +22,14 @@ interface IndentApprovalPendingProps {
   toggleAll: () => void;
   selectedColumns: string[];
   columns: readonly { readonly key: string; readonly label: string; readonly icon: any }[];
-  // Item names (trimmed, lowercased) that exist in pfms_item_master — indents raised
-  // automatically from OTP (otp_indent_creation, via lib/pfms.ts's tryCreatePfmsIndent)
-  // can carry an item that was never registered there yet, since OTP's own item list
-  // (lto_items) is a separate catalog. Those rows still land here (visible, not silently
-  // dropped) so a purchaser can see them, but can't be approved until fixed — see onFixItem.
+  // Item names (trimmed, lowercased) that exist in lto_items — the shared Lead-To-Order/
+  // OTP/Service item catalog, now PFMS's catalog too (see app/api/dropdowns/route.ts).
+  // Indents raised automatically from OTP (otp_indent_creation, via lib/pfms.ts's
+  // tryCreatePfmsIndent) can still carry an item name that was never added to the catalog
+  // at all. Those rows still land here (visible, not silently dropped) so a purchaser can
+  // see them, but can't be approved until fixed — see onFixItem (for a truly unregistered
+  // name) and indent-approval.tsx's Resolve New Item modal (for a registered-but-still-
+  // "New"/blank-code item).
   registeredItemNames: Set<string>;
   onFixItem: (record: any) => void;
 }

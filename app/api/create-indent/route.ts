@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/utils/supabase/server";
+import { ltoSupabase } from "@/utils/supabase/lto-server";
 import { randomUUID } from "crypto";
 import { calculatePlannedTime, getLocalTimestamp } from "@/app/api/helper/plannedCalculator";
 
-// Supabase/PostgREST caps an unbounded select at 1000 rows. pfms_item_master
-// already has 4000+ rows, so any plain .select() below here only ever sees
-// an arbitrary first page of it — see fetchAllRows in app/api/dropdowns/route.ts
-// for the same pattern used there.
-async function fetchAllRows(tableName: string, selectQuery: string) {
+// Supabase/PostgREST caps an unbounded select at 1000 rows. lto_items already has 4900+
+// rows, so any plain .select() below here only ever sees an arbitrary first page of it —
+// see fetchAllRows in app/api/dropdowns/route.ts for the same pattern used there.
+async function fetchAllRows(tableName: string, selectQuery: string, client: typeof supabase = supabase) {
   let allRows: any[] = [];
   let page = 0;
   const pageSize = 1000;
   while (true) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from(tableName)
       .select(selectQuery)
       .range(page * pageSize, (page + 1) * pageSize - 1);
@@ -26,18 +26,19 @@ async function fetchAllRows(tableName: string, selectQuery: string) {
   return allRows;
 }
 
-// Looks up each item's purchaser from the catalog (pfms_item_master.purchaser) so it
-// can be copied onto the indent row at creation time. Falls back to null when the
-// item isn't in the catalog yet, or its purchaser hasn't been set there.
+// Looks up each item's purchaser from the catalog (lto_items.purchaser, the shared item
+// catalog — see utils/supabase/lto-server.ts) so it can be copied onto the indent row at
+// creation time. Falls back to null when the item isn't in the catalog yet, or its
+// purchaser hasn't been set there (e.g. it's still a "New"/blank-code item).
 async function getPurchaserMap(itemNames: string[]): Promise<Record<string, string | null>> {
   const uniqueNames = Array.from(new Set(itemNames.filter(Boolean)));
   const map: Record<string, string | null> = {};
   if (uniqueNames.length === 0) return map;
 
-  const { data, error } = await supabase
-    .from("pfms_item_master")
-    .select('"ITEM NAME", purchaser')
-    .in("ITEM NAME", uniqueNames);
+  const { data, error } = await ltoSupabase
+    .from("lto_items")
+    .select("item_name, purchaser")
+    .in("item_name", uniqueNames);
 
   if (error) {
     console.error("Error fetching purchaser map:", error);
@@ -45,7 +46,7 @@ async function getPurchaserMap(itemNames: string[]): Promise<Record<string, stri
   }
 
   for (const row of data || []) {
-    const name = (row as any)["ITEM NAME"]?.trim();
+    const name = (row as any).item_name?.trim();
     if (name && !(name in map)) {
       map[name] = (row as any).purchaser?.trim() || null;
     }
@@ -56,23 +57,31 @@ async function getPurchaserMap(itemNames: string[]): Promise<Record<string, stri
 // Item selection on Create Indent is restricted to Item Master entries (no inline "create
 // new" anymore — see stage-pages/create-indent/create-indent-pending.tsx). This is the
 // server-side half of that guarantee: reject any itemName/category combo that isn't
-// actually registered in pfms_item_master, in case anything ever bypasses the UI.
+// actually registered in lto_items (category match is skipped when the catalog row's
+// item_category is still blank — a "New" item synced in with just a name).
 async function findUnregisteredItems(items: { itemName: string; category: string }[]): Promise<string[]> {
   const wanted = items
     .map((i) => ({ itemName: (i.itemName || "").trim(), category: (i.category || "").trim() }))
     .filter((i) => i.itemName);
   if (wanted.length === 0) return [];
 
-  const data = await fetchAllRows("pfms_item_master", '"ITEM NAME", "ITEM CATEGORY"');
+  const data = await fetchAllRows("lto_items", "item_name, item_category", ltoSupabase);
 
-  const registered = new Set(
-    (data || []).map((r: any) => `${(r["ITEM NAME"] || "").trim().toLowerCase()}|${(r["ITEM CATEGORY"] || "").trim().toLowerCase()}`)
+  const registeredByNameAndCategory = new Set(
+    (data || []).map((r: any) => `${(r.item_name || "").trim().toLowerCase()}|${(r.item_category || "").trim().toLowerCase()}`)
+  );
+  const registeredByNameOnly = new Set(
+    (data || []).map((r: any) => (r.item_name || "").trim().toLowerCase())
   );
 
   const missing: string[] = [];
   for (const w of wanted) {
     const key = `${w.itemName.toLowerCase()}|${w.category.toLowerCase()}`;
-    if (!registered.has(key)) missing.push(`${w.itemName} (${w.category || "no category"})`);
+    // Exact name+category match, OR the catalog has this name with no category set yet
+    // (still "New") — either way it's a real, already-created catalog entry.
+    if (!registeredByNameAndCategory.has(key) && !registeredByNameOnly.has(w.itemName.toLowerCase())) {
+      missing.push(`${w.itemName} (${w.category || "no category"})`);
+    }
   }
   return missing;
 }

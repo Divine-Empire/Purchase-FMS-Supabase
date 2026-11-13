@@ -97,36 +97,69 @@ export function getPrefixForCategory(category: string): string {
   return deriveFallbackPrefix(category);
 }
 
+// Numbers above this are treated as data anomalies (e.g. a manufacturer part number that
+// happens to look like <letters><digits>, such as the legacy "SKS901590" row) and excluded
+// from the max lookup — every genuine code issued so far is a 5-digit number, topping out
+// around 14,400. Raise this only if the numbering genuinely grows past 99999 one day.
+const MAX_SANE_SEQUENCE_NUMBER = 99999;
+
+// One-time floor so the global sequence resumes from 14441 instead of the live DB max
+// (14428 as of 2026-11-13) — set per explicit decision, not derived. Has no effect once the
+// live DB max grows past this value on its own.
+const SEQUENCE_FLOOR = 14440;
+
+const PAGE_SIZE = 1000;
+
 /**
- * Generates the next item code for a category: <prefix><5-digit-number>, continuing from
- * whatever the highest existing well-formed code under that prefix is in lto_items (no
- * separate sequence table — "current max sirf DB me hi updated rahega" per explicit
- * decision). Ignores malformed/legacy codes under the same prefix (manufacturer part
- * numbers, stray HSN-code typos etc. — e.g. some SPARE-BOSCH codes are Bosch's own part
- * numbers, not prefix+number) since those aren't part of this numbering scheme.
- * First-ever code under a brand-new prefix starts at <prefix>10001, matching the existing
- * catalog's starting range.
+ * Fetches every item_code in lto_items (paginated — the table has 4,900+ rows and Supabase
+ * caps a single select at 1000).
+ */
+async function fetchAllItemCodes(): Promise<string[]> {
+  const codes: string[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await ltoSupabase
+      .from("lto_items")
+      .select("item_code")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    for (const row of data || []) {
+      if (row.item_code) codes.push(row.item_code);
+    }
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return codes;
+}
+
+/**
+ * Generates the next item code for a category: <prefix><number>. The numeric part is a
+ * single global sequence shared across every prefix — it always continues from the highest
+ * numeric suffix found anywhere in lto_items, never from that prefix's own max. This is
+ * deliberate: prefixes are just a display label, so two different prefixes landing on the
+ * same number (e.g. BPT10554 and PTA10554, which happened under the old per-prefix scheme)
+ * can never happen, even if a prefix is later changed/removed. No separate sequence table —
+ * "current max sirf DB me hi updated rahega" per explicit decision.
+ * First-ever code (empty catalog) starts at <prefix>10001, matching the existing catalog's
+ * starting range.
  */
 export async function generateItemCode(category: string): Promise<string> {
   const prefix = getPrefixForCategory(category);
 
-  const { data, error } = await ltoSupabase
-    .from("lto_items")
-    .select("item_code")
-    .ilike("item_code", `${prefix}%`);
-
-  if (error) throw error;
+  const codes = await fetchAllItemCodes();
 
   let maxNumber = 0;
-  const pattern = new RegExp(`^${prefix}0*([0-9]+)$`, "i");
-  for (const row of data || []) {
-    const code = (row.item_code || "").trim();
-    const m = code.match(pattern);
-    if (!m) continue; // skip malformed/manufacturer/legacy codes under this prefix
+  const pattern = /^[A-Za-z]{2,5}0*([0-9]+)$/;
+  for (const code of codes) {
+    const trimmed = code.trim();
+    const m = trimmed.match(pattern);
+    if (!m) continue; // skip malformed/manufacturer/legacy codes (no clean letters+digits shape)
     const num = parseInt(m[1], 10);
+    if (num > MAX_SANE_SEQUENCE_NUMBER) continue; // skip data anomalies, e.g. legacy SKS901590
     if (num > maxNumber) maxNumber = num;
   }
 
-  const nextNumber = maxNumber > 0 ? maxNumber + 1 : 10001;
+  const effectiveMax = Math.max(maxNumber, SEQUENCE_FLOOR);
+  const nextNumber = effectiveMax > 0 ? effectiveMax + 1 : 10001;
   return `${prefix}${String(nextNumber).padStart(5, "0")}`;
 }

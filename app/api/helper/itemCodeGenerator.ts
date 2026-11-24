@@ -108,28 +108,33 @@ const MAX_SANE_SEQUENCE_NUMBER = 99999;
 // live DB max grows past this value on its own.
 const SEQUENCE_FLOOR = 14440;
 
-const PAGE_SIZE = 1000;
+// Short-lived cache for the global max sequence number. The Add-Item form calls the
+// preview endpoint on every category selection, which otherwise re-ran the max lookup
+// from scratch each time. A 15s TTL means a burst of category switches (or repeated
+// previews while the form is open) reuse the same max instead of re-querying — same
+// pattern/TTL class as the tally-entry route's cache. Cleared isn't needed: 15s is
+// already within the window the system tolerates between a preview and the real
+// (re)computation at submit time (see generateItemCode's doc comment).
+const MAX_NUMBER_CACHE_TTL_MS = 15_000;
+let maxNumberCache: { value: number; expiresAt: number } | null = null;
 
 /**
- * Fetches every item_code in lto_items (paginated — the table has 4,900+ rows and Supabase
- * caps a single select at 1000).
+ * Gets the highest numeric suffix across every item_code in lto_items. Computed entirely
+ * in Postgres via the get_max_item_code_number() RPC (regexp_match + MAX() in one pass)
+ * instead of paginating all 5,000+ rows to the client and scanning them in JS — same
+ * result, one round trip instead of several, nothing to parse here.
  */
-async function fetchAllItemCodes(): Promise<string[]> {
-  const codes: string[] = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await ltoSupabase
-      .from("lto_items")
-      .select("item_code")
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data || []) {
-      if (row.item_code) codes.push(row.item_code);
-    }
-    if (!data || data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+async function fetchMaxItemCodeNumber(): Promise<number> {
+  if (maxNumberCache && maxNumberCache.expiresAt > Date.now()) {
+    return maxNumberCache.value;
   }
-  return codes;
+  const { data, error } = await ltoSupabase.rpc("get_max_item_code_number", {
+    max_sane_number: MAX_SANE_SEQUENCE_NUMBER,
+  });
+  if (error) throw error;
+  const value = data || 0;
+  maxNumberCache = { value, expiresAt: Date.now() + MAX_NUMBER_CACHE_TTL_MS };
+  return value;
 }
 
 /**
@@ -146,18 +151,7 @@ async function fetchAllItemCodes(): Promise<string[]> {
 export async function generateItemCode(category: string): Promise<string> {
   const prefix = getPrefixForCategory(category);
 
-  const codes = await fetchAllItemCodes();
-
-  let maxNumber = 0;
-  const pattern = /^[A-Za-z]{2,5}0*([0-9]+)$/;
-  for (const code of codes) {
-    const trimmed = code.trim();
-    const m = trimmed.match(pattern);
-    if (!m) continue; // skip malformed/manufacturer/legacy codes (no clean letters+digits shape)
-    const num = parseInt(m[1], 10);
-    if (num > MAX_SANE_SEQUENCE_NUMBER) continue; // skip data anomalies, e.g. legacy SKS901590
-    if (num > maxNumber) maxNumber = num;
-  }
+  const maxNumber = await fetchMaxItemCodeNumber();
 
   const effectiveMax = Math.max(maxNumber, SEQUENCE_FLOOR);
   const nextNumber = effectiveMax > 0 ? effectiveMax + 1 : 10001;

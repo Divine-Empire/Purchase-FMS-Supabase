@@ -221,7 +221,8 @@ export async function POST(request: NextRequest) {
         attachment: attachment || null,
         status: "pending",
         plannedIndentApproval,
-        purchaser: purchaserMap[item.itemName?.trim()] ?? null
+        purchaser: purchaserMap[item.itemName?.trim()] ?? null,
+        current_stage: "Indent Raised"
       }));
 
       const { error: insertError } = await supabase

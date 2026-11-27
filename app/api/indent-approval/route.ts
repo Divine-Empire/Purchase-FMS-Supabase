@@ -294,7 +294,8 @@ export async function POST(request: NextRequest) {
           .from("pfms_indent_generation")
           .update({
             status: finalStatus,
-            updatedAt: now
+            updatedAt: now,
+            current_stage: finalStatus === "approved" ? "Approved - In Procurement" : "Rejected"
           })
           .eq("indentNo", record.data.indentNumber);
       }

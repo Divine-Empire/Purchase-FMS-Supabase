@@ -283,6 +283,24 @@ export async function POST(request: NextRequest) {
 
     if (updateError) throw updateError;
 
+    // Final milestone for the EDS/PFMS current_stage tracker: once freight is fully paid,
+    // this indent's lifecycle is done. Freight payments are keyed by liftNo, not indentNo,
+    // so look up the owning indent through pfms_lift first.
+    if (paymentStatus === "paid") {
+      const { data: liftRow } = await supabase
+        .from("pfms_lift")
+        .select("indentNo")
+        .eq("liftNo", liftNo)
+        .maybeSingle();
+
+      if (liftRow?.indentNo) {
+        await supabase
+          .from("pfms_indent_generation")
+          .update({ current_stage: "Completed" })
+          .eq("indentNo", liftRow.indentNo);
+      }
+    }
+
     freightPaymentRawCache = null;
     return NextResponse.json({ success: true });
 
